@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Add location"
+    },
+    "step": {
+      "user": {
+        "title": "Where are you watching from?",
+        "description": "Passes are predicted on your Home Assistant, from the See A Satellite Tonight catalog of about 900 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
+        "data": {
+          "name": "Name",
+          "location": "Location",
+          "elevation": "Elevation above sea level"
+        },
+        "data_description": {
+          "name": "Used as the device name, for example \"Home\" or \"Cabin\".",
+          "location": "Where you watch the sky from.",
+          "elevation": "Height of the location in metres. A rough value is fine."
+        }
+      },
+      "reconfigure": {
+        "title": "Move this location",
+        "description": "Correct where passes are predicted for. The location keeps its entities, and the dashboard cards that show it keep working.",
+        "data": {
+          "location": "Location",
+          "elevation": "Elevation above sea level"
+        },
+        "data_description": {
+          "location": "Where you watch the sky from.",
+          "elevation": "Height of the location in metres. A rough value is fine."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Enter a latitude between -90° and 90° and a valid longitude.",
+      "cannot_connect": "Could not download the satellite catalog. Check that Home Assistant can reach the internet, then try again.",
+      "unknown": "Unexpected error while loading the satellite catalog. The log has the details."
+    },
+    "abort": {
+      "already_configured": "This location is already set up.",
+      "reconfigure_successful": "The location has been updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Which passes should be reported?",
+        "data": {
+          "max_magnitude": "Faintest magnitude",
+          "cloud_cover": "Cloud cover forecast",
+          "alert_lead_minutes": "Advance notice",
+          "show_in_sidebar": "Show Satellite Spotter in the sidebar",
+          "show_in_calendar": "Show the passes in the calendar",
+          "units": "Units"
+        },
+        "data_description": {
+          "max_magnitude": "Only report passes at least this bright. Lower numbers are brighter: 3 is what the website uses, about the faintest you can find from a suburb; 1 keeps the easy ones, and below 0 only the dazzling ones remain.",
+          "cloud_cover": "Adds the Open-Meteo cloud cover forecast to each pass. Open-Meteo receives this location's coordinates (to four decimals) every two hours.",
+          "alert_lead_minutes": "The \"Bright pass soon\" sensor turns on this long before a bright pass begins.",
+          "show_in_sidebar": "Adds a Satellite Spotter page to the sidebar with the passes, a 3D globe and a street-level view of the sky. The street view loads map tiles of the area around the location from OpenFreeMap and AWS (and from Esri with aerial imagery). The dashboard cards work either way.",
+          "show_in_calendar": "Adds a calendar of the passes of the next five days, each with when and where to look. Calendar triggers can then start automations before a pass.",
+          "units": "For distances and speeds on the globe and in the street view. \"Automatic\" follows Home Assistant's unit system."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Street view photos",
+            "description": "The street view shows your street in a 360° photo taken near home, or the 3D model where there is none. Panoramax needs no key. Mapillary needs a free access token and Google Street View a Google Cloud API key: with them, those services' photos are offered too. Your browser fetches the photos itself, so it receives the keys.",
+            "data": {
+              "street_source": "Photos from",
+              "mapillary_token": "Mapillary access token",
+              "google_api_key": "Google Cloud API key"
+            },
+            "data_description": {
+              "street_source": "\"Best available\" takes the best photo near home from every service there is a key for. A single service shows only its photos, and the 3D model none. Each browser can still switch in the street view's Layers menu.",
+              "mapillary_token": "Free: on mapillary.com, under Developers, register an application and copy its client token (MLY|…). Mapillary receives the area around home when the street view looks for photos.",
+              "google_api_key": "A key of a Google Cloud project with billing on and the Map Tiles API enabled. Restrict it to the Map Tiles API and to your Home Assistant's address. Google's free tier covers about 100,000 tiles a month, and a photo takes about 40 to 140 of them."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Enter a Google Cloud API key to show Google Street View photos.",
+      "mapillary_token_needed": "Enter a Mapillary access token to show Mapillary photos.",
+      "mapillary_token_format": "A Mapillary access token looks like MLY|1234…|abcd…: copy the client token of your application on mapillary.com.",
+      "google_refused": "Google refused the API key: {error}",
+      "mapillary_refused": "Mapillary refused the access token: {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatic (Home Assistant's unit system)",
+        "metric": "Metric (km, km/h)",
+        "imperial": "Imperial (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "Best available",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "No photos: the 3D model"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satellite visible"
+      },
+      "bright_pass_soon": {
+        "name": "Bright pass soon"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Satellite passes"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Next pass"
+      },
+      "next_bright_pass": {
+        "name": "Next bright pass"
+      },
+      "passes_next_24h": {
+        "name": "Passes next 24 hours",
+        "unit_of_measurement": "passes"
+      },
+      "catalog_updated": {
+        "name": "Catalog updated"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "No satellite catalog: {error}"
+    },
+    "catalog_stale": {
+      "message": "The satellite catalog's orbital elements are {age} days old and could not be refreshed ({error}); predictions are paused until a fresh catalog downloads"
+    },
+    "catalog_stale_upstream": {
+      "message": "The satellite catalog's orbital elements are {age} days old, and the website's own catalog is just as old; predictions are paused until a fresh catalog downloads"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Satellite predictions are paused",
+      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and no fresher catalog could be downloaded ({error}). Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until a download succeeds. Check that Home Assistant can reach the internet: the catalog comes from the See A Satellite Tonight website. This message goes away by itself once a fresh catalog arrives."
+    },
+    "catalog_stale_upstream": {
+      "title": "Satellite predictions are paused",
+      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and the See A Satellite Tonight website's own catalog is just as old: there is nothing fresher to download. Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until the website publishes a fresh catalog. There is nothing to fix in Home Assistant: this message goes away by itself once a fresh catalog arrives."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (bright)",
+    "calendar_appears": "Appears at {time} in the {direction}, {elevation}° up.",
+    "calendar_brightest": "Brightest at {time} in the {direction}, {elevation}° up (magnitude {magnitude}).",
+    "calendar_disappears": "Disappears at {time} in the {direction}, {elevation}° up.",
+    "calendar_together": "{count} satellites pass together.",
+    "calendar_cloud_cover": "Forecast cloud cover: {cloud_cover}%.",
+    "calendar_about": "About {name}: {url}",
+    "decimal_separator": ".",
+    "compass_n": "N",
+    "compass_nne": "NNE",
+    "compass_ne": "NE",
+    "compass_ene": "ENE",
+    "compass_e": "E",
+    "compass_ese": "ESE",
+    "compass_se": "SE",
+    "compass_sse": "SSE",
+    "compass_s": "S",
+    "compass_ssw": "SSW",
+    "compass_sw": "SW",
+    "compass_wsw": "WSW",
+    "compass_w": "W",
+    "compass_wnw": "WNW",
+    "compass_nw": "NW",
+    "compass_nnw": "NNW"
+  }
+}

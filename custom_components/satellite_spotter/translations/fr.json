@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Ajouter un lieu"
+    },
+    "step": {
+      "user": {
+        "title": "D'où observez-vous ?",
+        "description": "Les passages sont prédits dans votre Home Assistant, à partir du catalogue de See A Satellite Tonight d'environ 900 satellites brillants. Par défaut, le lieu est votre domicile. Deux choses le révèlent : la prévision de la couverture nuageuse envoie ses coordonnées à Open-Meteo (désactivable dans les options), et la vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS.",
+        "data": {
+          "name": "Nom",
+          "location": "Emplacement",
+          "elevation": "Altitude"
+        },
+        "data_description": {
+          "name": "Utilisé comme nom de l'appareil, par exemple « Maison » ou « Chalet ».",
+          "location": "L'endroit d'où vous observez le ciel.",
+          "elevation": "Altitude du lieu en mètres. Une valeur approximative suffit."
+        }
+      },
+      "reconfigure": {
+        "title": "Déplacer ce lieu",
+        "description": "Corrigez l'endroit pour lequel les passages sont prédits. Le lieu conserve ses entités, et les cartes de tableau de bord qui l'affichent continuent de fonctionner.",
+        "data": {
+          "location": "Emplacement",
+          "elevation": "Altitude"
+        },
+        "data_description": {
+          "location": "L'endroit d'où vous observez le ciel.",
+          "elevation": "Altitude du lieu en mètres. Une valeur approximative suffit."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Saisissez une latitude comprise entre -90° et 90° et une longitude valide.",
+      "cannot_connect": "Impossible de télécharger le catalogue des satellites. Vérifiez que Home Assistant accède à Internet, puis réessayez.",
+      "unknown": "Erreur inattendue lors du chargement du catalogue des satellites. Le journal contient les détails."
+    },
+    "abort": {
+      "already_configured": "Ce lieu est déjà configuré.",
+      "reconfigure_successful": "Le lieu a été mis à jour."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Quels passages faut-il signaler ?",
+        "data": {
+          "max_magnitude": "Magnitude la plus faible",
+          "cloud_cover": "Prévision de la couverture nuageuse",
+          "alert_lead_minutes": "Préavis",
+          "show_in_sidebar": "Afficher Satellite Spotter dans la barre latérale",
+          "show_in_calendar": "Afficher les passages dans le calendrier",
+          "units": "Unités"
+        },
+        "data_description": {
+          "max_magnitude": "Ne signaler que les passages au moins aussi brillants. Plus le nombre est petit, plus c'est brillant : 3 est la valeur du site web, à peu près le plus faible qu'on repère depuis une banlieue ; 1 garde les plus faciles, et en dessous de 0 il ne reste que les éblouissants.",
+          "cloud_cover": "Ajoute à chaque passage la prévision de couverture nuageuse d'Open-Meteo. Open-Meteo reçoit les coordonnées de ce lieu (à quatre décimales) toutes les deux heures.",
+          "alert_lead_minutes": "Le capteur « Passage brillant imminent » s'active avec cette avance sur le début d'un passage brillant.",
+          "show_in_sidebar": "Ajoute à la barre latérale une page Satellite Spotter avec les passages, un globe 3D et une vue du ciel au niveau de la rue. La vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS (et depuis Esri avec l'imagerie aérienne). Les cartes de tableau de bord fonctionnent dans tous les cas.",
+          "show_in_calendar": "Ajoute un calendrier des passages des cinq prochains jours, chacun avec quand et où regarder. Les déclencheurs de calendrier peuvent alors lancer des automatisations avant un passage.",
+          "units": "Pour les distances et vitesses du globe et de la vue de rue. « Automatique » suit le système d'unités de Home Assistant."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Photos de la vue de rue",
+            "description": "La vue de rue montre votre rue sur une photo à 360° prise près de chez vous, ou le modèle 3D là où il n'y en a pas. Panoramax ne demande aucune clé. Mapillary demande un jeton d'accès gratuit et Google Street View une clé d'API Google Cloud : avec eux, les photos de ces services sont proposées aussi. Votre navigateur télécharge lui-même les photos, il reçoit donc les clés.",
+            "data": {
+              "street_source": "Photos de",
+              "mapillary_token": "Jeton d'accès Mapillary",
+              "google_api_key": "Clé d'API Google Cloud"
+            },
+            "data_description": {
+              "street_source": "« La meilleure disponible » prend la meilleure photo près de chez vous parmi tous les services dont vous avez la clé. Un seul service ne montre que ses photos, et le modèle 3D aucune. Chaque navigateur peut quand même changer dans le menu Calques de la vue de rue.",
+              "mapillary_token": "Gratuit : sur mapillary.com, sous « Developers », enregistrez une application et copiez son jeton client (MLY|…). Mapillary reçoit les environs de chez vous quand la vue de rue cherche des photos.",
+              "google_api_key": "Une clé d'un projet Google Cloud avec la facturation activée et la Map Tiles API activée. Restreignez-la à la Map Tiles API et à l'adresse de votre Home Assistant. Le niveau gratuit de Google couvre environ 100 000 tuiles par mois, et une photo en demande de 40 à 140."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Saisissez une clé d'API Google Cloud pour afficher les photos de Google Street View.",
+      "mapillary_token_needed": "Saisissez un jeton d'accès Mapillary pour afficher les photos de Mapillary.",
+      "mapillary_token_format": "Un jeton d'accès Mapillary ressemble à MLY|1234…|abcd… : copiez le jeton client de votre application sur mapillary.com.",
+      "google_refused": "Google a refusé la clé d'API : {error}",
+      "mapillary_refused": "Mapillary a refusé le jeton d'accès : {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatique (système d'unités de Home Assistant)",
+        "metric": "Métrique (km, km/h)",
+        "imperial": "Impérial (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "La meilleure disponible",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "Pas de photos : le modèle 3D"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satellite visible"
+      },
+      "bright_pass_soon": {
+        "name": "Passage brillant imminent"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Passages de satellites"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Prochain passage"
+      },
+      "next_bright_pass": {
+        "name": "Prochain passage brillant"
+      },
+      "passes_next_24h": {
+        "name": "Passages des prochaines 24 heures",
+        "unit_of_measurement": "passages"
+      },
+      "catalog_updated": {
+        "name": "Catalogue mis à jour"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "Aucun catalogue des satellites : {error}"
+    },
+    "catalog_stale": {
+      "message": "Les éléments orbitaux du catalogue des satellites datent de {age} jours et n'ont pas pu être mis à jour ({error}) ; les prédictions sont en pause jusqu'au téléchargement d'un catalogue récent"
+    },
+    "catalog_stale_upstream": {
+      "message": "Les éléments orbitaux du catalogue des satellites datent de {age} jours, et le catalogue du site est tout aussi ancien ; les prédictions sont en pause jusqu'au téléchargement d'un catalogue récent"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Les prédictions des satellites sont en pause",
+      "description": "Les éléments orbitaux du catalogue des satellites datent de {age} jours (la médiane de tous les satellites), et aucun catalogue plus récent n'a pu être téléchargé ({error}). Des prédictions fondées sur des éléments aussi anciens seraient trompeuses : les entités Satellite Spotter restent donc indisponibles jusqu'à ce qu'un téléchargement réussisse. Vérifiez que Home Assistant accède à Internet : le catalogue vient du site See A Satellite Tonight. Ce message disparaît de lui-même dès qu'un catalogue récent arrive."
+    },
+    "catalog_stale_upstream": {
+      "title": "Les prédictions des satellites sont en pause",
+      "description": "Les éléments orbitaux du catalogue des satellites datent de {age} jours (la médiane de tous les satellites), et le catalogue du site See A Satellite Tonight lui-même est tout aussi ancien : il n'y a rien de plus récent à télécharger. Des prédictions fondées sur des éléments aussi anciens seraient trompeuses : les entités Satellite Spotter restent donc indisponibles jusqu'à ce que le site publie un catalogue récent. Il n'y a rien à corriger dans Home Assistant : ce message disparaît de lui-même dès qu'un catalogue récent arrive."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (brillant)",
+    "calendar_appears": "Apparaît à {time} dans le secteur {direction}, à {elevation}° de hauteur.",
+    "calendar_brightest": "Plus brillant à {time} dans le secteur {direction}, à {elevation}° de hauteur (magnitude {magnitude}).",
+    "calendar_disappears": "Disparaît à {time} dans le secteur {direction}, à {elevation}° de hauteur.",
+    "calendar_together": "{count} satellites passent ensemble.",
+    "calendar_cloud_cover": "Couverture nuageuse prévue : {cloud_cover} %.",
+    "calendar_about": "À propos de {name} : {url}",
+    "decimal_separator": ",",
+    "compass_n": "N",
+    "compass_nne": "N-NE",
+    "compass_ne": "NE",
+    "compass_ene": "E-NE",
+    "compass_e": "E",
+    "compass_ese": "E-SE",
+    "compass_se": "SE",
+    "compass_sse": "S-SE",
+    "compass_s": "S",
+    "compass_ssw": "S-SO",
+    "compass_sw": "SO",
+    "compass_wsw": "O-SO",
+    "compass_w": "O",
+    "compass_wnw": "O-NO",
+    "compass_nw": "NO",
+    "compass_nnw": "N-NO"
+  }
+}

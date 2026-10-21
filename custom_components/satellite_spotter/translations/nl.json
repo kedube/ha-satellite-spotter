@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Locatie toevoegen"
+    },
+    "step": {
+      "user": {
+        "title": "Waarvandaan kijk je?",
+        "description": "Overkomsten worden in je Home Assistant voorspeld, met de catalogus van See A Satellite Tonight van ongeveer 900 heldere satellieten. Standaard is de locatie je thuis. Twee dingen verraden haar: de bewolkingsverwachting stuurt de coördinaten naar Open-Meteo (uit te zetten in de opties), en de straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS.",
+        "data": {
+          "name": "Naam",
+          "location": "Locatie",
+          "elevation": "Hoogte boven zeeniveau"
+        },
+        "data_description": {
+          "name": "Wordt gebruikt als apparaatnaam, bijvoorbeeld \"Thuis\" of \"Vakantiehuis\".",
+          "location": "De plek waarvandaan je naar de hemel kijkt.",
+          "elevation": "Hoogte van de locatie in meters. Een ruwe schatting is prima."
+        }
+      },
+      "reconfigure": {
+        "title": "Deze locatie verplaatsen",
+        "description": "Corrigeer voor welke plek overkomsten worden voorspeld. De locatie behoudt haar entiteiten, en de dashboardkaarten die haar tonen blijven werken.",
+        "data": {
+          "location": "Locatie",
+          "elevation": "Hoogte boven zeeniveau"
+        },
+        "data_description": {
+          "location": "De plek waarvandaan je naar de hemel kijkt.",
+          "elevation": "Hoogte van de locatie in meters. Een ruwe schatting is prima."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Voer een breedtegraad tussen -90° en 90° en een geldige lengtegraad in.",
+      "cannot_connect": "De satellietcatalogus kon niet worden gedownload. Controleer of Home Assistant het internet bereikt en probeer het opnieuw.",
+      "unknown": "Onverwachte fout bij het laden van de satellietcatalogus. Het logboek bevat de details."
+    },
+    "abort": {
+      "already_configured": "Deze locatie is al ingesteld.",
+      "reconfigure_successful": "De locatie is bijgewerkt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Welke overkomsten moeten worden gemeld?",
+        "data": {
+          "max_magnitude": "Zwakste magnitude",
+          "cloud_cover": "Bewolkingsverwachting",
+          "alert_lead_minutes": "Vooraankondiging",
+          "show_in_sidebar": "Satellite Spotter in de zijbalk tonen",
+          "show_in_calendar": "Overkomsten in de agenda tonen",
+          "units": "Eenheden"
+        },
+        "data_description": {
+          "max_magnitude": "Meld alleen overkomsten die minstens zo helder zijn. Lagere getallen zijn helderder: 3 gebruikt de website ook, ongeveer het zwakste dat je vanuit een buitenwijk nog vindt; 1 houdt de makkelijke over, en onder 0 blijven alleen de verblindende.",
+          "cloud_cover": "Voegt aan elke overkomst de bewolkingsverwachting van Open-Meteo toe. Open-Meteo ontvangt daarvoor elke twee uur de coördinaten van deze locatie (op vier decimalen).",
+          "alert_lead_minutes": "De sensor \"Heldere overkomst binnenkort\" gaat zo lang voor het begin van een heldere overkomst aan.",
+          "show_in_sidebar": "Voegt een Satellite Spotter-pagina toe aan de zijbalk met de overkomsten, een 3D-globe en een weergave van de hemel op straatniveau. De straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS (en van Esri met luchtfoto's). De dashboardkaarten werken hoe dan ook.",
+          "show_in_calendar": "Voegt een agenda toe met de overkomsten van de komende vijf dagen, elk met wanneer en waar je moet kijken. Agenda-triggers kunnen dan vóór een overkomst automatiseringen starten.",
+          "units": "Voor afstanden en snelheden op de globe en in de straatweergave. \"Automatisch\" volgt het eenhedenstelsel van Home Assistant."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Foto's in de straatweergave",
+            "description": "De straatweergave toont je straat op een 360°-foto die bij je huis is genomen, of het 3D-model waar er geen is. Panoramax heeft geen sleutel nodig. Mapillary heeft een gratis toegangstoken nodig en Google Street View een API-sleutel van Google Cloud: daarmee worden ook de foto's van die diensten aangeboden. Je browser haalt de foto's zelf op en krijgt daarvoor de sleutels.",
+            "data": {
+              "street_source": "Foto's van",
+              "mapillary_token": "Mapillary-toegangstoken",
+              "google_api_key": "Google Cloud-API-sleutel"
+            },
+            "data_description": {
+              "street_source": "'Beste beschikbare' neemt de beste foto bij je huis van elke dienst waarvoor een sleutel is. Eén dienst toont alleen zijn eigen foto's, en het 3D-model geen. Elke browser kan toch wisselen in het menu Lagen van de straatweergave.",
+              "mapillary_token": "Gratis: registreer op mapillary.com onder 'Developers' een applicatie en kopieer de client token (MLY|…). Mapillary krijgt de omgeving van je huis te zien wanneer de straatweergave foto's zoekt.",
+              "google_api_key": "Een sleutel van een Google Cloud-project met facturering aan en de Map Tiles API ingeschakeld. Beperk hem tot de Map Tiles API en tot het adres van je Home Assistant. Het gratis niveau van Google dekt ongeveer 100.000 tegels per maand, en een foto kost er zo'n 40 tot 140."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Vul een Google Cloud-API-sleutel in om foto's van Google Street View te tonen.",
+      "mapillary_token_needed": "Vul een Mapillary-toegangstoken in om foto's van Mapillary te tonen.",
+      "mapillary_token_format": "Een Mapillary-toegangstoken ziet eruit als MLY|1234…|abcd…: kopieer de client token van je applicatie op mapillary.com.",
+      "google_refused": "Google heeft de API-sleutel geweigerd: {error}",
+      "mapillary_refused": "Mapillary heeft het toegangstoken geweigerd: {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatisch (eenhedenstelsel van Home Assistant)",
+        "metric": "Metrisch (km, km/h)",
+        "imperial": "Imperiaal (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "Beste beschikbare",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "Geen foto's: het 3D-model"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satelliet zichtbaar"
+      },
+      "bright_pass_soon": {
+        "name": "Heldere overkomst binnenkort"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Satellietoverkomsten"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Volgende overkomst"
+      },
+      "next_bright_pass": {
+        "name": "Volgende heldere overkomst"
+      },
+      "passes_next_24h": {
+        "name": "Overkomsten komende 24 uur",
+        "unit_of_measurement": "overkomsten"
+      },
+      "catalog_updated": {
+        "name": "Catalogus bijgewerkt"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "Geen satellietcatalogus: {error}"
+    },
+    "catalog_stale": {
+      "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud en konden niet worden bijgewerkt ({error}); de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
+    },
+    "catalog_stale_upstream": {
+      "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud, en de catalogus van de website is net zo oud; de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Satellietvoorspellingen zijn gepauzeerd",
+      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en er kon geen nieuwere catalogus worden gedownload ({error}). Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot een download lukt. Controleer of Home Assistant het internet bereikt: de catalogus komt van de website See A Satellite Tonight. Deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
+    },
+    "catalog_stale_upstream": {
+      "title": "Satellietvoorspellingen zijn gepauzeerd",
+      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en de catalogus van de website See A Satellite Tonight zelf is net zo oud: er valt niets nieuwers te downloaden. Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot de website een nieuwe catalogus publiceert. In Home Assistant valt niets op te lossen: deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (helder)",
+    "calendar_appears": "Verschijnt om {time} in het {direction}, {elevation}° boven de horizon.",
+    "calendar_brightest": "Het helderst om {time} in het {direction}, {elevation}° boven de horizon (magnitude {magnitude}).",
+    "calendar_disappears": "Verdwijnt om {time} in het {direction}, {elevation}° boven de horizon.",
+    "calendar_together": "{count} satellieten komen samen over.",
+    "calendar_cloud_cover": "Verwachte bewolking: {cloud_cover}%.",
+    "calendar_about": "Over {name}: {url}",
+    "decimal_separator": ",",
+    "compass_n": "N",
+    "compass_nne": "NNO",
+    "compass_ne": "NO",
+    "compass_ene": "ONO",
+    "compass_e": "O",
+    "compass_ese": "OZO",
+    "compass_se": "ZO",
+    "compass_sse": "ZZO",
+    "compass_s": "Z",
+    "compass_ssw": "ZZW",
+    "compass_sw": "ZW",
+    "compass_wsw": "WZW",
+    "compass_w": "W",
+    "compass_wnw": "WNW",
+    "compass_nw": "NW",
+    "compass_nnw": "NNW"
+  }
+}

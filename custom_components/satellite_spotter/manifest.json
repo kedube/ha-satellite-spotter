@@ -1,0 +1,26 @@
+{
+  "domain": "satellite_spotter",
+  "name": "Satellite Spotter",
+  "codeowners": [
+    "@kedube"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/kedube/ha-satellite-spotter",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/kedube/ha-satellite-spotter/issues",
+  "loggers": [
+    "custom_components.satellite_spotter",
+    "see_a_satellite"
+  ],
+  "requirements": [
+    "git+https://github.com/kedube/see-a-satellite@0.1.3#see-a-satellite==0.1.3"
+  ],
+  "version": "1.00"
+}

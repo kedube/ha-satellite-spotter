@@ -1,0 +1,144 @@
+blueprint:
+  name: Satellite pass notification
+  description: >-
+    Sends a phone notification shortly before a satellite pass in the
+    Satellite Spotter calendar: what is passing, when and where to look, how
+    bright it is and the forecast cloud cover. Tapping the notification opens
+    the pass in the street view on the Satellite Spotter page, which is there
+    while a location has "Show Satellite Spotter in the sidebar" on (the
+    default); with it off for every location, the tap opens your default
+    dashboard instead. Requires the Satellite Spotter integration with its
+    calendar switched on (the default).
+  domain: automation
+  source_url: https://github.com/kedube/ha-satellite-spotter/blob/main/blueprints/automation/satellite_spotter/notify_satellite_pass.yaml
+  input:
+    calendar:
+      name: Satellite passes calendar
+      description: The "Satellite passes" calendar of the location you watch from.
+      selector:
+        entity:
+          filter:
+            - integration: satellite_spotter
+              domain: calendar
+    notice:
+      name: Advance notice
+      description: How long before the pass begins to send the notification.
+      default: "-0:10:00"
+      selector:
+        select:
+          options:
+            - label: 5 minutes
+              value: "-0:05:00"
+            - label: 10 minutes
+              value: "-0:10:00"
+            - label: 15 minutes
+              value: "-0:15:00"
+            - label: 20 minutes
+              value: "-0:20:00"
+            - label: 30 minutes
+              value: "-0:30:00"
+            - label: 45 minutes
+              value: "-0:45:00"
+            - label: 1 hour
+              value: "-1:00:00"
+            - label: 2 hours
+              value: "-2:00:00"
+    bright_only:
+      name: Bright passes only
+      description: >-
+        Only the passes the website labels bright: brighter than magnitude 1
+        against a properly dark sky, easy to see even from a town.
+      default: true
+      selector:
+        boolean:
+    max_cloud_cover:
+      name: Maximum cloud cover
+      description: >-
+        Skip passes with more forecast cloud cover than this. Passes without a
+        forecast (the integration's cloud cover option is off, or Open-Meteo
+        did not answer) are always announced.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+          mode: slider
+    notify_device:
+      name: Phone to notify
+      description: A device running the Home Assistant Companion app.
+      selector:
+        device:
+          filter:
+            - integration: mobile_app
+
+# Passes can follow each other within minutes; each gets its notification.
+mode: queued
+max: 10
+
+triggers:
+  - trigger: calendar
+    event: start
+    offset: !input notice
+    entity_id: !input calendar
+
+# The event's text is the calendar's, in Home Assistant's language. The parts
+# read here are the same in every language: the bright mark, the magnitude in
+# brackets and the cloud cover (%). In English the times, directions and
+# elevations too, for a short message; other languages get the event's own
+# first lines.
+variables:
+  bright_only: !input bright_only
+  max_cloud_cover: !input max_cloud_cover
+  calendar: !input calendar
+  summary: "{{ trigger.calendar_event.summary | default('', true) }}"
+  description: "{{ trigger.calendar_event.description | default('', true) }}"
+  pass_id: "{{ trigger.calendar_event.uid | default('', true) }}"
+  # The location the calendar belongs to, so the link opens the pass there
+  # when Satellite Spotter has several.
+  entry_id: "{{ config_entry_id(calendar) or '' }}"
+  bright: >-
+    {{ summary is search('\\((bright|hell|brillante|brillant|luminoso|helder|jasny|brilhante|ljusstark)\\)$') }}
+  satellite: >-
+    {% set name = summary | regex_replace('^\\W+', '') %}
+    {{ (name | regex_replace('\\s*\\([^()]*\\)$', '') if bright else name) | trim }}
+  minutes: >-
+    {{ ((as_timestamp(trigger.calendar_event.start) - as_timestamp(now())) / 60) | round(0) | int }}
+  cloud_cover: >-
+    {% set found = description | regex_findall('(\\d+)\\s?%') %}
+    {{ found[0] | int if found else none }}
+  magnitude: >-
+    {% set found = description | regex_findall('(-?\\d+[.,]\\d)(?: ?mag)?\\)') %}
+    {{ found[0] | replace(',', '.') | float if found else none }}
+  details: >-
+    {% set looks = description | regex_findall('at (\\d{1,2}):(\\d{2}):\\d{2} in the ([NESW]{1,3}), (\\d+)° up') %}
+    {% if looks | length == 3 %}
+    {%- set rise, best, gone = looks -%}
+    Look {{ rise[2] }} at {{ rise[0] }}:{{ rise[1] }}, {{ rise[3] }}° up. Brightest
+    {{ best[3] }}° up in the {{ best[2] }}{{ ', magnitude ' ~ magnitude if magnitude is not none }};
+    gone in the {{ gone[2] }} by {{ gone[0] }}:{{ gone[1] }}.
+    {%- if cloud_cover is not none %} Cloud cover {{ cloud_cover }}%.{% endif %}
+    {%- else -%}
+    {{ description.split('\n')[:2] | join(' ') }}
+    {%- endif %}
+  link: >-
+    /satellite-spotter?{{ ('entry_id=' ~ entry_id ~ '&') if entry_id else '' }}pass={{ pass_id }}&view=street
+
+conditions:
+  - condition: template
+    value_template: "{{ bright or not bright_only }}"
+  - condition: template
+    value_template: "{{ cloud_cover is none or cloud_cover <= max_cloud_cover | int }}"
+
+actions:
+  - domain: mobile_app
+    type: notify
+    device_id: !input notify_device
+    title: "🛰️ {{ satellite }} in {{ minutes }} min"
+    message: "{{ details }}"
+    data:
+      # Opens the pass in the street view: url on iOS, clickAction on Android.
+      url: "{{ link }}"
+      clickAction: "{{ link }}"
+      tag: "satellite-pass-{{ pass_id }}"

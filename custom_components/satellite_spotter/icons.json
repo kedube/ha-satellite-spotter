@@ -1,0 +1,37 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "default": "mdi:satellite-variant",
+        "state": {
+          "off": "mdi:weather-night"
+        }
+      },
+      "bright_pass_soon": {
+        "default": "mdi:bell-ring-outline",
+        "state": {
+          "off": "mdi:bell-outline"
+        }
+      }
+    },
+    "calendar": {
+      "passes": {
+        "default": "mdi:calendar-star"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "default": "mdi:satellite-variant"
+      },
+      "next_bright_pass": {
+        "default": "mdi:star-four-points"
+      },
+      "passes_next_24h": {
+        "default": "mdi:counter"
+      },
+      "catalog_updated": {
+        "default": "mdi:database-clock"
+      }
+    }
+  }
+}

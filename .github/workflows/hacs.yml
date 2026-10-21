@@ -1,0 +1,28 @@
+name: HACS
+
+# HACS's checks of the repository: hacs.json, the brand images, the licence,
+# and the repository's own settings on GitHub (a description, topics and
+# issues). On its own, so that a setting fixed on GitHub rather than in a
+# commit never holds up a release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # The result is in the checks; a comment would need write access.
+          comment: "false"

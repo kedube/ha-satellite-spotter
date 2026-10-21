@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Standort hinzufügen"
+    },
+    "step": {
+      "user": {
+        "title": "Von wo aus beobachtest du?",
+        "description": "Überflüge werden in deinem Home Assistant vorhergesagt, mit dem Katalog von See A Satellite Tonight mit rund 900 hellen Satelliten. Standardmäßig ist der Standort dein Zuhause. Zwei Dinge verraten ihn: Die Bewölkungsvorhersage schickt seine Koordinaten an Open-Meteo (in den Optionen abschaltbar), und die Straßenansicht lädt Kartenkacheln der Umgebung von OpenFreeMap und AWS.",
+        "data": {
+          "name": "Name",
+          "location": "Standort",
+          "elevation": "Höhe über dem Meeresspiegel"
+        },
+        "data_description": {
+          "name": "Wird als Gerätename verwendet, zum Beispiel „Zuhause“ oder „Ferienhaus“.",
+          "location": "Der Ort, von dem aus du den Himmel beobachtest.",
+          "elevation": "Höhe des Standorts in Metern. Ein grober Wert genügt."
+        }
+      },
+      "reconfigure": {
+        "title": "Standort verschieben",
+        "description": "Korrigiere, für welchen Ort Überflüge vorhergesagt werden. Der Standort behält seine Entitäten, und die Dashboard-Karten, die ihn anzeigen, funktionieren weiter.",
+        "data": {
+          "location": "Standort",
+          "elevation": "Höhe über dem Meeresspiegel"
+        },
+        "data_description": {
+          "location": "Der Ort, von dem aus du den Himmel beobachtest.",
+          "elevation": "Höhe des Standorts in Metern. Ein grober Wert genügt."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Gib einen Breitengrad zwischen -90° und 90° und einen gültigen Längengrad ein.",
+      "cannot_connect": "Der Satellitenkatalog konnte nicht heruntergeladen werden. Prüfe, ob Home Assistant das Internet erreicht, und versuche es dann erneut.",
+      "unknown": "Unerwarteter Fehler beim Laden des Satellitenkatalogs. Details stehen im Protokoll."
+    },
+    "abort": {
+      "already_configured": "Dieser Standort ist bereits eingerichtet.",
+      "reconfigure_successful": "Der Standort wurde aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Welche Überflüge sollen gemeldet werden?",
+        "data": {
+          "max_magnitude": "Schwächste Helligkeit",
+          "cloud_cover": "Bewölkungsvorhersage",
+          "alert_lead_minutes": "Vorwarnzeit",
+          "show_in_sidebar": "Satellite Spotter in der Seitenleiste anzeigen",
+          "show_in_calendar": "Überflüge im Kalender anzeigen",
+          "units": "Einheiten"
+        },
+        "data_description": {
+          "max_magnitude": "Nur Überflüge melden, die mindestens so hell sind. Kleinere Zahlen sind heller: 3 verwendet auch die Website, etwa das Schwächste, was man in einem Vorort noch findet; 1 lässt die leicht sichtbaren übrig, unter 0 bleiben nur die strahlend hellen.",
+          "cloud_cover": "Ergänzt jeden Überflug um die Bewölkungsvorhersage von Open-Meteo. Open-Meteo erhält dafür alle zwei Stunden die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
+          "alert_lead_minutes": "Der Sensor „Heller Überflug in Kürze“ schaltet sich so lange vor Beginn eines hellen Überflugs ein.",
+          "show_in_sidebar": "Fügt der Seitenleiste eine Satellite-Spotter-Seite mit den Überflügen, einem 3D-Globus und einer Ansicht des Himmels auf Straßenhöhe hinzu. Die Straßenansicht lädt Kartenkacheln der Umgebung des Standorts von OpenFreeMap und AWS (mit Luftbildern auch von Esri). Die Dashboard-Karten funktionieren in jedem Fall.",
+          "show_in_calendar": "Fügt einen Kalender mit den Überflügen der nächsten fünf Tage hinzu, jeweils mit Zeit und Blickrichtung. Kalender-Auslöser können damit vor einem Überflug Automationen starten.",
+          "units": "Für Entfernungen und Geschwindigkeiten auf dem Globus und in der Straßenansicht. „Automatisch“ folgt dem Einheitensystem von Home Assistant."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Fotos in der Straßenansicht",
+            "description": "Die Straßenansicht zeigt deine Straße auf einem 360°-Foto, das in der Nähe deines Zuhauses aufgenommen wurde, und wo es keines gibt, das 3D-Modell. Panoramax braucht keinen Schlüssel. Mapillary braucht ein kostenloses Zugriffstoken und Google Street View einen API-Schlüssel von Google Cloud: Damit werden auch deren Fotos angeboten. Dein Browser lädt die Fotos selbst und erhält dafür die Schlüssel.",
+            "data": {
+              "street_source": "Fotos von",
+              "mapillary_token": "Mapillary-Zugriffstoken",
+              "google_api_key": "Google-Cloud-API-Schlüssel"
+            },
+            "data_description": {
+              "street_source": "„Bestes verfügbares“ nimmt das beste Foto in der Nähe deines Zuhauses von jedem Dienst, für den es einen Schlüssel gibt. Ein einzelner Dienst zeigt nur seine Fotos, das 3D-Modell gar keine. Jeder Browser kann im Menü „Ebenen“ der Straßenansicht trotzdem umschalten.",
+              "mapillary_token": "Kostenlos: Registriere auf mapillary.com unter „Developers“ eine Anwendung und kopiere ihr Client-Token (MLY|…). Mapillary erfährt die Gegend um dein Zuhause, wenn die Straßenansicht nach Fotos sucht.",
+              "google_api_key": "Ein Schlüssel eines Google-Cloud-Projekts mit aktivierter Abrechnung und aktivierter Map Tiles API. Beschränke ihn auf die Map Tiles API und auf die Adresse deines Home Assistant. Das kostenlose Kontingent von Google reicht für etwa 100.000 Kacheln im Monat, und ein Foto braucht etwa 40 bis 140 davon."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Gib einen Google-Cloud-API-Schlüssel ein, um Fotos von Google Street View zu zeigen.",
+      "mapillary_token_needed": "Gib ein Mapillary-Zugriffstoken ein, um Fotos von Mapillary zu zeigen.",
+      "mapillary_token_format": "Ein Mapillary-Zugriffstoken sieht so aus: MLY|1234…|abcd…. Kopiere das Client-Token deiner Anwendung auf mapillary.com.",
+      "google_refused": "Google hat den API-Schlüssel abgelehnt: {error}",
+      "mapillary_refused": "Mapillary hat das Zugriffstoken abgelehnt: {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatisch (Einheitensystem von Home Assistant)",
+        "metric": "Metrisch (km, km/h)",
+        "imperial": "Imperial (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "Bestes verfügbares",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "Keine Fotos: das 3D-Modell"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satellit sichtbar"
+      },
+      "bright_pass_soon": {
+        "name": "Heller Überflug in Kürze"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Satellitenüberflüge"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Nächster Überflug"
+      },
+      "next_bright_pass": {
+        "name": "Nächster heller Überflug"
+      },
+      "passes_next_24h": {
+        "name": "Überflüge in den nächsten 24 Stunden",
+        "unit_of_measurement": "Überflüge"
+      },
+      "catalog_updated": {
+        "name": "Katalog aktualisiert"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "Kein Satellitenkatalog: {error}"
+    },
+    "catalog_stale": {
+      "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt und konnten nicht aktualisiert werden ({error}); die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
+    },
+    "catalog_stale_upstream": {
+      "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt, und der Katalog der Website ist genauso alt; die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Satellitenvorhersagen sind pausiert",
+      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und es konnte kein aktuellerer Katalog heruntergeladen werden ({error}). Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis ein Download gelingt. Prüfe, ob Home Assistant das Internet erreicht: Der Katalog kommt von der Website See A Satellite Tonight. Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
+    },
+    "catalog_stale_upstream": {
+      "title": "Satellitenvorhersagen sind pausiert",
+      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und der Katalog der Website See A Satellite Tonight selbst ist genauso alt: Es gibt nichts Aktuelleres herunterzuladen. Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis die Website einen aktuellen Katalog veröffentlicht. In Home Assistant ist nichts zu beheben: Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (hell)",
+    "calendar_appears": "Erscheint um {time} im {direction}, {elevation}° über dem Horizont.",
+    "calendar_brightest": "Am hellsten um {time} im {direction}, {elevation}° über dem Horizont (Helligkeit {magnitude}).",
+    "calendar_disappears": "Verschwindet um {time} im {direction}, {elevation}° über dem Horizont.",
+    "calendar_together": "{count} Satelliten ziehen gemeinsam vorüber.",
+    "calendar_cloud_cover": "Vorhergesagte Bewölkung: {cloud_cover} %.",
+    "calendar_about": "Über {name}: {url}",
+    "decimal_separator": ",",
+    "compass_n": "N",
+    "compass_nne": "NNO",
+    "compass_ne": "NO",
+    "compass_ene": "ONO",
+    "compass_e": "O",
+    "compass_ese": "OSO",
+    "compass_se": "SO",
+    "compass_sse": "SSO",
+    "compass_s": "S",
+    "compass_ssw": "SSW",
+    "compass_sw": "SW",
+    "compass_wsw": "WSW",
+    "compass_w": "W",
+    "compass_wnw": "WNW",
+    "compass_nw": "NW",
+    "compass_nnw": "NNW"
+  }
+}

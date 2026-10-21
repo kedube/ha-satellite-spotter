@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Dodaj lokalizację"
+    },
+    "step": {
+      "user": {
+        "title": "Skąd obserwujesz?",
+        "description": "Przeloty są przewidywane w twoim Home Assistant na podstawie katalogu See A Satellite Tonight z około 900 jasnymi satelitami. Domyślnie lokalizacją jest twój dom. Ujawniają ją dwie rzeczy: prognoza zachmurzenia wysyła jej współrzędne do Open-Meteo (można to wyłączyć w opcjach), a widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS.",
+        "data": {
+          "name": "Nazwa",
+          "location": "Lokalizacja",
+          "elevation": "Wysokość nad poziomem morza"
+        },
+        "data_description": {
+          "name": "Używana jako nazwa urządzenia, na przykład „Dom” lub „Domek”.",
+          "location": "Miejsce, z którego obserwujesz niebo.",
+          "elevation": "Wysokość lokalizacji w metrach. Wystarczy przybliżona wartość."
+        }
+      },
+      "reconfigure": {
+        "title": "Przenieś tę lokalizację",
+        "description": "Popraw miejsce, dla którego przewidywane są przeloty. Lokalizacja zachowuje swoje encje, a karty dashboardu, które ją pokazują, nadal działają.",
+        "data": {
+          "location": "Lokalizacja",
+          "elevation": "Wysokość nad poziomem morza"
+        },
+        "data_description": {
+          "location": "Miejsce, z którego obserwujesz niebo.",
+          "elevation": "Wysokość lokalizacji w metrach. Wystarczy przybliżona wartość."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Wprowadź szerokość geograficzną z zakresu od -90° do 90° i prawidłową długość geograficzną.",
+      "cannot_connect": "Nie udało się pobrać katalogu satelitów. Sprawdź, czy Home Assistant ma dostęp do internetu, i spróbuj ponownie.",
+      "unknown": "Nieoczekiwany błąd podczas wczytywania katalogu satelitów. Szczegóły są w dzienniku."
+    },
+    "abort": {
+      "already_configured": "Ta lokalizacja jest już skonfigurowana.",
+      "reconfigure_successful": "Lokalizacja została zaktualizowana."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Które przeloty zgłaszać?",
+        "data": {
+          "max_magnitude": "Najsłabsza jasność (mag)",
+          "cloud_cover": "Prognoza zachmurzenia",
+          "alert_lead_minutes": "Wyprzedzenie powiadomienia",
+          "show_in_sidebar": "Pokaż Satellite Spotter na pasku bocznym",
+          "show_in_calendar": "Pokaż przeloty w kalendarzu",
+          "units": "Jednostki"
+        },
+        "data_description": {
+          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 3 to wartość strony, mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
+          "cloud_cover": "Dodaje do każdego przelotu prognozę zachmurzenia z Open-Meteo. Open-Meteo otrzymuje co dwie godziny współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
+          "alert_lead_minutes": "Sensor „Jasny przelot wkrótce” włącza się z takim wyprzedzeniem przed początkiem jasnego przelotu.",
+          "show_in_sidebar": "Dodaje do paska bocznego stronę Satellite Spotter z przelotami, globusem 3D i widokiem nieba z poziomu ulicy. Widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS (a ze zdjęciami lotniczymi także z Esri). Karty dashboardu działają w każdym przypadku.",
+          "show_in_calendar": "Dodaje kalendarz przelotów z najbliższych pięciu dni, każdy z informacją, kiedy i gdzie patrzeć. Wyzwalacze kalendarza mogą wtedy uruchamiać automatyzacje przed przelotem.",
+          "units": "Dla odległości i prędkości na globusie i w widoku z ulicy. „Automatycznie” stosuje system jednostek Home Assistant."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Zdjęcia w widoku z ulicy",
+            "description": "Widok z ulicy pokazuje twoją ulicę na zdjęciu 360° zrobionym w pobliżu domu, a tam, gdzie go nie ma, model 3D. Panoramax nie wymaga klucza. Mapillary wymaga darmowego tokenu dostępu, a Google Street View klucza API Google Cloud: z nimi oferowane są też zdjęcia z tych usług. Przeglądarka sama pobiera zdjęcia, więc otrzymuje klucze.",
+            "data": {
+              "street_source": "Zdjęcia z",
+              "mapillary_token": "Token dostępu Mapillary",
+              "google_api_key": "Klucz API Google Cloud"
+            },
+            "data_description": {
+              "street_source": "„Najlepsze dostępne” bierze najlepsze zdjęcie w pobliżu domu ze wszystkich usług, do których jest klucz. Jedna usługa pokazuje tylko swoje zdjęcia, a model 3D żadnych. Każda przeglądarka może i tak przełączyć to w menu Warstwy widoku z ulicy.",
+              "mapillary_token": "Za darmo: na mapillary.com w sekcji „Developers” zarejestruj aplikację i skopiuj jej token klienta (MLY|…). Mapillary otrzymuje okolicę domu, gdy widok z ulicy szuka zdjęć.",
+              "google_api_key": "Klucz projektu Google Cloud z włączonymi płatnościami i włączonym Map Tiles API. Ogranicz go do Map Tiles API i do adresu twojego Home Assistant. Darmowy poziom Google obejmuje około 100 000 kafelków miesięcznie, a jedno zdjęcie zużywa od 40 do 140."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Wpisz klucz API Google Cloud, aby pokazywać zdjęcia z Google Street View.",
+      "mapillary_token_needed": "Wpisz token dostępu Mapillary, aby pokazywać zdjęcia z Mapillary.",
+      "mapillary_token_format": "Token dostępu Mapillary wygląda tak: MLY|1234…|abcd…. Skopiuj token klienta swojej aplikacji z mapillary.com.",
+      "google_refused": "Google odrzuciło klucz API: {error}",
+      "mapillary_refused": "Mapillary odrzuciło token dostępu: {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatycznie (system jednostek Home Assistant)",
+        "metric": "Metryczne (km, km/h)",
+        "imperial": "Imperialne (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "Najlepsze dostępne",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "Bez zdjęć: model 3D"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satelita widoczny"
+      },
+      "bright_pass_soon": {
+        "name": "Jasny przelot wkrótce"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Przeloty satelitów"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Następny przelot"
+      },
+      "next_bright_pass": {
+        "name": "Następny jasny przelot"
+      },
+      "passes_next_24h": {
+        "name": "Przeloty w ciągu 24 godzin",
+        "unit_of_measurement": "przeloty"
+      },
+      "catalog_updated": {
+        "name": "Aktualizacja katalogu"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "Brak katalogu satelitów: {error}"
+    },
+    "catalog_stale": {
+      "message": "Elementy orbitalne w katalogu satelitów mają {age} dni i nie udało się ich odświeżyć ({error}); prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
+    },
+    "catalog_stale_upstream": {
+      "message": "Elementy orbitalne w katalogu satelitów mają {age} dni, a katalog na stronie jest równie stary; prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Prognozy satelitów są wstrzymane",
+      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a nie udało się pobrać nowszego katalogu ({error}). Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki pobieranie się nie powiedzie. Sprawdź, czy Home Assistant ma dostęp do internetu: katalog pochodzi ze strony See A Satellite Tonight. Ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
+    },
+    "catalog_stale_upstream": {
+      "title": "Prognozy satelitów są wstrzymane",
+      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a sam katalog na stronie See A Satellite Tonight jest równie stary: nie ma niczego nowszego do pobrania. Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki strona nie opublikuje aktualnego katalogu. W Home Assistant nie ma nic do naprawienia: ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (jasny)",
+    "calendar_appears": "Pojawia się o {time} w kierunku {direction}, {elevation}° nad horyzontem.",
+    "calendar_brightest": "Najjaśniejszy o {time} w kierunku {direction}, {elevation}° nad horyzontem (jasność {magnitude} mag).",
+    "calendar_disappears": "Znika o {time} w kierunku {direction}, {elevation}° nad horyzontem.",
+    "calendar_together": "Liczba satelitów przelatujących razem: {count}.",
+    "calendar_cloud_cover": "Prognozowane zachmurzenie: {cloud_cover}%.",
+    "calendar_about": "Więcej o {name}: {url}",
+    "decimal_separator": ",",
+    "compass_n": "płn.",
+    "compass_nne": "płn. płn.-wsch.",
+    "compass_ne": "płn.-wsch.",
+    "compass_ene": "wsch. płn.-wsch.",
+    "compass_e": "wsch.",
+    "compass_ese": "wsch. płd.-wsch.",
+    "compass_se": "płd.-wsch.",
+    "compass_sse": "płd. płd.-wsch.",
+    "compass_s": "płd.",
+    "compass_ssw": "płd. płd.-zach.",
+    "compass_sw": "płd.-zach.",
+    "compass_wsw": "zach. płd.-zach.",
+    "compass_w": "zach.",
+    "compass_wnw": "zach. płn.-zach.",
+    "compass_nw": "płn.-zach.",
+    "compass_nnw": "płn. płn.-zach."
+  }
+}

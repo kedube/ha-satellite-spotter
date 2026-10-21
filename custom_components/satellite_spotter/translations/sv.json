@@ -1,0 +1,186 @@
+{
+  "config": {
+    "initiate_flow": {
+      "user": "Lägg till plats"
+    },
+    "step": {
+      "user": {
+        "title": "Var tittar du från?",
+        "description": "Passager förutsägs i din Home Assistant, med See A Satellite Tonights katalog med omkring 900 ljusstarka satelliter. Som standard är platsen ditt hem. Två saker röjer den: molnprognosen skickar dess koordinater till Open-Meteo (kan stängas av i alternativen), och gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS.",
+        "data": {
+          "name": "Namn",
+          "location": "Plats",
+          "elevation": "Höjd över havet"
+        },
+        "data_description": {
+          "name": "Används som enhetsnamn, till exempel ”Hemma” eller ”Stugan”.",
+          "location": "Platsen du tittar på himlen från.",
+          "elevation": "Platsens höjd i meter. Ett ungefärligt värde räcker."
+        }
+      },
+      "reconfigure": {
+        "title": "Flytta den här platsen",
+        "description": "Korrigera vilken plats passager förutsägs för. Platsen behåller sina entiteter, och instrumentpanelskorten som visar den fortsätter att fungera.",
+        "data": {
+          "location": "Plats",
+          "elevation": "Höjd över havet"
+        },
+        "data_description": {
+          "location": "Platsen du tittar på himlen från.",
+          "elevation": "Platsens höjd i meter. Ett ungefärligt värde räcker."
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Ange en latitud mellan -90° och 90° och en giltig longitud.",
+      "cannot_connect": "Satellitkatalogen kunde inte laddas ned. Kontrollera att Home Assistant når internet och försök igen.",
+      "unknown": "Oväntat fel när satellitkatalogen lästes in. Loggen har detaljerna."
+    },
+    "abort": {
+      "already_configured": "Den här platsen är redan konfigurerad.",
+      "reconfigure_successful": "Platsen har uppdaterats."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Vilka passager ska rapporteras?",
+        "data": {
+          "max_magnitude": "Svagaste magnitud",
+          "cloud_cover": "Molnprognos",
+          "alert_lead_minutes": "Förvarning",
+          "show_in_sidebar": "Visa Satellite Spotter i sidofältet",
+          "show_in_calendar": "Visa passagerna i kalendern",
+          "units": "Enheter"
+        },
+        "data_description": {
+          "max_magnitude": "Rapportera bara passager som är minst så här ljusstarka. Lägre tal är ljusare: 3 är vad webbplatsen använder, ungefär det svagaste man hittar från en förort; 1 behåller de lätta, och under 0 återstår bara de bländande.",
+          "cloud_cover": "Lägger till Open-Meteos molnprognos för varje passage. Open-Meteo får den här platsens koordinater (med fyra decimaler) varannan timme.",
+          "alert_lead_minutes": "Sensorn ”Ljusstark passage snart” slås på så här lång tid innan en ljusstark passage börjar.",
+          "show_in_sidebar": "Lägger till en Satellite Spotter-sida i sidofältet med passagerna, en 3D-glob och en vy av himlen från gatunivå. Gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS (och från Esri med flygbilder). Instrumentpanelskorten fungerar oavsett.",
+          "show_in_calendar": "Lägger till en kalender med passagerna de kommande fem dagarna, var och en med när och vart du ska titta. Kalenderutlösare kan då starta automationer före en passage.",
+          "units": "För avstånd och hastigheter på globen och i gatuvyn. ”Automatiskt” följer Home Assistants enhetssystem."
+        },
+        "sections": {
+          "street_view": {
+            "name": "Foton i gatuvyn",
+            "description": "Gatuvyn visar din gata på ett 360°-foto taget nära hemmet, eller 3D-modellen där det inte finns något. Panoramax behöver ingen nyckel. Mapillary behöver en gratis åtkomsttoken och Google Street View en API-nyckel från Google Cloud: med dem erbjuds även de tjänsternas foton. Webbläsaren hämtar fotona själv och får därför nycklarna.",
+            "data": {
+              "street_source": "Foton från",
+              "mapillary_token": "Åtkomsttoken för Mapillary",
+              "google_api_key": "API-nyckel för Google Cloud"
+            },
+            "data_description": {
+              "street_source": "”Bästa tillgängliga” tar det bästa fotot nära hemmet från alla tjänster som det finns en nyckel till. En enda tjänst visar bara sina foton, och 3D-modellen inga. Varje webbläsare kan ändå byta i gatuvyns Lager-meny.",
+              "mapillary_token": "Gratis: registrera en applikation på mapillary.com under ”Developers” och kopiera dess klienttoken (MLY|…). Mapillary får veta området runt hemmet när gatuvyn letar efter foton.",
+              "google_api_key": "En nyckel till ett Google Cloud-projekt med fakturering påslagen och Map Tiles API aktiverat. Begränsa den till Map Tiles API och till din Home Assistants adress. Googles kostnadsfria nivå räcker till ungefär 100 000 rutor i månaden, och ett foto tar ungefär 40 till 140 av dem."
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "google_key_needed": "Ange en API-nyckel för Google Cloud för att visa foton från Google Street View.",
+      "mapillary_token_needed": "Ange en åtkomsttoken för Mapillary för att visa foton från Mapillary.",
+      "mapillary_token_format": "En åtkomsttoken för Mapillary ser ut så här: MLY|1234…|abcd…. Kopiera klienttoken för din applikation på mapillary.com.",
+      "google_refused": "Google avvisade API-nyckeln: {error}",
+      "mapillary_refused": "Mapillary avvisade åtkomsttoken: {error}"
+    }
+  },
+  "selector": {
+    "units": {
+      "options": {
+        "auto": "Automatiskt (Home Assistants enhetssystem)",
+        "metric": "Metriskt (km, km/h)",
+        "imperial": "Imperiskt (mi, mph)"
+      }
+    },
+    "street_source": {
+      "options": {
+        "auto": "Bästa tillgängliga",
+        "google": "Google Street View",
+        "mapillary": "Mapillary",
+        "panoramax": "Panoramax",
+        "model": "Inga foton: 3D-modellen"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "pass_in_progress": {
+        "name": "Satellit synlig"
+      },
+      "bright_pass_soon": {
+        "name": "Ljusstark passage snart"
+      }
+    },
+    "calendar": {
+      "passes": {
+        "name": "Satellitpassager"
+      }
+    },
+    "sensor": {
+      "next_pass": {
+        "name": "Nästa passage"
+      },
+      "next_bright_pass": {
+        "name": "Nästa ljusstarka passage"
+      },
+      "passes_next_24h": {
+        "name": "Passager kommande 24 timmar",
+        "unit_of_measurement": "passager"
+      },
+      "catalog_updated": {
+        "name": "Katalog uppdaterad"
+      }
+    }
+  },
+  "exceptions": {
+    "catalog_unavailable": {
+      "message": "Ingen satellitkatalog: {error}"
+    },
+    "catalog_stale": {
+      "message": "Banelementen i satellitkatalogen är {age} dagar gamla och kunde inte uppdateras ({error}); förutsägelserna är pausade tills en ny katalog har laddats ned"
+    },
+    "catalog_stale_upstream": {
+      "message": "Banelementen i satellitkatalogen är {age} dagar gamla, och webbplatsens katalog är lika gammal; förutsägelserna är pausade tills en ny katalog har laddats ned"
+    }
+  },
+  "issues": {
+    "catalog_stale": {
+      "title": "Satellitförutsägelserna är pausade",
+      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och ingen nyare katalog kunde laddas ned ({error}). Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills en nedladdning lyckas. Kontrollera att Home Assistant når internet: katalogen kommer från webbplatsen See A Satellite Tonight. Meddelandet försvinner av sig självt när en ny katalog kommer in."
+    },
+    "catalog_stale_upstream": {
+      "title": "Satellitförutsägelserna är pausade",
+      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och webbplatsen See A Satellite Tonights egen katalog är lika gammal: det finns inget nyare att ladda ned. Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills webbplatsen publicerar en ny katalog. Det finns inget att åtgärda i Home Assistant: meddelandet försvinner av sig självt när en ny katalog kommer in."
+    }
+  },
+  "common": {
+    "calendar_summary": "🛰️ {title}",
+    "calendar_summary_bright": "🛰️ {title} (ljusstark)",
+    "calendar_appears": "Dyker upp kl. {time} i {direction}, {elevation}° över horisonten.",
+    "calendar_brightest": "Som ljusast kl. {time} i {direction}, {elevation}° över horisonten (magnitud {magnitude}).",
+    "calendar_disappears": "Försvinner kl. {time} i {direction}, {elevation}° över horisonten.",
+    "calendar_together": "{count} satelliter passerar tillsammans.",
+    "calendar_cloud_cover": "Väntat molntäcke: {cloud_cover} %.",
+    "calendar_about": "Om {name}: {url}",
+    "decimal_separator": ",",
+    "compass_n": "N",
+    "compass_nne": "NNÖ",
+    "compass_ne": "NÖ",
+    "compass_ene": "ÖNÖ",
+    "compass_e": "Ö",
+    "compass_ese": "ÖSÖ",
+    "compass_se": "SÖ",
+    "compass_sse": "SSÖ",
+    "compass_s": "S",
+    "compass_ssw": "SSV",
+    "compass_sw": "SV",
+    "compass_wsw": "VSV",
+    "compass_w": "V",
+    "compass_wnw": "VNV",
+    "compass_nw": "NV",
+    "compass_nnw": "NNV"
+  }
+}
