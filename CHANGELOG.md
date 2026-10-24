@@ -4,6 +4,14 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.04
+
+- Home Assistant installs the prediction library from PyPI, as
+  [pysatellitespotter](https://pypi.org/project/pysatellitespotter/), rather than from
+  GitHub. It is the same code as before, a fork of Willem Vooijs's see-a-satellite with
+  its fixes, under its own name, so it never replaces the see-a-satellite that the
+  See A Satellite Tonight integration installs.
+
 ## 1.03
 
 Satellite Tracker is now **Satellite Spotter**, at

@@ -15,7 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
-from see_a_satellite import (
+from pysatellitespotter import (
     CatalogError,
     Satellite,
     dump_catalog,

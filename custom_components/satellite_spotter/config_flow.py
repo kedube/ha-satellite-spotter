@@ -37,7 +37,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-from see_a_satellite import CatalogError
+from pysatellitespotter import CatalogError
 import voluptuous as vol
 
 from . import SatelliteSpotterConfigEntry

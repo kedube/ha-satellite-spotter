@@ -34,7 +34,7 @@ from homeassistant.helpers.json import json_bytes
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
 import numpy as np
-from see_a_satellite import LookAngle, Satellite, Transit
+from pysatellitespotter import LookAngle, Satellite, Transit
 from sgp4.api import Satrec
 import voluptuous as vol
 

@@ -1,4 +1,4 @@
-"""track.py against the see-a-satellite library, and its geometry against Skyfield."""
+"""track.py against the pysatellitespotter library, and its geometry against Skyfield."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import math
 from typing import Any
 
 import numpy as np
+from pysatellitespotter import Satellite, group_transits, predict_transits
 import pytest
-from see_a_satellite import Satellite, group_transits, predict_transits
 from sgp4 import omm
 
 from custom_components.satellite_spotter import track
@@ -25,12 +25,12 @@ PLACES = {
 START = NOW.replace(second=0) - timedelta(minutes=5)
 # The library is a moving target: its private helpers are the reference for
 # the port where they exist.
-private = pytest.importorskip("see_a_satellite.predict")
+private = pytest.importorskip("pysatellitespotter.predict")
 needs_private = pytest.mark.skipif(
     not all(
         hasattr(private, name) for name in ("_magnitudes", "_make_observer", "_sun_ecef", "_gmst")
     ),
-    reason="see-a-satellite no longer has the private helpers this port follows",
+    reason="pysatellitespotter no longer has the private helpers this port follows",
 )
 
 

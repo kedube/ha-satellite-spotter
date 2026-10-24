@@ -16,9 +16,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
+from pysatellitespotter import CatalogError, LookAngle, Satellite, Transit, TransitGroup
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
-from see_a_satellite import CatalogError, LookAngle, Satellite, Transit, TransitGroup
 
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.calendar import PassText, event_times, resolve_language
@@ -123,7 +123,7 @@ async def _events(
     return response[entity_id]["events"]
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     """Every pass of the next five days, in See A Satellite Tonight's words."""
     entry = await _setup(hass)
@@ -163,7 +163,7 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     assert await _events(hass, first_end - timedelta(seconds=1), first_end) == events[:1]
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_follows_the_passes(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -189,7 +189,7 @@ async def test_calendar_follows_the_passes(
     assert state() == ("on", local(following_start))
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_can_be_switched_off(hass: HomeAssistant) -> None:
     entry = await _setup(hass, options={CONF_SHOW_CALENDAR: False})
     assert hass.states.get(CALENDAR) is None
@@ -201,7 +201,7 @@ async def test_calendar_can_be_switched_off(hass: HomeAssistant) -> None:
     assert hass.states.get("sensor.home_next_pass").state != "unavailable"
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_follows_the_option(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -226,7 +226,7 @@ async def test_calendar_follows_the_option(
     assert "Ignored unload request" not in caplog.text
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_switched_on_later(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -248,15 +248,15 @@ async def test_calendar_is_empty_while_predictions_are_paused(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     hass_ws_client,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
 ) -> None:
     """Passes predicted from orbit data too old to trust are not shown."""
     # Predicted from elements 13.6 days old (the median), just in time.
-    mock_see_a_satellite["fetch_site_catalog"].return_value = aged(satellites(), 13)
+    mock_pysatellitespotter["fetch_site_catalog"].return_value = aged(satellites(), 13)
     entry = await _setup(hass)
     # Signed in now, while the test user's token is still valid.
     client = await hass_ws_client(hass)
-    mock_see_a_satellite["fetch_site_catalog"].side_effect = CatalogError("503")
+    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("503")
     later = NOW + timedelta(days=1)
     await advance(hass, freezer, later)
     assert not entry.runtime_data.last_update_success
@@ -280,7 +280,7 @@ async def test_calendar_is_empty_while_predictions_are_paused(
 
 
 @needs_subscribe
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_wake_ups_do_not_resend_the_events(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
 ) -> None:
@@ -346,7 +346,7 @@ async def test_wake_ups_do_not_resend_the_events(
     await hass.async_block_till_done()
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_trigger_before_a_pass(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -393,7 +393,7 @@ async def test_calendar_trigger_before_a_pass(
     await hass.services.async_call("automation", "turn_off", {"entity_id": "all"}, blocking=True)
 
 
-@pytest.mark.usefixtures("mock_see_a_satellite")
+@pytest.mark.usefixtures("mock_pysatellitespotter")
 @pytest.mark.parametrize(
     ("language", "summary", "appears", "brightest"),
     [

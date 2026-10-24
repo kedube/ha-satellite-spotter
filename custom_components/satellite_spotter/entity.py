@@ -20,7 +20,7 @@ from .const import (
 from .coordinator import SatellitePass, SatelliteSpotterCoordinator
 
 if TYPE_CHECKING:
-    from see_a_satellite import Satellite
+    from pysatellitespotter import Satellite
 
 _COMPASS = (
     "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",

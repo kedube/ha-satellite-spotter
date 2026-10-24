@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
-from see_a_satellite import LookAngle
+from pysatellitespotter import LookAngle
 
 from . import SatelliteSpotterConfigEntry
 from .const import DOMAIN

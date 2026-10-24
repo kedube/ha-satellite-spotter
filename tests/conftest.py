@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
+from pysatellitespotter import Satellite
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from see_a_satellite import Satellite
 
 from custom_components.satellite_spotter.const import DOMAIN
 
@@ -39,7 +39,7 @@ def catalog() -> list[Satellite]:
 
 
 @pytest.fixture
-def mock_see_a_satellite(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
+def mock_pysatellitespotter(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
     """Mock the library's network calls (the catalog and the cloud cover forecast)."""
     with (
         patch(
@@ -78,7 +78,7 @@ async def init_integration(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
 ) -> MockConfigEntry:
     """Set up the Utrecht location at NOW."""
     freezer.move_to(NOW)

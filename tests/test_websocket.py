@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from pysatellitespotter import CatalogError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from see_a_satellite import CatalogError
 
 from custom_components.satellite_spotter.catalog import async_get_catalog
 from custom_components.satellite_spotter.const import (
@@ -528,10 +528,10 @@ async def test_paused_predictions(
     freezer: FrozenDateTimeFactory,
     ws: Any,
     init_integration: MockConfigEntry,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
 ) -> None:
     """Orbit data too old to trust: no passes, and the reason why."""
-    mock_see_a_satellite["fetch_site_catalog"].side_effect = CatalogError("HTTP 503")
+    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("HTTP 503")
     later = NOW + timedelta(days=15)
     # Past the age limit, even before the next refresh notices.
     freezer.move_to(later)

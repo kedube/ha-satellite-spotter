@@ -10,8 +10,8 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
+from pysatellitespotter import Satellite, dump_catalog, parse_site_catalog
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
-from see_a_satellite import Satellite, dump_catalog, parse_site_catalog
 
 from custom_components.satellite_spotter.const import STORAGE_KEY
 

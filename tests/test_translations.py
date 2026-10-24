@@ -135,14 +135,9 @@ def test_manifest_and_requirements_agree() -> None:
     assert manifest["domain"] == "satellite_spotter"
     assert manifest["name"] == "Satellite Spotter"
     (requirement,) = manifest["requirements"]
-    pin = re.fullmatch(
-        r"git\+https://github\.com/kedube/see-a-satellite@(?P<tag>[\d.]+)"
-        r"#see-a-satellite==(?P<version>[\d.]+)",
-        requirement,
-    )
-    assert pin is not None
-    assert pin["tag"] == pin["version"]
-    tests = (ROOT / "requirements_test.txt").read_text()
-    assert f"git+https://github.com/kedube/see-a-satellite@{pin['tag']}" in tests
+    # Home Assistant installs it from PyPI, so it is pinned by version.
+    assert re.fullmatch(r"pysatellitespotter==[\d.]+", requirement)
+    for name in ("requirements_test.txt", "requirements_test_oldest.txt"):
+        assert requirement in (ROOT / name).read_text().splitlines()
     hacs = _load(ROOT / "hacs.json")
     assert hacs["name"] == "Satellite Spotter"

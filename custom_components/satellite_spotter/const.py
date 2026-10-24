@@ -14,7 +14,7 @@ USER_AGENT: Final = (
     f"HomeAssistant-SatelliteSpotter/{VERSION} (+https://github.com/kedube/ha-satellite-spotter)"
 )
 
-# James Darpinian's website, whose predictions the see-a-satellite library ports.
+# James Darpinian's website, whose predictions the pysatellitespotter library ports.
 WEBSITE_URL: Final = "https://james.darpinian.com/satellites/"
 ATTRIBUTION: Final = (
     "Predictions by See A Satellite Tonight (james.darpinian.com/satellites), "

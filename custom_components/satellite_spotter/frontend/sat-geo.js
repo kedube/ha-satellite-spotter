@@ -35,7 +35,7 @@ export function mercator(lat, lon, limit = MERCATOR_MAX_LAT) {
 }
 
 /**
- * Greenwich mean sidereal time in radians (IAU 1982, as see-a-satellite's
+ * Greenwich mean sidereal time in radians (IAU 1982, as pysatellitespotter's
  * `_gmst`) for a Julian date in UT1 (UTC is near enough).
  */
 export function gmst(jd) {

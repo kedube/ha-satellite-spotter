@@ -21,10 +21,11 @@ The predictions are those of James Darpinian's
 [See A Satellite Tonight](https://james.darpinian.com/satellites/): his catalogue of the
 satellites worth looking for, and his model of how bright each one looks and when your sky
 is dark enough to see it. Willem Vooijs ported them to Python, with James's permission, as
-the [see-a-satellite](https://github.com/kedube/see-a-satellite) library. Satellite Spotter
-runs that library on your Home Assistant, so you get the website's passes, worked out
-locally. Nothing about where you are goes to the website; only the optional cloud forecast
-and the maps and street photos your browser loads see your area (see
+the see-a-satellite library. Satellite Spotter runs its fork,
+[pysatellitespotter](https://github.com/kedube/pysatellitespotter), on your Home
+Assistant, so you get the website's passes, worked out locally. Nothing about where you are
+goes to the website; only the optional cloud forecast and the maps and street photos your
+browser loads see your area (see
 [Data sources, privacy and etiquette](#data-sources-privacy-and-etiquette)).
 
 [How it works](#how-it-works) · [Installation](#installation) · [Setup](#setup) ·
@@ -128,7 +129,7 @@ with the same model. Your browser only draws.
 The passes are the website's. The library was checked against See A Satellite Tonight for
 every pass the website showed over five days: start times agreed within 9 s, end times
 within 19 s and magnitudes within 0.03 (the
-[library's README](https://github.com/kedube/see-a-satellite#what-it-computes) has the
+[library's README](https://github.com/kedube/pysatellitespotter#what-it-computes) has the
 details).
 
 What the page draws comes from `track.py`, written from the library's own formulas: its
@@ -190,8 +191,8 @@ Or add it by hand:
 6. [Add the integration](#setup).
 
 Satellite Spotter needs Home Assistant 2026.2 or newer. The first time Home Assistant loads
-it, it installs the see-a-satellite library from GitHub (the version it uses is not on
-PyPI), so Home Assistant needs to reach github.com then.
+it, it installs the [pysatellitespotter](https://pypi.org/project/pysatellitespotter/)
+library from PyPI.
 
 ### Updating
 
@@ -308,10 +309,10 @@ succeeds (see [Troubleshooting](#troubleshooting)).
 
 Satellite Spotter gives you all that the
 [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
-does, from the same library. With Home Assistant in English, its entity ids, attributes
-and calendar text are the same, so automations written for it, including the examples in
-its README, keep working. The one difference: a magnitude between -0.05 and 0 now reads
-`0.0` in the calendar text, where it read `-0.0`.
+does, from a fork of the same library. With Home Assistant in English, its entity ids,
+attributes and calendar text are the same, so automations written for it, including the
+examples in its README, keep working. The one difference: a magnitude between -0.05 and 0
+now reads `0.0` in the calendar text, where it read `-0.0`.
 
 The two can be installed side by side; they are separate integrations, each with its own
 storage. With a location of the same name in both, though, whichever you add second gets
@@ -1016,9 +1017,10 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
   permission; the "Why not?" explanation when no pass is coming is adapted from his
   website. Satellite Spotter is not made or supported by James: please report problems
   here.
-* **The library**, [see-a-satellite](https://github.com/kedube/see-a-satellite), is Willem
-  Vooijs's Python port of the website (MIT); Satellite Spotter uses version 0.1.3. Its
-  entities, calendar text and automation examples follow Willem's
+* **The library**, [pysatellitespotter](https://github.com/kedube/pysatellitespotter), is a
+  fork of [see-a-satellite](https://github.com/wildekek/see-a-satellite), Willem Vooijs's
+  Python port of the website (MIT); Satellite Spotter uses version 0.2.0. Its entities,
+  calendar text and automation examples follow Willem's
   [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
   (MIT).
 * **Orbits** are computed with [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes,

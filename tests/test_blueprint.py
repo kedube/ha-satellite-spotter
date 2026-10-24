@@ -159,7 +159,7 @@ async def test_other_languages(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_see_a_satellite: dict[str, Any],
+    mock_pysatellitespotter: dict[str, Any],
 ) -> None:
     """The calendar speaks German: the notification quotes it, and still knows bright and clouds."""
     hass.config.language = "de"

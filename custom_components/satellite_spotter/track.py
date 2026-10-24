@@ -1,10 +1,10 @@
 """Where a satellite is, whether it is sunlit and how bright it looks, along a track.
 
-The see-a-satellite library predicts when satellites are visible. Drawing a
+The pysatellitespotter library predicts when satellites are visible. Drawing a
 pass on the globe and in the street view needs more: positions every few
 seconds from horizon to horizon, the magnitude even while it is too faint to
 count, and why a pass begins and ends. This module computes them with the
-library's own formulas (see_a_satellite/predict.py, a port of James
+library's own formulas (pysatellitespotter/predict.py, a port of James
 Darpinian's See A Satellite Tonight), but only through its public API, sgp4
 and numpy: the library's helpers are private and may change without notice.
 tests/test_track.py checks that this module agrees with them exactly.
@@ -24,7 +24,7 @@ import numpy as np
 from sgp4.api import Satrec, SatrecArray
 
 if TYPE_CHECKING:
-    from see_a_satellite import Satellite
+    from pysatellitespotter import Satellite
 
 # WGS84, as in the library.
 _A = 6378137.0

@@ -1,6 +1,6 @@
 """Satellite Spotter: when satellites are visible from home, on a 3D globe and at street level.
 
-Predictions come from the see-a-satellite library, a port of James Darpinian's
+Predictions come from the pysatellitespotter library, a port of James Darpinian's
 See A Satellite Tonight (https://james.darpinian.com/satellites/).
 """
 

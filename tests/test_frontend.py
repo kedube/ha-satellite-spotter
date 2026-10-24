@@ -17,9 +17,9 @@ from homeassistant.components.http.static import CACHE_HEADER
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
+from pysatellitespotter import CatalogError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
-from see_a_satellite import CatalogError
 
 from custom_components.satellite_spotter import frontend as sat_frontend
 from custom_components.satellite_spotter.const import (
@@ -201,11 +201,11 @@ async def test_panel_while_setup_retries(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
     hass_ws_client,
 ) -> None:
     freezer.move_to(NOW)
-    mock_see_a_satellite["fetch_site_catalog"].side_effect = CatalogError("HTTP 500")
+    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("HTTP 500")
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -264,7 +264,7 @@ async def test_failed_setup_says_so(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
     hass_ws_client,
 ) -> None:
     """A location whose setup failed is told so, not to wait: waiting will not fix it."""
@@ -342,7 +342,7 @@ async def test_existing_dashboard_keeps_its_address(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_see_a_satellite: dict[str, AsyncMock],
+    mock_pysatellitespotter: dict[str, AsyncMock],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A dashboard at /satellite-spotter must not stop the location from setting up."""
