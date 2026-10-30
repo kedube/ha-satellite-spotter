@@ -1,6 +1,10 @@
 {
   "domain": "satellite_spotter",
   "name": "Satellite Spotter",
+  "categories": [
+    "vehicles_transport.flights",
+    "weather_alerts.forecasts"
+  ],
   "codeowners": [
     "@kedube"
   ],

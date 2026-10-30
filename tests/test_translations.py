@@ -8,6 +8,7 @@ import re
 import string
 from typing import Any
 
+import homeassistant
 import pytest
 
 from custom_components.satellite_spotter.binary_sensor import BINARY_SENSORS
@@ -23,6 +24,8 @@ from .common import INTEGRATION, ROOT
 
 TRANSLATIONS = INTEGRATION / "translations"
 LANGUAGES = sorted(p.stem for p in TRANSLATIONS.glob("*.json"))
+# The integration categories arrived in Home Assistant 2026.11.
+CATEGORIES = Path(homeassistant.__file__).parent / "generated" / "integration_categories.json"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -141,3 +144,17 @@ def test_manifest_and_requirements_agree() -> None:
         assert requirement in (ROOT / name).read_text().splitlines()
     hacs = _load(ROOT / "hacs.json")
     assert hacs["name"] == "Satellite Spotter"
+
+
+@pytest.mark.skipif(
+    not CATEGORIES.is_file(), reason="integration categories need a newer Home Assistant"
+)
+def test_manifest_categories_are_known() -> None:
+    """Home Assistant knows the categories; hassfest only warns about one it does not."""
+    known = set()
+    for category in json.loads(CATEGORIES.read_text(encoding="utf-8")):
+        known.add(category["slug"])
+        known |= {f"{category['slug']}.{sub['slug']}" for sub in category["subcategories"]}
+    categories = _load(INTEGRATION / "manifest.json")["categories"]
+    assert 1 <= len(categories) <= 3
+    assert set(categories) <= known

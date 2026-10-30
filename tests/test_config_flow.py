@@ -17,6 +17,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
+from homeassistant.helpers import config_validation as cv
 from multidict import CIMultiDict, CIMultiDictProxy
 from pysatellitespotter import CatalogError
 import pytest
@@ -190,6 +191,22 @@ async def test_wrapped_longitude_is_a_duplicate(hass: HomeAssistant, longitude: 
     result = await _add(hass, _user_input(lon=longitude))
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_location_field_leaves_the_range_to_the_flow(hass: HomeAssistant) -> None:
+    """The form shows Home Assistant's location picker, which lets any number through.
+
+    Since Home Assistant 2026.11 its own selector refuses what the flow wraps or explains.
+    """
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    location = next(
+        value for key, value in result["data_schema"].schema.items() if key == CONF_LOCATION
+    )
+    assert cv.custom_serializer(location) == {"selector": {"location": {"radius": False}}}
+    assert location({CONF_LATITUDE: "423.601", CONF_LONGITUDE: 288.94}) == {
+        CONF_LATITUDE: 423.601,
+        CONF_LONGITUDE: 288.94,
+    }
 
 
 def _reconfigure_input(lat: float, lon: float, elevation: float = 40) -> dict[str, Any]:

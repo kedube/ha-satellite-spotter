@@ -18,6 +18,7 @@ from homeassistant.const import (
     CONF_LOCATION,
     CONF_LONGITUDE,
     CONF_NAME,
+    CONF_RADIUS,
     UnitOfLength,
     UnitOfTime,
 )
@@ -74,6 +75,30 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NAME = "Home"
 
+# What the location selector checked until Home Assistant 2026.11.
+_LOCATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_LATITUDE): vol.Coerce(float),
+        vol.Required(CONF_LONGITUDE): vol.Coerce(float),
+        vol.Optional(CONF_RADIUS): vol.Coerce(float),
+    }
+)
+
+
+class _LocationSelector(LocationSelector):
+    """The location selector, with the range checks left to the flow.
+
+    Since Home Assistant 2026.11 the selector itself refuses a latitude beyond
+    ±90 and a longitude beyond ±180, before the flow can bring a 0-360
+    longitude into range or say what is wrong with a latitude in its own words.
+    """
+
+    @override
+    def __call__(self, data: Any) -> dict[str, float]:
+        """Coerce the coordinates to numbers, as the selector did until 2026.11."""
+        location: dict[str, float] = _LOCATION_SCHEMA(data)
+        return location
+
 
 def _number(
     minimum: float,
@@ -115,7 +140,7 @@ def _elevation_selector() -> NumberSelector:
 
 
 def _location_selector() -> LocationSelector:
-    return LocationSelector(LocationSelectorConfig(radius=False))
+    return _LocationSelector(LocationSelectorConfig(radius=False))
 
 
 class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
