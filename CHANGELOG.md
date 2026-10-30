@@ -4,6 +4,15 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.05
+
+- Ready for Home Assistant 2026.11. Its location picker now refuses a latitude beyond
+  ±90° and a longitude beyond ±180° itself, so adding or moving a location would no
+  longer accept a longitude written 0–360°, or say what is wrong with a latitude in its
+  own words. Both work as before, on 2026.11 and on older versions.
+- Listed under **Vehicles & transport › Flights**, next to the International Space
+  Station integration, and **Weather & alerts › Forecasts** when browsing integrations.
+
 ## 1.04
 
 - Home Assistant installs the prediction library from PyPI, as
