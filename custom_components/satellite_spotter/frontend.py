@@ -846,7 +846,11 @@ def ws_catalog(
 def ws_street(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    """Where a location's street photos come from, with the keys: the browser fetches them."""
+    """Where street photos come from; only admins receive keys for browser requests."""
     if (coordinator := _coordinator(hass, connection, msg)) is None:
         return
-    connection.send_result(msg["id"], street_payload(coordinator.config_entry.options))
+    payload = street_payload(coordinator.config_entry.options)
+    if not connection.user.is_admin:
+        payload["mapillary_token"] = None
+        payload["google_api_key"] = None
+    connection.send_result(msg["id"], payload)

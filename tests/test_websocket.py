@@ -487,6 +487,35 @@ async def test_street(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert (await ws("street"))["result"]["source"] == "auto"
 
 
+async def test_street_hides_keys_from_non_admin(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_read_only_access_token: str,
+    hass_ws_client: Any,
+) -> None:
+    hass.config_entries.async_update_entry(
+        init_integration,
+        options={
+            CONF_STREET_VIEW: {
+                CONF_STREET_SOURCE: "google",
+                CONF_GOOGLE_API_KEY: "AIza-key",
+                CONF_MAPILLARY_TOKEN: "MLY|1|2",
+            }
+        },
+    )
+    await hass.async_block_till_done()
+    client = await hass_ws_client(hass, access_token=hass_read_only_access_token)
+    for fields in ({}, {"entry_id": init_integration.entry_id}):
+        await client.send_json_auto_id({"type": f"{DOMAIN}/street", **fields})
+        msg = await client.receive_json()
+        assert msg["success"], msg
+        assert msg["result"] == {
+            "source": "google",
+            "mapillary_token": None,
+            "google_api_key": None,
+        }
+
+
 @pytest.mark.parametrize(
     ("kind", "fields"),
     [
