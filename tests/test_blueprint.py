@@ -13,11 +13,11 @@ from homeassistant.components.blueprint.schemas import BLUEPRINT_SCHEMA
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.setup import async_setup_component
-from homeassistant.util import dt as dt_util, yaml as yaml_util
+from homeassistant.util import yaml as yaml_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_capture_events
 
-from custom_components.satellite_spotter.calendar import event_times
+from custom_components.satellite_spotter.calendar import async_pass_text, event_times
 from custom_components.satellite_spotter.const import DOMAIN
 from custom_components.satellite_spotter.coordinator import SatellitePass
 
@@ -116,6 +116,7 @@ async def test_every_pass_is_announced(
     assert min(gaps) < timedelta(minutes=10)
     notifications = await _run(hass, freezer, passes, bright_only=False, max_cloud_cover=100)
     assert len(notifications) == len(passes)
+    text = await async_pass_text(hass)
     for event, p in zip(notifications, passes, strict=True):
         # The location the calendar belongs to, then the pass, in the street view.
         link = f"/satellite-spotter?entry_id={init_integration.entry_id}&pass={p.id}&view=street"
@@ -126,18 +127,9 @@ async def test_every_pass_is_announced(
         }
         assert event.data["title"].endswith(" in 10 min")
         assert event.data["title"].startswith("🛰️ ")
-        assert event.data["message"].startswith(f"Look {_compass(p.primary.rise.azimuth)} at ")
+        assert event.data["message"] == " ".join(text.description(p).splitlines()[:-1])
 
-    p = passes[0]
-    t = p.primary
-    local = dt_util.as_local
     assert notifications[0].data["title"] == "🛰️ TERRA in 10 min"
-    assert notifications[0].data["message"] == (
-        f"Look {_compass(t.rise.azimuth)} at {local(t.start):%H:%M}, {t.rise.elevation:.0f}° up. "
-        f"Brightest {t.brightest.elevation:.0f}° up in the {_compass(t.brightest.azimuth)}, "
-        f"magnitude {round(t.min_magnitude, 1) + 0.0}; gone in the {_compass(t.set.azimuth)} "
-        f"by {local(t.end):%H:%M}. Cloud cover {p.cloud_cover}%."
-    )
 
 
 async def test_bright_passes_under_clear_skies(
@@ -179,9 +171,9 @@ async def test_other_languages(
     assert event.data["data"]["url"] == (
         f"/satellite-spotter?entry_id={mock_config_entry.entry_id}&pass={bright.id}&view=street"
     )
-    assert event.data["message"].startswith("Erscheint um ")
-    assert "Am hellsten um " in event.data["message"]
-    assert "(Helligkeit " in event.data["message"]
+    assert event.data["message"].startswith("Um ")
+    assert "Beste Sicht um " in event.data["message"]
+    assert "Helligkeit " in event.data["message"]
 
 
 @pytest.mark.parametrize(
@@ -203,14 +195,18 @@ async def test_bright_passes_in_every_language(hass: HomeAssistant, language: st
                     common["calendar_brightest"].format(
                         time="20:33:00", direction="Y", elevation="45", magnitude="-1,2"
                     ),
+                    common["calendar_disappears"].format(
+                        time="20:35:00", direction="Z", elevation="15"
+                    ),
                     common["calendar_cloud_cover"].format(cloud_cover=37),
+                    common["calendar_about"].format(name=title, url="https://example.com"),
                 ]
             )
             variables = _variables(hass, summary, description, start)
             assert variables["bright"] is bright, (language, summary)
             assert variables["satellite"] == title, (language, summary)
             assert variables["cloud_cover"] == 37
-            assert variables["magnitude"] == -1.2
+            assert variables["details"] == " ".join(description.splitlines()[:-1])
             # No such calendar in the registry: a link without the location.
             assert variables["entry_id"] == ""
             assert variables["link"] == "/satellite-spotter?pass=53807-1791659316&view=street"
@@ -222,17 +218,18 @@ async def test_without_a_forecast(hass: HomeAssistant, freezer: FrozenDateTimeFa
     variables = _variables(
         hass,
         "🛰️ ISS (bright)",
-        "Appears at 20:31:02 in the W, 21° up.\n"
-        "Brightest at 20:32:30 in the NW, 40° up (magnitude -2.5).\n"
-        "Disappears at 20:34:55 in the NE, 10° up.\n"
-        "About ISS: https://en.wikipedia.org/wiki/International_Space_Station",
+        "At 20:31:02, look toward W: 21° above the horizon.\n"
+        "Best view at 20:32:30: NW, 40° high, magnitude -2.5.\n"
+        "Last visible at 20:34:55 toward NE, 10° high.\n"
+        "Object: ISS — https://en.wikipedia.org/wiki/International_Space_Station",
         NOW + timedelta(minutes=10),
     )
     assert variables["cloud_cover"] is None
     assert variables["minutes"] == 10
     assert variables["details"] == (
-        "Look W at 20:31, 21° up. Brightest 40° up in the NW, magnitude -2.5; "
-        "gone in the NE by 20:34."
+        "At 20:31:02, look toward W: 21° above the horizon. "
+        "Best view at 20:32:30: NW, 40° high, magnitude -2.5. "
+        "Last visible at 20:34:55 toward NE, 10° high."
     )
 
 
@@ -260,9 +257,3 @@ def test_the_description_says_when_the_tap_opens_the_pass() -> None:
     strings = json.loads((INTEGRATION / "strings.json").read_text())
     option = strings["options"]["step"]["init"]["data"]["show_in_sidebar"]
     assert f'"{option}"' in description
-
-
-def _compass(azimuth: float) -> str:
-    points = ("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-              "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")  # fmt: skip
-    return points[round(azimuth / 22.5) % 16]

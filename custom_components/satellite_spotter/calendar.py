@@ -1,9 +1,4 @@
-"""Calendar of the visible passes, for Home Assistant's calendar and calendar triggers.
-
-The English text is exactly that of the See A Satellite Tonight integration,
-whose README shows automations that read it with regular expressions; other
-languages get it translated.
-"""
+"""Calendar of visible passes, with translated viewing directions and brightness."""
 
 from __future__ import annotations
 
@@ -22,7 +17,8 @@ from pysatellitespotter import LookAngle
 from . import SatelliteSpotterConfigEntry
 from .const import DOMAIN
 from .coordinator import SatelliteData, SatellitePass, SatelliteSpotterCoordinator
-from .entity import SatelliteSpotterEntity, compass, info_url, pass_title
+from .entity import SatelliteSpotterEntity, compass, pass_title
+from .links import info_url
 
 PARALLEL_UPDATES = 0
 

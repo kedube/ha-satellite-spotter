@@ -24,79 +24,38 @@ from .entity import SatelliteSpotterEntity, compass, magnitude, pass_attributes,
 
 PARALLEL_UPDATES = 0
 
+# Keep the lists out of the recorder database: they are large and change with
+# every pass.
+_LIST_ATTRIBUTES = frozenset({"passes", "satellites", "info_url"})
+
 
 @dataclass(frozen=True, kw_only=True)
-class SatelliteSensorDescription(SensorEntityDescription):
-    """Describes a sensor computed from the predicted passes."""
+class PassSensorDescription(SensorEntityDescription):
+    """Describes a sensor that follows one pass."""
 
-    value_fn: Callable[[SatelliteSpotterCoordinator, datetime], Any]
-    attrs_fn: Callable[[SatelliteSpotterCoordinator, datetime], dict[str, Any]] | None = None
-    # Stays available while predictions are paused, to show why.
-    available_when_stale: bool = False
+    # The pass to report, or None when there is none.
+    pass_fn: Callable[[SatelliteSpotterCoordinator, datetime], SatellitePass | None]
 
 
-def _start(p: SatellitePass | None) -> datetime | None:
-    return None if p is None else p.start
-
-
-def _upcoming(c: SatelliteSpotterCoordinator, now: datetime) -> list[SatellitePass]:
-    return [] if c.data is None else c.data.upcoming(now)
-
-
-def _upcoming_attrs(c: SatelliteSpotterCoordinator, now: datetime) -> dict[str, Any]:
-    return {
-        "passes": [
-            {
-                "start": p.start.isoformat(),
-                "satellite": pass_title(p),
-                "magnitude": magnitude(p.group.min_magnitude),
-                "direction": compass(p.primary.rise.azimuth),
-                "cloud_cover": p.cloud_cover,
-            }
-            for p in _upcoming(c, now)[:MAX_LISTED_PASSES]
-        ]
-    }
-
-
-def _catalog_attrs(c: SatelliteSpotterCoordinator, now: datetime) -> dict[str, Any]:
-    satellites = c.catalog.satellites or []
-    age = c.catalog.median_epoch_age(now)
-    return {
-        "satellites": len(satellites),
-        # Half the satellites have older orbital elements than this.
-        "age_days": None if age is None else round(age.total_seconds() / 86400, 1),
-        "stale": age is not None and age > CATALOG_MAX_AGE,
-        "last_download_error": c.catalog.last_error,
-    }
-
-
-SENSORS: tuple[SatelliteSensorDescription, ...] = (
-    SatelliteSensorDescription(
+PASS_SENSORS: tuple[PassSensorDescription, ...] = (
+    PassSensorDescription(
         key="next_pass",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda c, now: _start(c.next_pass(now)),
-        attrs_fn=lambda c, now: pass_attributes(c.next_pass(now)),
+        pass_fn=lambda c, now: c.next_pass(now),
     ),
-    SatelliteSensorDescription(
+    PassSensorDescription(
         key="next_bright_pass",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda c, now: _start(c.next_bright_pass(now)),
-        attrs_fn=lambda c, now: pass_attributes(c.next_bright_pass(now)),
-    ),
-    SatelliteSensorDescription(
-        key="passes_next_24h",
-        value_fn=lambda c, now: len(_upcoming(c, now)),
-        attrs_fn=_upcoming_attrs,
-    ),
-    SatelliteSensorDescription(
-        key="catalog_updated",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda c, now: c.catalog.updated,
-        attrs_fn=_catalog_attrs,
-        available_when_stale=True,
+        pass_fn=lambda c, now: c.next_bright_pass(now),
     ),
 )
+PASS_COUNT_SENSOR = SensorEntityDescription(key="passes_next_24h")
+CATALOG_SENSOR = SensorEntityDescription(
+    key="catalog_updated",
+    device_class=SensorDeviceClass.TIMESTAMP,
+    entity_category=EntityCategory.DIAGNOSTIC,
+)
+SENSORS: tuple[SensorEntityDescription, ...] = (*PASS_SENSORS, PASS_COUNT_SENSOR, CATALOG_SENSOR)
 
 
 async def async_setup_entry(
@@ -107,50 +66,105 @@ async def async_setup_entry(
     """Set up the sensors."""
     coordinator = entry.runtime_data
     async_add_entities(
-        (CatalogSensor if d.available_when_stale else SatelliteSensor)(coordinator, d)
-        for d in SENSORS
+        [
+            *(PassSensor(coordinator, description) for description in PASS_SENSORS),
+            PassCountSensor(coordinator, PASS_COUNT_SENSOR),
+            CatalogSensor(coordinator, CATALOG_SENSOR),
+        ]
     )
 
 
-class SatelliteSensor(SatelliteSpotterEntity, SensorEntity):
-    """A sensor derived from the predicted passes."""
-
-    entity_description: SatelliteSensorDescription
-    # Keep the lists out of the recorder database: they are large and change
-    # with every pass.
-    _unrecorded_attributes = frozenset({"passes", "satellites", "info_url"})
+class LocationSensor(SatelliteSpotterEntity, SensorEntity):
+    """A sensor of one location, set up from its description."""
 
     def __init__(
-        self, coordinator: SatelliteSpotterCoordinator, description: SatelliteSensorDescription
+        self, coordinator: SatelliteSpotterCoordinator, description: SensorEntityDescription
     ) -> None:
         """Initialise the sensor."""
         super().__init__(coordinator, description.key)
         self.entity_description = description
 
+
+class PassSensor(LocationSensor):
+    """When a pass starts, with the pass's details."""
+
+    entity_description: PassSensorDescription
+    _unrecorded_attributes = _LIST_ATTRIBUTES
+
+    def _followed_pass(self) -> SatellitePass | None:
+        return self.entity_description.pass_fn(self.coordinator, dt_util.utcnow())
+
+    @property
+    @override
+    def native_value(self) -> datetime | None:
+        """Return when the pass starts."""
+        followed = self._followed_pass()
+        return None if followed is None else followed.start
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the details of the pass."""
+        return pass_attributes(self._followed_pass())
+
+
+class PassCountSensor(LocationSensor):
+    """How many passes are under way or start within a day, and which."""
+
+    _unrecorded_attributes = _LIST_ATTRIBUTES
+
+    def _upcoming(self) -> list[SatellitePass]:
+        data = self.coordinator.data
+        return [] if data is None else data.upcoming(dt_util.utcnow())
+
+    @property
+    @override
+    def native_value(self) -> int:
+        """Return the number of passes."""
+        return len(self._upcoming())
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return a short description of each pass, up to the limit."""
+        return {"passes": [_listed_pass(p) for p in self._upcoming()[:MAX_LISTED_PASSES]]}
+
+
+def _listed_pass(p: SatellitePass) -> dict[str, Any]:
+    return {
+        "start": p.start.isoformat(),
+        "satellite": pass_title(p),
+        "magnitude": magnitude(p.group.min_magnitude),
+        "direction": compass(p.primary.rise.azimuth),
+        "cloud_cover": p.cloud_cover,
+    }
+
+
+class CatalogSensor(LocationSensor):
+    """When the catalog was downloaded; its satellite count is worth a history."""
+
     @property
     @override
     def available(self) -> bool:
-        """Return True while there is something to show."""
-        if self.entity_description.available_when_stale:
-            return self.coordinator.catalog.satellites is not None
-        return super().available
+        """Stay available while predictions are paused, to show why."""
+        return self.coordinator.catalog.satellites is not None
 
     @property
     @override
-    def native_value(self) -> Any:
-        """Return the state."""
-        return self.entity_description.value_fn(self.coordinator, dt_util.utcnow())
+    def native_value(self) -> datetime | None:
+        """Return when the catalog was downloaded."""
+        return self.coordinator.catalog.updated
 
     @property
     @override
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return details of the pass (or passes, or catalog)."""
-        if self.entity_description.attrs_fn is None:
-            return None
-        return self.entity_description.attrs_fn(self.coordinator, dt_util.utcnow())
-
-
-class CatalogSensor(SatelliteSensor):
-    """When the catalog was downloaded; its satellite count is worth a history."""
-
-    _unrecorded_attributes = frozenset()
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the catalog's size and age, and the last download error."""
+        catalog = self.coordinator.catalog
+        age = catalog.median_epoch_age(dt_util.utcnow())
+        return {
+            "satellites": len(catalog.satellites or []),
+            # Half the satellites have older orbital elements than this.
+            "age_days": None if age is None else round(age.total_seconds() / 86400, 1),
+            "stale": age is not None and age > CATALOG_MAX_AGE,
+            "last_download_error": catalog.last_error,
+        }

@@ -83,11 +83,9 @@ triggers:
     offset: !input notice
     entity_id: !input calendar
 
-# The event's text is the calendar's, in Home Assistant's language. The parts
-# read here are the same in every language: the bright mark, the magnitude in
-# brackets and the cloud cover (%). In English the times, directions and
-# elevations too, for a short message; other languages get the event's own
-# first lines.
+# The calendar supplies the message in Home Assistant's language. Its final
+# line is an object link, which belongs in the calendar rather than a phone
+# notification. The cloud percentage and bright mark are used for filtering.
 variables:
   bright_only: !input bright_only
   max_cloud_cover: !input max_cloud_cover
@@ -108,20 +106,8 @@ variables:
   cloud_cover: >-
     {% set found = description | regex_findall('(\\d+)\\s?%') %}
     {{ found[0] | int if found else none }}
-  magnitude: >-
-    {% set found = description | regex_findall('(-?\\d+[.,]\\d)(?: ?mag)?\\)') %}
-    {{ found[0] | replace(',', '.') | float if found else none }}
   details: >-
-    {% set looks = description | regex_findall('at (\\d{1,2}):(\\d{2}):\\d{2} in the ([NESW]{1,3}), (\\d+)° up') %}
-    {% if looks | length == 3 %}
-    {%- set rise, best, gone = looks -%}
-    Look {{ rise[2] }} at {{ rise[0] }}:{{ rise[1] }}, {{ rise[3] }}° up. Brightest
-    {{ best[3] }}° up in the {{ best[2] }}{{ ', magnitude ' ~ magnitude if magnitude is not none }};
-    gone in the {{ gone[2] }} by {{ gone[0] }}:{{ gone[1] }}.
-    {%- if cloud_cover is not none %} Cloud cover {{ cloud_cover }}%.{% endif %}
-    {%- else -%}
-    {{ description.split('\n')[:2] | join(' ') }}
-    {%- endif %}
+    {{ description.split('\n')[:-1] | join(' ') }}
   link: >-
     /satellite-spotter?{{ ('entry_id=' ~ entry_id ~ '&') if entry_id else '' }}pass={{ pass_id }}&view=street
 

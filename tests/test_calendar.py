@@ -29,7 +29,8 @@ from custom_components.satellite_spotter.const import (
     UPCOMING_WINDOW,
 )
 from custom_components.satellite_spotter.coordinator import SatellitePass
-from custom_components.satellite_spotter.entity import info_url, pass_title
+from custom_components.satellite_spotter.entity import compass, pass_title
+from custom_components.satellite_spotter.links import info_url
 
 from .common import INTEGRATION, NOW, UTRECHT, UTRECHT_ID, advance, aged, satellites
 
@@ -40,54 +41,6 @@ HAS_SUBSCRIBE = hasattr(calendar_component, "handle_calendar_event_subscribe")
 needs_subscribe = pytest.mark.skipif(
     not HAS_SUBSCRIBE, reason="calendar/event/subscribe needs a newer Home Assistant"
 )
-
-_COMPASS = (
-    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
-)  # fmt: skip
-
-
-# --- The See A Satellite Tonight integration's text, verbatim (MIT) --------------
-# custom_components/see_a_satellite/{entity,calendar}.py at 4ebcd4c: the
-# oracle for the English text, which automations parse with regexes.
-
-
-def _ref_compass(azimuth: float) -> str:
-    return _COMPASS[round(azimuth / 22.5) % 16]
-
-
-def _ref_look(angle: LookAngle) -> str:
-    return f"{_ref_compass(angle.azimuth)}, {angle.elevation:.0f}° up"
-
-
-def _ref_summary(p: SatellitePass) -> str:
-    title = p.group.primary.satellite.name.removesuffix(" prediction")
-    if (extra := p.group.satellite_count - 1) > 0:
-        title += f" +{extra}"
-    summary = f"🛰️ {title}"
-    if p.bright:
-        summary += " (bright)"
-    return summary
-
-
-def _ref_description(p: SatellitePass) -> str:
-    t = p.group.primary
-    local = dt_util.as_local
-    lines = [
-        f"Appears at {local(t.start):%H:%M:%S} in the {_ref_look(t.rise)}.",
-        f"Brightest at {local(t.brightest_time):%H:%M:%S} in the {_ref_look(t.brightest)}"
-        f" (magnitude {t.min_magnitude:.1f}).",
-        f"Disappears at {local(t.end):%H:%M:%S} in the {_ref_look(t.set)}.",
-    ]
-    if p.group.satellite_count > 1:
-        lines.append(f"{p.group.satellite_count} satellites pass together.")
-    if p.cloud_cover is not None:
-        lines.append(f"Forecast cloud cover: {p.cloud_cover}%.")
-    lines.append(f"About {t.satellite.name}: {info_url(t.satellite.norad_id, t.satellite.name)}")
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -125,7 +78,7 @@ async def _events(
 
 @pytest.mark.usefixtures("mock_pysatellitespotter")
 async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
-    """Every pass of the next five days, in See A Satellite Tonight's words."""
+    """Every pass of the next five days has the right event data and viewing text."""
     entry = await _setup(hass)
     data = entry.runtime_data.data
     events = await _events(hass, NOW, NOW + timedelta(days=5))
@@ -136,13 +89,25 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     for event, p in zip(events, data.passes, strict=True):
         assert dt_util.parse_datetime(event["start"]) == p.start
         assert dt_util.parse_datetime(event["end"]) == p.end
-        assert event["summary"] == _ref_summary(p)
-        # Byte for byte, except that "-0.0" (BlueWalker 3, four times) reads 0.0.
-        expected = _ref_description(p).replace("(magnitude -0.0)", "(magnitude 0.0)")
-        assert event["description"] == expected
+        assert event["summary"] == f"🛰️ {pass_title(p)}" + (" (bright)" if p.bright else "")
+        assert event["description"].splitlines()[-1] == (
+            f"Object: {p.primary.satellite.name} — "
+            f"{info_url(p.primary.satellite.norad_id, p.primary.satellite.name)}"
+        )
     assert events[0]["summary"] == "🛰️ BlueWalker 3 (bright)"
-    assert "Forecast cloud cover: 20%" in events[0]["description"]
-    assert sum("(magnitude 0.0)" in e["description"] for e in events) == 4
+    p = data.passes[0]
+    t = p.primary
+    lines = events[0]["description"].splitlines()
+    assert lines[:3] == [
+        f"At {dt_util.as_local(t.start):%H:%M:%S}, look toward {compass(t.rise.azimuth)}: "
+        f"{t.rise.elevation:.0f}° above the horizon.",
+        f"Best view at {dt_util.as_local(t.brightest_time):%H:%M:%S}: "
+        f"{compass(t.brightest.azimuth)}, {t.brightest.elevation:.0f}° high, magnitude 0.3.",
+        f"Last visible at {dt_util.as_local(t.end):%H:%M:%S} toward "
+        f"{compass(t.set.azimuth)}, {t.set.elevation:.0f}° high.",
+    ]
+    assert "Cloud cover near the pass: 20%" in events[0]["description"]
+    assert sum("magnitude 0.0" in e["description"] for e in events) == 4
     assert sum(" +1" in e["summary"] for e in events) == 11
 
     sensor = hass.states.get("sensor.home_next_pass")
@@ -350,7 +315,7 @@ async def test_wake_ups_do_not_resend_the_events(
 async def test_calendar_trigger_before_a_pass(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    """The README's automation: a calendar trigger ten minutes before each pass."""
+    """The README's automation: a calendar trigger fifteen minutes before each pass."""
     entry = await _setup(hass)
     p = entry.runtime_data.data.passes[3]
     pass_start, _ = event_times(p)
@@ -365,7 +330,7 @@ async def test_calendar_trigger_before_a_pass(
                 "triggers": {
                     "trigger": "calendar",
                     "event": "start",
-                    "offset": "-0:10:0",
+                    "offset": "-0:15:0",
                     "entity_id": CALENDAR,
                 },
                 "actions": {
@@ -381,11 +346,11 @@ async def test_calendar_trigger_before_a_pass(
     )
     await hass.async_block_till_done()
 
-    await advance(hass, freezer, pass_start - timedelta(minutes=10, seconds=1))
+    await advance(hass, freezer, pass_start - timedelta(minutes=15, seconds=1))
     assert not calls
-    await advance(hass, freezer, pass_start - timedelta(minutes=10) + timedelta(seconds=1))
+    await advance(hass, freezer, pass_start - timedelta(minutes=15) + timedelta(seconds=1))
     assert len(calls) == 1
-    assert calls[0].data["summary"] == _ref_summary(p)
+    assert calls[0].data["summary"] == f"🛰️ {pass_title(p)}" + (" (bright)" if p.bright else "")
     assert calls[0].data["uid"] == p.id
     assert dt_util.parse_datetime(calls[0].data["start"]) == pass_start
 
@@ -397,18 +362,18 @@ async def test_calendar_trigger_before_a_pass(
 @pytest.mark.parametrize(
     ("language", "summary", "appears", "brightest"),
     [
-        ("de", "🛰️ BlueWalker 3 (hell)", "Erscheint um {} im WNW, 37° über dem Horizont.",
-         "(Helligkeit 0,3)"),
+        ("de", "🛰️ BlueWalker 3 (hell)", "Um {} nach WNW schauen: 37° über dem Horizont.",
+         "Helligkeit 0,3"),
         # Regional variants get their language's text, as on the globe.
-        ("de-CH", "🛰️ BlueWalker 3 (hell)", "Erscheint um {} im WNW, 37° über dem Horizont.",
-         "(Helligkeit 0,3)"),
+        ("de-CH", "🛰️ BlueWalker 3 (hell)", "Um {} nach WNW schauen: 37° über dem Horizont.",
+         "Helligkeit 0,3"),
         ("pt", "🛰️ BlueWalker 3 (brilhante)",
-         "Aparece às {} na direção ONO, a 37° de altura.", "(magnitude 0,3)"),
+         "Às {}, olhe para ONO: 37° acima do horizonte.", "magnitude 0,3"),
         ("fr", "🛰️ BlueWalker 3 (brillant)",
-         "Apparaît à {} dans le secteur O-NO, à 37° de hauteur.", "(magnitude 0,3)"),
+         "À {}, regardez vers O-NO : 37° au-dessus de l'horizon.", "magnitude 0,3"),
         # Languages without a translation get English.
-        ("ja", "🛰️ BlueWalker 3 (bright)", "Appears at {} in the WNW, 37° up.",
-         "(magnitude 0.3)"),
+        ("ja", "🛰️ BlueWalker 3 (bright)", "At {}, look toward WNW: 37° above the horizon.",
+         "magnitude 0.3"),
     ],
 )  # fmt: skip
 async def test_events_follow_the_home_assistant_language(

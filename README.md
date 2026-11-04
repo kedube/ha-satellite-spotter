@@ -21,7 +21,7 @@ The predictions are those of James Darpinian's
 [See A Satellite Tonight](https://james.darpinian.com/satellites/): his catalogue of the
 satellites worth looking for, and his model of how bright each one looks and when your sky
 is dark enough to see it. Willem Vooijs ported them to Python, with James's permission, as
-the see-a-satellite library. Satellite Spotter runs its fork,
+the see-a-satellite library. Satellite Spotter uses a fork of that library,
 [pysatellitespotter](https://github.com/kedube/pysatellitespotter), on your Home
 Assistant, so you get the website's passes, worked out locally. Nothing about where you are
 goes to the website; only the optional cloud forecast and the maps and street photos your
@@ -40,9 +40,8 @@ browser loads see your area (see
 * **The passes worth stepping outside for**, five days ahead, for each of your locations:
   when, where to look, how high, how bright and how cloudy. Satellites that cross the sky
   together count as one pass, and a string of Starlinks is a train.
-* **Sensors and a calendar** for automations, with the same entity ids, attributes and
-  calendar text as the
-  [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite),
+* **Sensors and a calendar** for automations, with familiar entity ids and attributes if
+  you used the [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite),
   plus a **Bright pass soon** sensor.
 * **A notification blueprint**: your phone tells you where to look a few minutes before a
   bright pass, and opens the pass in the street view when you tap it.
@@ -307,15 +306,16 @@ succeeds (see [Troubleshooting](#troubleshooting)).
 
 ### Coming from See A Satellite Tonight
 
-Satellite Spotter gives you all that the
-[See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
-does, from a fork of the same library. With Home Assistant in English, its entity ids,
-attributes and calendar text are the same, so automations written for it, including the
-examples in its README, keep working. The one difference: a magnitude between -0.05 and 0
-now reads `0.0` in the calendar text, where it read `-0.0`.
+Satellite Spotter is a separate integration that uses a fork of the same prediction library
+as the [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite).
+It provides similar sensors and a calendar. Their entity ids and pass attributes remain
+familiar, but Satellite Spotter uses its own calendar descriptions.
+Automations that parse the old event description need to be updated; calendar triggers,
+event links and, with Home Assistant in English, conditions on "bright" in the event title
+still work.
 
-The two can be installed side by side; they are separate integrations, each with its own
-storage. With a location of the same name in both, though, whichever you add second gets
+The two can be installed side by side, each with its own storage. With a location of the
+same name in both, though, whichever you add second gets
 `_2` at the end of its entity ids, and each downloads the catalogue. To take over the old
 entity ids, delete the old location first, then add it here with the same name.
 
@@ -661,8 +661,8 @@ screen, and frees its graphics memory 30 seconds after you leave the page.
 It sends a phone notification shortly before each pass in a location's calendar:
 
 > **🛰️ ISS in 10 min**\
-> Look W at 20:31, 21° up. Brightest 40° up in the NW, magnitude -2.5; gone in the NE by
-> 20:34. Cloud cover 12%.
+> At 20:31:02, look toward W: 21° above the horizon. Best view at 20:32:30: NW, 40° high,
+> magnitude -2.5. Last visible at 20:34:55 toward NE, 10° high. Cloud cover near the pass: 12%.
 
 Tap it and the pass opens in the street view on the Satellite Spotter page. With **Show
 Satellite Spotter in the sidebar** switched off for every location there is no page to
@@ -677,30 +677,26 @@ even passes a few minutes apart.
 | Maximum cloud cover | 60% | Skip cloudier passes. Passes without a forecast (the cloud cover option is off, or Open-Meteo did not answer) are always announced. |
 | Phone to notify | | A device with the Home Assistant Companion app. |
 
-Blueprints cannot be translated. The title and the short message above are English; with
-Home Assistant in another language, the message is the first two lines of the calendar
-event instead, in your language. Bright passes, magnitudes and cloud cover are recognised
-in every language.
+Blueprints cannot be translated. The title is English; the message uses the calendar's
+description in Home Assistant's language, leaving out its final object link. Bright passes
+and cloud cover are recognised in every language.
 
 ### Your own automations
 
 The calendar works with a calendar trigger, which fires for every pass, even with an offset
-longer than the gap between two passes:
+longer than the gap between two passes. This example sends each pass to your phone:
 
 ```yaml
 triggers:
   - trigger: calendar
     event: start
-    offset: "-0:10:0"
+    offset: "-0:15:0"
     entity_id: calendar.home_satellite_passes
-conditions:
-  - condition: template
-    value_template: "{{ 'bright' in trigger.calendar_event.summary }}"
 actions:
   - action: notify.mobile_app_your_phone  # your phone's notify action
     data:
-      title: "{{ trigger.calendar_event.summary }}"
-      message: "{{ trigger.calendar_event.description }}"
+      title: "Pass in 15 minutes: {{ trigger.calendar_event.summary }}"
+      message: "{{ trigger.calendar_event.description.split('\\n')[:-1] | join(' ') }}"
       data:
         # Opens the pass in the street view: url on iPhones, clickAction on Android.
         url: "/satellite-spotter?pass={{ trigger.calendar_event.uid }}&view=street"
@@ -708,8 +704,9 @@ actions:
 ```
 
 With several locations, add `&entry_id={{ config_entry_id('calendar.home_satellite_passes') }}`
-to the link, so it opens the pass at the right one. The condition reads the English event;
-in other languages, look for the word your calendar uses instead of "bright". Or trigger on
+to the link, so it opens the pass at the right one. The message uses your calendar's
+language and leaves out its final reference link. To notify only bright passes, use the
+blueprint above. Or trigger on
 `binary_sensor.home_bright_pass_soon`
 turning on: it does so the **Advance notice** before each bright pass, and its attributes
 describe the pass. With an advance notice longer than the gap between two bright passes,
@@ -718,107 +715,48 @@ all.
 
 ### Announce passes on a speaker
 
-Adapted from the
-[See A Satellite Tonight README](https://github.com/wildekek/ha-see-a-satellite#full-example-announce-bright-passes-on-a-speaker):
-ten minutes before a bright pass, while the garden light is on, a speaker says what is
-coming over in plain words: what the object is, where to look, how high and how bright,
-how long it stays, and what the clouds are like. This version also knows Tiangong, Hubble
-and Starlink trains, counts the satellites of a group, and copes with passes that have no
-cloud forecast. Replace the calendar, light, speaker and text-to-speech entities with your
-own.
+This automation reads the calendar's viewing directions aloud fifteen minutes before
+every pass. The event supplies the directions, height, brightness and any cloud forecast in
+Home Assistant's language. Replace the calendar, speaker and text-to-speech entities with
+yours.
 
 ```yaml
-alias: Announce bright satellite passes
-description: >-
-  Ten minutes before a bright satellite pass, announce it on the garden
-  speaker in plain words, while the garden light is on.
+alias: Announce the next satellite pass
 mode: queued
 triggers:
   - trigger: calendar
     event: start
-    offset: "-0:10:0"
+    offset: "-0:15:00"
     entity_id: calendar.home_satellite_passes
-conditions:
-  # Stands in for "someone is out in the garden".
-  - condition: state
-    entity_id: light.garden
-    state: "on"
-  - alias: Bright satellite
-    condition: template
-    value_template: "{{ 'bright' in trigger.calendar_event.summary }}"
 actions:
-  # Builds the message from the event: what the object is rather than its
-  # catalogue name, 12-hour times, the height in words rather than degrees,
-  # and advice on brightness and cloud. Falls back to a short message if the
-  # text is not the English it expects.
-  - variables:
-      message: |-
-        {%- set ev = trigger.calendar_event -%}
-        {%- set d = ev.description -%}
-        {%- set dirs = {'N':'north','NNE':'north-north-east','NE':'north-east','ENE':'east-north-east','E':'east','ESE':'east-south-east','SE':'south-east','SSE':'south-south-east','S':'south','SSW':'south-south-west','SW':'south-west','WSW':'west-south-west','W':'west','WNW':'west-north-west','NW':'north-west','NNW':'north-north-west'} -%}
-        {%- set pts = d | regex_findall('at (\\d{1,2}):(\\d{2}):\\d{2} in the ([NESW]{1,3}), (\\d+)° up') -%}
-        {%- set mins = ((as_datetime(ev.start) - now()).total_seconds() / 60) | round(0) | int -%}
-        {%- set raw = ev.summary | regex_replace('^\\W+', '') | regex_replace('\\s*\\(bright\\)', '') | trim -%}
-        {%- set extra = raw | regex_findall('\\+(\\d+)$') | map('int') | first | default(0) -%}
-        {%- set base = raw | regex_replace('\\s*\\+\\d+$', '') | trim -%}
-        {%- if base == 'ISS' -%}{%- set what = 'the International Space Station, with astronauts on board,' -%}
-        {%- elif base == 'Tiangong' -%}{%- set what = "China's Tiangong space station, with astronauts on board," -%}
-        {%- elif base == 'Hubble' -%}{%- set what = 'the Hubble Space Telescope' -%}
-        {%- elif base.upper().startswith('STARLINK') and extra >= 5 -%}{%- set what = 'a train of ' ~ (extra + 1) ~ ' Starlink satellites' -%}
-        {%- elif base.upper().startswith('STARLINK') -%}{%- set what = 'a Starlink satellite' -%}
-        {%- elif 'R/B' in base and base.startswith('CZ') -%}{%- set what = 'a spent Chinese rocket stage' -%}
-        {%- elif 'R/B' in base -%}{%- set what = 'a spent rocket stage' -%}
-        {%- else -%}{%- set what = 'a satellite' -%}{%- endif -%}
-        {%- set others = '' if extra == 0 or 'train' in what else ', together with another satellite' if extra == 1 else ', together with ' ~ extra ~ ' others' -%}
-        {%- if pts | length < 3 -%}
-        Heads up! In about {{ mins }} minutes, {{ what }} will fly over. Look up!
-        {%- else -%}
-        {%- set ns = namespace(h=[], t=[], dir=[]) -%}
-        {%- for p in pts -%}
-        {%- set deg = p[3] | int -%}
-        {%- set ns.h = ns.h + ['just above the horizon' if deg < 20 else 'low in the sky' if deg < 40 else 'halfway up the sky' if deg < 60 else 'high in the sky' if deg < 80 else 'almost straight overhead'] -%}
-        {%- set ns.t = ns.t + [((p[0] | int) % 12 or 12) ~ ':' ~ p[1]] -%}
-        {%- set ns.dir = ns.dir + [dirs.get(p[2], p[2])] -%}
-        {%- endfor -%}
-        {%- set mag = d | regex_findall('magnitude (-?[\\d.]+)') | map('float') | first | default(2) -%}
-        {%- set cloud = d | regex_findall('cloud cover: (\\d+)%') | map('int') | first | default(-1) -%}
-        {%- set dur = ((as_datetime(ev.end) - as_datetime(ev.start)).total_seconds() / 60) | round(0) | int -%}
-        Heads up! In about {{ mins }} minutes, {{ what }} will fly over{{ others }}. At {{ ns.t[0] }}, look to the {{ ns.dir[0] }}, {{ ns.h[0] }}. It's {{ 'very bright, brighter than almost any star' if mag < 0 else 'bright and easy to spot' if mag < 2 else 'fairly faint, so look carefully' }}, at its best {{ ns.h[1] }} to the {{ ns.dir[1] }}. It disappears in the {{ ns.dir[2] }} {{ 'in less than a minute' if dur < 1 else 'about a minute later' if dur == 1 else 'about ' ~ dur ~ ' minutes later' }}.{{ '' if cloud < 0 else ' Skies look clear, so you should see it well.' if cloud < 25 else ' There are some clouds around, so you may need a bit of luck.' if cloud < 70 else ' It looks cloudy, so you might miss it.' }}
-        {%- endif -%}
   - action: tts.speak
     target:
-      entity_id: tts.piper  # your text-to-speech engine
+      entity_id: tts.piper
     data:
-      media_player_entity_id: media_player.garden_speaker  # your speaker
-      message: "{{ message }}"
+      media_player_entity_id: media_player.living_room
+      message: >-
+        A satellite pass is coming in fifteen minutes:
+        {{ trigger.calendar_event.summary | replace('🛰️ ', '') }}.
+        {{ trigger.calendar_event.description.split('\n')[:-1] | join(' ') }}
 ```
-
-For the pass in the calendar example below, it says: "Heads up! In about 10 minutes, the
-International Space Station, with astronauts on board, will fly over. At 8:31, look to the
-west, low in the sky. It's very bright, brighter than almost any star, at its best
-halfway up the sky to the north-west. It disappears in the north-east about 4 minutes
-later. Skies look clear, so you should see it well." With Music Assistant,
-`music_assistant.play_announcement`, as in the original example, lowers the music while it
-speaks.
 
 ## Calendar
 
 Each location has a **Satellite passes** calendar, listed in Home Assistant's **Calendar**
 with your other calendars (switch it off in the options). It holds every pass of the next
 five days, the same passes the sensors report. Each event runs from when the first
-satellite appears to when the last one goes, and says where to look, in the words of the
-See A Satellite Tonight integration:
+satellite appears to when the last one goes, and gives the viewing directions:
 
 > **🛰️ ISS (bright)**\
-> Appears at 20:31:02 in the W, 21° up.\
-> Brightest at 20:32:30 in the NW, 40° up (magnitude -2.5).\
-> Disappears at 20:34:55 in the NE, 10° up.\
-> Forecast cloud cover: 12%.\
-> About ISS: https://en.wikipedia.org/wiki/International_Space_Station
+> At 20:31:02, look toward W: 21° above the horizon.\
+> Best view at 20:32:30: NW, 40° high, magnitude -2.5.\
+> Last visible at 20:34:55 toward NE, 10° high.\
+> Cloud cover near the pass: 12%.\
+> Object: ISS — https://en.wikipedia.org/wiki/International_Space_Station
 
 The times are in Home Assistant's time zone, on the 24-hour clock. The directions are the
-first satellite's; a group adds a line such as "2 satellites pass together.", and the title
-counts the others ("COSMO-SKYMED-FM3 +1"). The event's uid is the pass id, for
+first satellite's; a group adds a line such as "This pass includes 2 satellites.", and the
+title counts the others ("COSMO-SKYMED-FM3 +1"). The event's uid is the pass id, for
 [links](#links-to-a-pass).
 
 The events are refined every two hours as the predictions are, and a pass drops off the
@@ -961,9 +899,8 @@ it is not there. Where to download `make_brand.py`'s font is at the top of the s
 What Home Assistant shows for the integration (setup, options, entity names, the repair
 issue and the calendar's events) is in `custom_components/satellite_spotter/translations/`,
 one JSON file per language, with `strings.json` as the English source and
-`translations/en.json` an exact copy. The calendar's words are under `common`, and their
-English must stay word for word that of the See A Satellite Tonight integration, which a
-test checks. The page, the cards and the street view have their own text in
+`translations/en.json` an exact copy. The calendar's words are under `common`. The page,
+the cards and the street view have their own text in
 `custom_components/satellite_spotter/frontend/translations/`: English in `en.js`, every
 other language in a JSON file with the same keys.
 
@@ -1015,16 +952,17 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
 * **The predictions, the catalogue and the brightness model** are James Darpinian's
   [See A Satellite Tonight](https://james.darpinian.com/satellites/), ported with his
   permission; the "Why not?" explanation when no pass is coming is adapted from his
-  website. Satellite Spotter is not made or supported by James: please report problems
-  here.
+  website, and the links to read about a satellite (`links.py`) are the website's.
+  Satellite Spotter is not made or supported by James: please report problems here.
 * **The library**, [pysatellitespotter](https://github.com/kedube/pysatellitespotter), is a
   fork of [see-a-satellite](https://github.com/wildekek/see-a-satellite), Willem Vooijs's
   Python port of the website (MIT); Satellite Spotter uses version 0.2.0.
-* **The integration** contains code from Willem's
+* **The integration** keeps the entity ids and pass attributes of Willem Vooijs's
   [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
-  (MIT), including entity and sensor logic. Its calendar text and automation examples also
-  follow his work. Willem's copyright and permission notice is retained in the
-  [bundled MIT license](custom_components/satellite_spotter/LICENSE.wildekek).
+  (MIT), so automations carry over. Its entities and sensors have been rewritten, but parts
+  of the rest, including some test code and data, still come from that integration.
+  Willem's copyright and MIT permission notice is in
+  [LICENSE.wildekek](custom_components/satellite_spotter/LICENSE.wildekek).
 * **Orbits** are computed with [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes,
   the official Vallado SGP4, from elements published by Space-Track and CelesTrak. Cloud
   cover comes from [Open-Meteo](https://open-meteo.com) (CC BY 4.0).

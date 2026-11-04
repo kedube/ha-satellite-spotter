@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import partial
@@ -142,24 +142,26 @@ class SatelliteData:
         """Index the passes by id."""
         self.by_id = {p.id: p for p in self.passes}
 
-    def current_or_next(
-        self, now: datetime, predicate: Callable[[SatellitePass], bool] | None = None
-    ) -> SatellitePass | None:
-        """Return the pass in progress, or else the next one."""
-        for p in self.passes:
-            if p.end > now and (predicate is None or predicate(p)):
-                return p
-        return None
+    def _remaining(self, now: datetime) -> Iterator[SatellitePass]:
+        """Yield the passes that are not over yet, earliest first."""
+        return (p for p in self.passes if p.end > now)
+
+    def next_pass(self, now: datetime) -> SatellitePass | None:
+        """Return the pass under way, or else the next to come."""
+        return next(self._remaining(now), None)
+
+    def next_bright_pass(self, now: datetime) -> SatellitePass | None:
+        """Return the bright pass under way, or else the next to come."""
+        return next((p for p in self._remaining(now) if p.bright), None)
 
     def current(self, now: datetime) -> SatellitePass | None:
-        """Return the pass in progress, if any."""
-        p = self.current_or_next(now)
-        return p if p is not None and p.start <= now else None
+        """Return the pass under way, if there is one."""
+        return next((p for p in self._remaining(now) if p.start <= now), None)
 
     def upcoming(self, now: datetime, window: timedelta = UPCOMING_WINDOW) -> list[SatellitePass]:
-        """Return the passes in progress or starting within the window."""
+        """Return the passes under way or starting within the window."""
         horizon = now + window
-        return [p for p in self.passes if p.end > now and p.start < horizon]
+        return [p for p in self._remaining(now) if p.start < horizon]
 
     def find(self, pass_id: str) -> SatellitePass | None:
         """Return the pass with this id, or the same satellite's pass a moment from it.
@@ -427,11 +429,11 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
 
     def next_pass(self, now: datetime) -> SatellitePass | None:
         """Return the pass in progress, or else the next one."""
-        return None if self.data is None else self.data.current_or_next(now)
+        return None if self.data is None else self.data.next_pass(now)
 
     def next_bright_pass(self, now: datetime) -> SatellitePass | None:
         """Return the bright pass in progress, or else the next one."""
-        return None if self.data is None else self.data.current_or_next(now, _is_bright)
+        return None if self.data is None else self.data.next_bright_pass(now)
 
     def current(self, now: datetime) -> SatellitePass | None:
         """Return the pass in progress, if any."""
@@ -458,10 +460,6 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
         """Return the catalog's median element age when beyond the limit, else None."""
         age = self.catalog.median_epoch_age(now)
         return age if age is not None and age > CATALOG_MAX_AGE else None
-
-
-def _is_bright(p: SatellitePass) -> bool:
-    return p.bright
 
 
 def _noop() -> None:

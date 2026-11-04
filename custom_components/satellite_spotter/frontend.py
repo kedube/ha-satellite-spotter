@@ -72,7 +72,8 @@ from .const import (
     TRACK_STEP,
 )
 from .coordinator import PredictionSettings, SatellitePass, SatelliteSpotterCoordinator
-from .entity import compass, confidence, info_url, magnitude, pass_title, satellite_kind
+from .entity import compass, confidence, magnitude, pass_title, satellite_kind
+from .links import info_url
 from .street import street_payload
 
 if TYPE_CHECKING:

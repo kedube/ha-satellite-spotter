@@ -18,57 +18,17 @@ from .const import (
     WEBSITE_URL,
 )
 from .coordinator import SatellitePass, SatelliteSpotterCoordinator
+from .links import info_url
 
 if TYPE_CHECKING:
-    from pysatellitespotter import Satellite
+    from pysatellitespotter import LookAngle, Satellite
 
 _COMPASS = (
     "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
 )  # fmt: skip
-
-# The website's "About" links.
-_INFO_LINKS = {
-    20580: "https://en.wikipedia.org/wiki/Hubble_Space_Telescope",
-    25544: "https://en.wikipedia.org/wiki/International_Space_Station",
-    41765: "https://en.wikipedia.org/wiki/Tiangong-2",
-    41868: "https://en.wikipedia.org/wiki/Shenzhou_11",
-    42830: "https://earthsky.org/space/mayak-bright-russian-satellite-july-august-2017",
-    43552: "https://brownspace.org/equisat/",
-    48274: "https://en.wikipedia.org/wiki/Tiangong_space_station",
-    53807: "https://ast-science.com/spacemobile-network/bluewalker-3/",
-    59588: "https://www.nasa.gov/mission/acs3/",
-}
-_INFO_PREFIXES = (
-    ("Starlink", "https://en.wikipedia.org/wiki/Starlink"),
-    ("SPACEMOBILE", "https://en.wikipedia.org/wiki/AST_SpaceMobile"),
-    ("QIANFAN", "https://en.wikipedia.org/wiki/Qianfan"),
-    ("HULIANWANG", "https://en.wikipedia.org/wiki/Guowang"),
-    ("GUOWANG", "https://en.wikipedia.org/wiki/Guowang"),
-    ("ARIANE", "https://en.wikipedia.org/wiki/Ariane_(rocket_family)"),
-    ("COSMOS", "https://en.wikipedia.org/wiki/Kosmos_(satellite)"),
-    ("CZ-3", "https://en.wikipedia.org/wiki/Long_March_3"),
-    ("SL-", "https://en.wikipedia.org/wiki/Zenit_(rocket_family)"),
-    ("FALCON 9", "https://en.wikipedia.org/wiki/Falcon_9"),
-    ("ATLAS", "https://en.wikipedia.org/wiki/Atlas_(rocket_family)"),
-    ("BLOCK DM-SL", "https://en.wikipedia.org/wiki/Blok_D"),
-    ("BREEZE-M", "https://en.wikipedia.org/wiki/Briz_(rocket_stage)"),
-    ("CZ-", "https://en.wikipedia.org/wiki/Long_March_(rocket_family)"),
-    ("TITAN", "https://en.wikipedia.org/wiki/Titan_(rocket_family)"),
-    ("H-2", "https://en.wikipedia.org/wiki/H-II"),
-)
 # Satellites with a look of their own on the globe, by NORAD id.
 _KINDS = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
-
-
-def info_url(norad_id: int, name: str) -> str:
-    """Where to read about a satellite (as the website links it)."""
-    if norad_id in _INFO_LINKS:
-        return _INFO_LINKS[norad_id]
-    for prefix, url in _INFO_PREFIXES:
-        if name.startswith(prefix):
-            return url
-    return f"https://heavens-above.com/satinfo.aspx?satid={norad_id}"
 
 
 def satellite_kind(norad_id: int, name: str) -> str:
@@ -91,21 +51,21 @@ def satellite_kind(norad_id: int, name: str) -> str:
 
 
 def compass(azimuth: float) -> str:
-    """16-point compass direction of an azimuth in degrees."""
-    return _COMPASS[round((azimuth % 360) / 22.5) % 16]
+    """Return the 16-point compass direction of an azimuth in degrees."""
+    sector = 360 / len(_COMPASS)
+    return _COMPASS[round((azimuth % 360) / sector) % len(_COMPASS)]
 
 
 def magnitude(value: float) -> float:
     """Round a magnitude to one decimal, never -0.0."""
-    return round(value, 1) + 0.0
+    return round(value, 1) or 0.0
 
 
 def pass_title(p: SatellitePass) -> str:
-    """Short name of a pass, for example "ISS" or "Starlink-123 +59"."""
-    title = p.primary.satellite.name.removesuffix(" prediction")
-    if (extra := p.group.satellite_count - 1) > 0:
-        title += f" +{extra}"
-    return title
+    """Return the short name of a pass, for example "ISS" or "Starlink-123 +59"."""
+    name = p.primary.satellite.name.removesuffix(" prediction")
+    others = p.group.satellite_count - 1
+    return f"{name} +{others}" if others > 0 else name
 
 
 def confidence(when: datetime, sat: Satellite) -> str:
@@ -124,44 +84,68 @@ def confidence(when: datetime, sat: Satellite) -> str:
     return "low"
 
 
+def _look_attributes(prefix: str, angle: LookAngle) -> dict[str, Any]:
+    """Describe one point of a pass: which way to look, and how high."""
+    return {
+        f"{prefix}_direction": compass(angle.azimuth),
+        f"{prefix}_azimuth": angle.azimuth,
+        f"{prefix}_elevation": angle.elevation,
+    }
+
+
 def pass_attributes(p: SatellitePass | None) -> dict[str, Any]:
-    """State attributes describing a pass (those of See A Satellite Tonight, plus its id)."""
+    """Return the state attributes describing a pass; none without one.
+
+    Automations read these names, which are those of the See A Satellite
+    Tonight integration plus pass_id, so keep them as they are.
+    """
     if p is None:
         return {}
-    t = p.primary
-    sat = t.satellite
-    attrs: dict[str, Any] = {
+    first = p.primary
+    sat = first.satellite
+    group = p.group
+    attributes: dict[str, Any] = {
         "satellite": sat.name,
         "norad_id": sat.norad_id,
-        "start": t.start.isoformat(),
+        "start": first.start.isoformat(),
         "end": p.end.isoformat(),
         "duration": round((p.end - p.start).total_seconds()),
-        "magnitude": magnitude(p.group.min_magnitude),
+        "magnitude": magnitude(group.min_magnitude),
         "bright": p.bright,
-        "before_sunset": p.group.before_sunset,
-        "rise_direction": compass(t.rise.azimuth),
-        "rise_azimuth": t.rise.azimuth,
-        "rise_elevation": t.rise.elevation,
-        "brightest_time": t.brightest_time.isoformat(),
-        "brightest_direction": compass(t.brightest.azimuth),
-        "brightest_azimuth": t.brightest.azimuth,
-        "brightest_elevation": t.brightest.elevation,
-        "set_direction": compass(t.set.azimuth),
-        "set_azimuth": t.set.azimuth,
-        "set_elevation": t.set.elevation,
+        "before_sunset": group.before_sunset,
+        **_look_attributes("rise", first.rise),
+        "brightest_time": first.brightest_time.isoformat(),
+        **_look_attributes("brightest", first.brightest),
+        **_look_attributes("set", first.set),
         "cloud_cover": p.cloud_cover,
-        "satellite_count": p.group.satellite_count,
+        "satellite_count": group.satellite_count,
         "info_url": info_url(sat.norad_id, sat.name),
         # Opens the pass in the sidebar page: /satellite-spotter?pass=<id>.
         "pass_id": p.id,
     }
-    if len(p.group.transits) > 1:
-        attrs["satellites"] = [x.satellite.name for x in p.group.transits[:MAX_GROUP_NAMES]]
-    return attrs
+    if len(group.transits) > 1:
+        names = [transit.satellite.name for transit in group.transits]
+        attributes["satellites"] = names[:MAX_GROUP_NAMES]
+    return attributes
+
+
+def _location_device(coordinator: SatelliteSpotterCoordinator) -> DeviceInfo:
+    """Return the device a location's entities share: the website, seen from there."""
+    entry_id = coordinator.config_entry.entry_id
+    observer = coordinator.observer
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry_id)},
+        name=coordinator.config_entry.title,
+        manufacturer="James Darpinian",
+        model="See A Satellite Tonight",
+        sw_version=VERSION,
+        entry_type=DeviceEntryType.SERVICE,
+        configuration_url=f"{WEBSITE_URL}#loc={observer.latitude:.4f},{observer.longitude:.4f}",
+    )
 
 
 class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
-    """Common device and naming for the entities of a location."""
+    """An entity of one location, named by its translation key."""
 
     _attr_has_entity_name = True
     _attr_attribution = ATTRIBUTION
@@ -169,18 +153,6 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
     def __init__(self, coordinator: SatelliteSpotterCoordinator, key: str) -> None:
         """Initialise the entity."""
         super().__init__(coordinator)
-        entry = coordinator.config_entry
-        observer = coordinator.observer
         self._attr_translation_key = key
-        self._attr_unique_id = f"{entry.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="James Darpinian",
-            model="See A Satellite Tonight",
-            sw_version=VERSION,
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url=(
-                f"{WEBSITE_URL}#loc={observer.latitude:.4f},{observer.longitude:.4f}"
-            ),
-        )
+        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{key}"
+        self._attr_device_info = _location_device(coordinator)
