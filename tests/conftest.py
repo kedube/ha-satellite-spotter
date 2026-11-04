@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
-from pysatellitespotter import Satellite
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.satellite_spotter.const import DOMAIN
+from custom_components.satellite_spotter.predict import Satellite
 
-from .common import FIXTURES, NOW, UTRECHT, UTRECHT_ID, cloud_cover, satellites
+from .common import FIXTURES, HONOLULU, HONOLULU_ID, NOW, add_location, cloud_cover, satellites
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -34,13 +34,13 @@ def reference() -> dict[str, Any]:
 
 @pytest.fixture
 def catalog() -> list[Satellite]:
-    """The 22-satellite test catalog."""
+    """The test catalog."""
     return satellites()
 
 
 @pytest.fixture
-def mock_pysatellitespotter(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
-    """Mock the library's network calls (the catalog and the cloud cover forecast)."""
+def mock_downloads(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
+    """Mock what goes over the network (the catalog and the cloud cover forecast)."""
     with (
         patch(
             "custom_components.satellite_spotter.catalog.async_fetch_catalog",
@@ -63,13 +63,13 @@ def mock_setup_entry() -> Generator[AsyncMock]:
 
 @pytest.fixture
 def mock_config_entry() -> MockConfigEntry:
-    """A test location: the Dom Tower in Utrecht."""
-    return MockConfigEntry(domain=DOMAIN, title="Home", unique_id=UTRECHT_ID, data=UTRECHT)
+    """The test location."""
+    return MockConfigEntry(domain=DOMAIN, title="Home", unique_id=HONOLULU_ID, data=HONOLULU)
 
 
 @pytest.fixture
 def now() -> datetime:
-    """When the tests start (the fixture catalog's first pass is minutes away)."""
+    """When the tests start, minutes before the first pass."""
     return NOW
 
 
@@ -78,11 +78,9 @@ async def init_integration(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> MockConfigEntry:
-    """Set up the Utrecht location at NOW."""
+    """The test location, running from NOW."""
     freezer.move_to(NOW)
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
+    await add_location(hass, mock_config_entry)
     return mock_config_entry

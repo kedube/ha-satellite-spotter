@@ -135,15 +135,11 @@ def test_the_package_is_what_hacs_installs(tmp_path: Path) -> None:
         assert manifest["version"] == release.manifest_version()
         needed = (
             "__init__.py",
-            "LICENSE.wildekek",
             "brand/icon.png",
             "frontend/sat-card.js",
             "translations/en.json",
         )
         assert set(needed) <= set(names)
-        notice = zf.read("LICENSE.wildekek")
-        assert notice == (release.INTEGRATION / "LICENSE.wildekek").read_bytes()
-        assert b"Copyright (c) 2026 Willem Vooijs" in notice
         assert not [n for n in names if "__pycache__" in n or n.endswith(".pyc")]
         # Already compressed files are stored, the rest deflated.
         infos = {info.filename: info for info in zf.infolist()}

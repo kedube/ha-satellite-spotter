@@ -10,23 +10,38 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     ATTRIBUTION,
+    CONF_SHOW_PANEL,
     CONFIDENCE_HIGH_DAYS,
     CONFIDENCE_MEDIUM_DAYS,
+    DEFAULT_SHOW_PANEL,
     DOMAIN,
     MAX_GROUP_NAMES,
     VERSION,
-    WEBSITE_URL,
 )
 from .coordinator import SatellitePass, SatelliteSpotterCoordinator
 from .links import info_url
 
 if TYPE_CHECKING:
-    from pysatellitespotter import LookAngle, Satellite
+    from .predict import Direction, Satellite
 
-_COMPASS = (
-    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
-)  # fmt: skip
+_COMPASS = [
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW",
+]
 # Satellites with a look of their own on the globe, by NORAD id.
 _KINDS = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
 
@@ -63,8 +78,8 @@ def magnitude(value: float) -> float:
 
 def pass_title(p: SatellitePass) -> str:
     """Return the short name of a pass, for example "ISS" or "Starlink-123 +59"."""
-    name = p.primary.satellite.name.removesuffix(" prediction")
-    others = p.group.satellite_count - 1
+    name = p.lead.satellite.name
+    others = p.flyover.satellite_count - 1
     return f"{name} +{others}" if others > 0 else name
 
 
@@ -72,10 +87,8 @@ def confidence(when: datetime, sat: Satellite) -> str:
     """How far the timing of a prediction can be trusted (rule of thumb).
 
     By how far the pass is from the epoch of the satellite's orbital
-    elements; a launch prediction's elements are guesses.
+    elements.
     """
-    if sat.prediction:
-        return "low"
     days = abs((when - sat.epoch).total_seconds()) / 86400
     if days <= CONFIDENCE_HIGH_DAYS:
         return "high"
@@ -84,7 +97,7 @@ def confidence(when: datetime, sat: Satellite) -> str:
     return "low"
 
 
-def _look_attributes(prefix: str, angle: LookAngle) -> dict[str, Any]:
+def _look_attributes(prefix: str, angle: Direction) -> dict[str, Any]:
     """Describe one point of a pass: which way to look, and how high."""
     return {
         f"{prefix}_direction": compass(angle.azimuth),
@@ -96,51 +109,52 @@ def _look_attributes(prefix: str, angle: LookAngle) -> dict[str, Any]:
 def pass_attributes(p: SatellitePass | None) -> dict[str, Any]:
     """Return the state attributes describing a pass; none without one.
 
-    Automations read these names, which are those of the See A Satellite
-    Tonight integration plus pass_id, so keep them as they are.
+    Automations read these names, so changing one breaks them.
     """
     if p is None:
         return {}
-    first = p.primary
+    first = p.lead
     sat = first.satellite
-    group = p.group
+    flyover = p.flyover
     attributes: dict[str, Any] = {
         "satellite": sat.name,
         "norad_id": sat.norad_id,
         "start": first.start.isoformat(),
         "end": p.end.isoformat(),
         "duration": round((p.end - p.start).total_seconds()),
-        "magnitude": magnitude(group.min_magnitude),
+        "magnitude": magnitude(flyover.peak_magnitude),
         "bright": p.bright,
-        "before_sunset": group.before_sunset,
-        **_look_attributes("rise", first.rise),
-        "brightest_time": first.brightest_time.isoformat(),
-        **_look_attributes("brightest", first.brightest),
-        **_look_attributes("set", first.set),
+        "before_sunset": flyover.before_sunset,
+        **_look_attributes("rise", first.appears),
+        "brightest_time": first.peak_time.isoformat(),
+        **_look_attributes("brightest", first.peak),
+        **_look_attributes("set", first.vanishes),
         "cloud_cover": p.cloud_cover,
-        "satellite_count": group.satellite_count,
+        "satellite_count": flyover.satellite_count,
         "info_url": info_url(sat.norad_id, sat.name),
         # Opens the pass in the sidebar page: /satellite-spotter?pass=<id>.
         "pass_id": p.id,
     }
-    if len(group.transits) > 1:
-        names = [transit.satellite.name for transit in group.transits]
+    if len(flyover.sightings) > 1:
+        names = [sighting.satellite.name for sighting in flyover.sightings]
         attributes["satellites"] = names[:MAX_GROUP_NAMES]
     return attributes
 
 
 def _location_device(coordinator: SatelliteSpotterCoordinator) -> DeviceInfo:
-    """Return the device a location's entities share: the website, seen from there."""
-    entry_id = coordinator.config_entry.entry_id
-    observer = coordinator.observer
+    """Return the device a location's entities share; its link opens the location's page."""
+    entry = coordinator.config_entry
+    entry_id = entry.entry_id
+    page = f"homeassistant://satellite-spotter?entry_id={entry_id}"
     return DeviceInfo(
         identifiers={(DOMAIN, entry_id)},
-        name=coordinator.config_entry.title,
-        manufacturer="James Darpinian",
-        model="See A Satellite Tonight",
+        name=entry.title,
+        manufacturer="Satellite Spotter",
+        model="Pass predictions",
         sw_version=VERSION,
         entry_type=DeviceEntryType.SERVICE,
-        configuration_url=f"{WEBSITE_URL}#loc={observer.latitude:.4f},{observer.longitude:.4f}",
+        # Without the sidebar page there is nothing for the link to open.
+        configuration_url=page if entry.options.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL) else None,
     )
 
 

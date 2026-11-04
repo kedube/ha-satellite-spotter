@@ -17,20 +17,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
-from pysatellitespotter import (
-    CatalogError,
-    CloudCover,
-    Satellite,
-    Transit,
-    TransitGroup,
-    cloud_cover_at,
-    fetch_cloud_cover,
-    group_transits,
-    predict_transits,
-)
 
 from . import track
 from .catalog import CatalogManager
+from .celestrak import CatalogError
 from .const import (
     CATALOG_MAX_AGE,
     CATALOG_STALE_UPSTREAM,
@@ -47,14 +37,15 @@ from .const import (
     DEFAULT_UNITS,
     DOMAIN,
     ISSUE_CATALOG_STALE,
-    MAX_TRANSITS,
+    MAX_SIGHTINGS,
     PASS_ID_TOLERANCE,
     PREDICTION_DAYS,
     PREDICTION_LOOKBACK,
     PREDICTION_REFRESH,
     UPCOMING_WINDOW,
-    USER_AGENT,
 )
+from .predict import Flyover, Satellite, Sighting, find_sightings, group_sightings
+from .weather import CloudCover, CloudCoverError, cloud_cover_at, fetch_cloud_cover
 
 if TYPE_CHECKING:
     from . import SatelliteSpotterConfigEntry
@@ -94,34 +85,34 @@ class PredictionSettings:
 class SatellitePass:
     """A visible pass (one satellite, or several close together) with its weather."""
 
-    # f"{primary NORAD id}-{start}", also the calendar event's uid.
+    # f"{lead NORAD id}-{start}", also the calendar event's uid.
     id: str
-    group: TransitGroup
+    flyover: Flyover
     cloud_cover: int | None
-    # One per transit (up to MAX_TRANSITS), in the group's order.
-    shapes: list[track.TransitShape]
+    # One per sighting (up to MAX_SIGHTINGS), in the flyover's order.
+    shapes: list[track.SightingShape]
     # The highest point any of the satellites reaches while visible.
     peak: track.SkyPoint
 
     @property
     def start(self) -> datetime:
-        """When the first satellite becomes visible."""
-        return self.group.start
+        """The moment the flyover begins."""
+        return self.flyover.start
 
     @property
     def end(self) -> datetime:
-        """When the last satellite stops being visible."""
-        return self.group.end
+        """The moment the flyover is over."""
+        return self.flyover.end
 
     @property
-    def primary(self) -> Transit:
-        """The satellite the pass is named after (the first to appear)."""
-        return self.group.primary
+    def lead(self) -> Sighting:
+        """The sighting the pass is named after."""
+        return self.flyover.lead
 
     @property
     def bright(self) -> bool:
-        """Whether the website labels the pass as bright."""
-        return self.group.bright
+        """Whether the pass counts as bright."""
+        return self.flyover.bright
 
 
 @dataclass(slots=True)
@@ -179,15 +170,15 @@ class SatelliteData:
         near = [
             p
             for p in self.passes
-            if str(p.primary.satellite.norad_id) == norad_id
+            if str(p.lead.satellite.norad_id) == norad_id
             and abs(p.start - when) <= PASS_ID_TOLERANCE
         ]
         return min(near, key=lambda p: abs(p.start - when), default=None)
 
 
-def pass_id(group: TransitGroup) -> str:
-    """Stable id of a pass: its primary satellite and start (whole seconds)."""
-    return f"{group.primary.satellite.norad_id}-{int(group.start.timestamp())}"
+def pass_id(flyover: Flyover) -> str:
+    """Stable id of a pass: the satellite it is named after, and its start in whole seconds."""
+    return f"{flyover.lead.satellite.norad_id}-{int(flyover.start.timestamp())}"
 
 
 def predict_passes(
@@ -198,28 +189,22 @@ def predict_passes(
     max_magnitude: float,
     forecast: CloudCover | None,
 ) -> list[SatellitePass]:
-    """Predict the visible passes from start (runs in the executor).
-
-    ``start`` must be a whole minute: the library samples every minute from
-    it, so the same start gives the same pass times (and ids) every run.
-    """
-    transits = predict_transits(
+    """Predict the visible passes from start (runs in the executor)."""
+    sightings = find_sightings(
         satellites,
-        observer.latitude,
-        observer.longitude,
-        observer.elevation_m,
+        observer,
         start=start,
         days=PREDICTION_DAYS,
         max_magnitude=max_magnitude,
     )
     passes = []
-    for group in group_transits(transits, catalog_size=len(satellites)):
-        shapes = [_shape(t, observer) for t in group.transits[:MAX_TRANSITS]]
+    for flyover in group_sightings(sightings):
+        shapes = [_shape(s, observer) for s in flyover.sightings[:MAX_SIGHTINGS]]
         passes.append(
             SatellitePass(
-                id=pass_id(group),
-                group=group,
-                cloud_cover=cloud_cover_at(forecast, group.start),
+                id=pass_id(flyover),
+                flyover=flyover,
+                cloud_cover=cloud_cover_at(forecast, flyover.start),
                 shapes=shapes,
                 peak=max((s.peak for s in shapes), key=lambda p: p.elevation),
             )
@@ -227,15 +212,15 @@ def predict_passes(
     return passes
 
 
-def _shape(transit: Transit, observer: track.Observer) -> track.TransitShape:
+def _shape(sighting: Sighting, observer: track.Observer) -> track.SightingShape:
     brightest = track.SkyPoint(
-        transit.brightest_time.timestamp(), transit.brightest.azimuth, transit.brightest.elevation
+        sighting.peak_time.timestamp(), sighting.peak.azimuth, sighting.peak.elevation
     )
-    return track.transit_shape(
-        transit.satellite,
+    return track.sighting_shape(
+        sighting.satellite,
         observer,
-        transit.start.timestamp(),
-        transit.end.timestamp(),
+        sighting.start.timestamp(),
+        sighting.end.timestamp(),
         brightest,
     )
 
@@ -359,9 +344,8 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
                 async_get_clientsession(self.hass),
                 self.observer.latitude,
                 self.observer.longitude,
-                user_agent=USER_AGENT,
             )
-        except CatalogError as err:
+        except CloudCoverError as err:
             # Passes are still predicted, just without the weather.
             _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
             return None

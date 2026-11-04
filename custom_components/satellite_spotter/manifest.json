@@ -20,11 +20,10 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/kedube/ha-satellite-spotter/issues",
   "loggers": [
-    "custom_components.satellite_spotter",
-    "pysatellitespotter"
+    "custom_components.satellite_spotter"
   ],
   "requirements": [
-    "pysatellitespotter==0.2.0",
+    "numpy>=1.26",
     "sgp4==2.27"
   ],
   "version": "1.07"

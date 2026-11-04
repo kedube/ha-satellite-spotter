@@ -251,7 +251,7 @@ test("paused predictions, no passes, and errors say so", async () => {
 
   c = await mount({ passes: [] });
   assert.equal(c.text(".clock"), "None soon");
-  assert.equal(c.text(".when"), "No satellites bright enough to see in the next 5 days.");
+  assert.equal(c.text(".when"), "Nothing bright enough to see in the next 5 days.");
   assert.match(c.text(".text"), /after dusk and before dawn/);
   await c.unmount();
 

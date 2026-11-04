@@ -38,12 +38,11 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
-from pysatellitespotter import CatalogError
 import voluptuous as vol
 
 from . import SatelliteSpotterConfigEntry
 from .catalog import async_get_catalog
-from .celestrak import DownloadRefused
+from .celestrak import CatalogError, DownloadRefused
 from .const import (
     CONF_ALERT_LEAD_MINUTES,
     CONF_CLOUD_COVER,

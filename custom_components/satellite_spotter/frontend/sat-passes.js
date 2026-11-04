@@ -124,8 +124,8 @@ export function passDirections(pass) {
 
 /**
  * The hour a pass's cloud forecast is for (unix s): the first forecast hour
- * after the pass starts, as the integration and See A Satellite Tonight pick
- * it (Open-Meteo's hours are whole hours of UTC). Null without a start.
+ * after the pass starts, as the integration picks it (Open-Meteo's hours are
+ * whole hours of UTC). Null without a start.
  */
 export function cloudHour(pass) {
   return Number.isFinite(pass?.start) ? Math.floor(pass.start / 3600) * 3600 + 3600 : null;
@@ -142,8 +142,7 @@ const moonCache = new Map();
 /**
  * The Moon during a pass, when it can spoil the view: above the horizon at
  * the pass's highest point and more than 40 % lit (a bright Moon washes out
- * the fainter satellites; See A Satellite Tonight leaves it out). Null
- * otherwise, for a pass in daylight (the sky is bright anyway) and without a
+ * the fainter satellites). Null otherwise, for a pass in daylight (the sky is bright anyway) and without a
  * place. {time, fraction 0..1, elevation, azimuth, direction (16-point),
  * waxing, litSide (degrees clockwise from up, as it is seen)}.
  * @param {{latitude: number, longitude: number, elevation?: number}} observer

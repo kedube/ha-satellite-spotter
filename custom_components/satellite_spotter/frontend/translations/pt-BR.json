@@ -274,15 +274,15 @@
     "show_all": "Mostrar todas",
     "empty_filtered": "Nenhuma passagem corresponde aos filtros.",
     "empty": {
-      "one": "Nenhum satélite brilhante o bastante para ser visto nas próximas 24 horas.",
-      "other": "Nenhum satélite brilhante o bastante para ser visto nos próximos {count} dias."
+      "one": "Nada brilhante o bastante para ver nas próximas 24 horas.",
+      "other": "Nada brilhante o bastante para ver nos próximos {count} dias."
     },
-    "why_not": "Por quê?",
-    "why_not_text": "Milhares de satélites orbitam a Terra, mas só alguns estão perto e são grandes o bastante para serem vistos com facilidade. Mesmo um satélite brilhante só pode ser visto na hora certa: no meio da noite, os satélites estão na sombra da Terra, por isso aparecem por pouco tempo depois do anoitecer e antes do amanhecer.",
-    "check_back": "Volte mais tarde",
+    "why_not": "Por que isso acontece?",
+    "why_not_text": "A maioria dos satélites é pequena demais ou está longe demais para ser vista a olho nu. Os poucos que brilham o bastante também precisam do momento certo: o Sol tem de iluminá-los enquanto o seu céu está escuro. Isso costuma acontecer nas horas depois do anoitecer e antes do amanhecer, porque mais tarde na noite eles estão na sombra da Terra.",
+    "check_back": "Quando olhar de novo",
     "check_back_text": {
-      "one": "Amanhã pode haver novas chances de ver um.",
-      "other": "Em {count} dias pode haver novas chances de ver um."
+      "one": "Esta lista olha um dia à frente, então amanhã ela pode trazer algo novo.",
+      "other": "Esta lista olha {count} dias à frente, então amanhã ela pode trazer algo novo."
     }
   },
   "kinds": {

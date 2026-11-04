@@ -274,15 +274,15 @@
     "show_all": "Alles tonen",
     "empty_filtered": "Geen overkomst voldoet aan de filters.",
     "empty": {
-      "one": "De komende 24 uur is er geen satelliet helder genoeg om te zien.",
-      "other": "De komende {count} dagen is er geen satelliet helder genoeg om te zien."
+      "one": "De komende 24 uur is er niets helder genoeg om te zien.",
+      "other": "De komende {count} dagen is er niets helder genoeg om te zien."
     },
-    "why_not": "Waarom niet?",
-    "why_not_text": "Duizenden satellieten draaien om de aarde, maar slechts enkele zijn dichtbij en groot genoeg om ze gemakkelijk te zien. Zelfs een heldere satelliet zie je alleen op het juiste moment: midden in de nacht staan satellieten in de aardschaduw, dus zijn ze alleen een tijdje na zonsondergang en voor zonsopkomst te zien.",
-    "check_back": "Kijk later nog eens",
+    "why_not": "Hoe komt dat?",
+    "why_not_text": "De meeste satellieten zijn te klein of te ver weg om met het blote oog te zien. De paar die helder genoeg zijn, hebben ook het juiste moment nodig: de zon moet ze beschijnen terwijl jouw hemel donker is. Dat zijn meestal de uren na de schemering en voor de dageraad, want later in de nacht staan ze in de schaduw van de aarde.",
+    "check_back": "Wanneer je opnieuw kunt kijken",
     "check_back_text": {
-      "one": "Morgen zijn er misschien nieuwe kansen om er een te zien.",
-      "other": "Over {count} dagen zijn er misschien nieuwe kansen om er een te zien."
+      "one": "Deze lijst kijkt één dag vooruit, dus morgen staat er misschien iets nieuws in.",
+      "other": "Deze lijst kijkt {count} dagen vooruit, dus morgen staat er misschien iets nieuws in."
     }
   },
   "kinds": {

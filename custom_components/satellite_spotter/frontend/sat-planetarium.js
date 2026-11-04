@@ -422,7 +422,7 @@ export function sampleAt(data, t, offset = 0) {
 
 /**
  * Runs of consecutive samples drawn alike, above `minElevation`: "visible"
- * (the library would call it visible), "lit" (sunlit but too low or faint for
+ * (what the predictions count as visible), "lit" (sunlit but too low or faint for
  * the sky) and "shadow" (in Earth's shadow). Each run [style, from, to] shares
  * its end sample with the next, so the drawn path has no gaps.
  */

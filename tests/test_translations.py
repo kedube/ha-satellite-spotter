@@ -138,15 +138,13 @@ def test_manifest_and_requirements_agree() -> None:
     manifest = _load(INTEGRATION / "manifest.json")
     assert manifest["domain"] == "satellite_spotter"
     assert manifest["name"] == "Satellite Spotter"
-    # Home Assistant installs them from PyPI, so they are pinned by version: the
-    # library, and the SGP4 the integration imports itself.
-    (library, sgp4) = manifest["requirements"]
-    assert re.fullmatch(r"pysatellitespotter==[\d.]+", library)
+    # Home Assistant installs them from PyPI. SGP4 is pinned by version; numpy is
+    # for Home Assistant to pin, which it does for everything it runs.
+    (numpy, sgp4) = manifest["requirements"]
+    assert numpy.startswith("numpy>=")
     assert re.fullmatch(r"sgp4==[\d.]+", sgp4)
     for name in ("requirements_test.txt", "requirements_test_oldest.txt"):
-        lines = (ROOT / name).read_text().splitlines()
-        assert library in lines
-        assert sgp4 in lines
+        assert sgp4 in (ROOT / name).read_text().splitlines()
     hacs = _load(ROOT / "hacs.json")
     assert hacs["name"] == "Satellite Spotter"
 

@@ -274,15 +274,15 @@
     "show_all": "Tout afficher",
     "empty_filtered": "Aucun passage ne correspond aux filtres.",
     "empty": {
-      "one": "Aucun satellite assez brillant à voir dans les prochaines 24 heures.",
-      "other": "Aucun satellite assez brillant à voir dans les {count} prochains jours."
+      "one": "Rien d'assez brillant à voir dans les prochaines 24 heures.",
+      "other": "Rien d'assez brillant à voir dans les {count} prochains jours."
     },
-    "why_not": "Pourquoi ?",
-    "why_not_text": "Des milliers de satellites tournent autour de la Terre, mais seuls quelques-uns sont assez proches et assez grands pour être vus facilement. Même un satellite brillant ne se voit qu'au bon moment : au milieu de la nuit, les satellites sont dans l'ombre de la Terre ; on ne les voit donc que peu de temps après le crépuscule et avant l'aube.",
-    "check_back": "Revenez plus tard",
+    "why_not": "Pourquoi cela ?",
+    "why_not_text": "La plupart des satellites sont trop petits ou trop éloignés pour être vus à l'œil nu. Les rares qui brillent assez ont aussi besoin du bon moment : le Soleil doit les éclairer pendant que votre ciel est sombre. Cela correspond surtout aux heures qui suivent le crépuscule et qui précèdent l'aube, car plus tard dans la nuit ils sont dans l'ombre de la Terre.",
+    "check_back": "Quand revenir voir",
     "check_back_text": {
-      "one": "Demain, de nouvelles occasions d'en voir un se présenteront peut-être.",
-      "other": "Dans {count} jours, de nouvelles occasions d'en voir un se présenteront peut-être."
+      "one": "Cette liste couvre une journée à l'avance : demain, elle contiendra peut-être du nouveau.",
+      "other": "Cette liste couvre {count} jours à l'avance : demain, elle contiendra peut-être du nouveau."
     }
   },
   "kinds": {

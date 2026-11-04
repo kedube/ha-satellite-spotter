@@ -55,7 +55,7 @@
           "units": "Unidades"
         },
         "data_description": {
-          "max_magnitude": "Informa só as passagens pelo menos tão brilhantes. Números menores são mais brilhantes: 3 é o que o site usa, mais ou menos o mais fraco que se encontra num bairro residencial; 1 mantém as fáceis, e abaixo de 0 só restam as deslumbrantes.",
+          "max_magnitude": "Informa só as passagens pelo menos tão brilhantes. Números menores são mais brilhantes: 3 é mais ou menos o mais fraco que se encontra num bairro residencial; 1 mantém as fáceis, e abaixo de 0 só restam as deslumbrantes.",
           "cloud_cover": "Adiciona a cada passagem a previsão de nebulosidade do Open-Meteo. O Open-Meteo recebe as coordenadas deste local (com quatro casas decimais) a cada duas horas.",
           "alert_lead_minutes": "O sensor \"Passagem brilhante em breve\" liga com essa antecedência antes de uma passagem brilhante começar.",
           "show_in_sidebar": "Adiciona à barra lateral uma página do Satellite Spotter com as passagens, um globo 3D e uma vista do céu ao nível da rua. A vista de rua carrega blocos de mapa dos arredores do OpenFreeMap e da AWS (e da Esri com imagens aéreas). Os cartões do painel funcionam de qualquer forma.",

@@ -55,7 +55,7 @@
           "units": "Jednostki"
         },
         "data_description": {
-          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 3 to wartość strony, mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
+          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 3 to mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
           "cloud_cover": "Dodaje do każdego przelotu prognozę zachmurzenia z Open-Meteo. Open-Meteo otrzymuje co dwie godziny współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
           "alert_lead_minutes": "Sensor „Jasny przelot wkrótce” włącza się z takim wyprzedzeniem przed początkiem jasnego przelotu.",
           "show_in_sidebar": "Dodaje do paska bocznego stronę Satellite Spotter z przelotami, globusem 3D i widokiem nieba z poziomu ulicy. Widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS (a ze zdjęciami lotniczymi także z Esri). Karty dashboardu działają w każdym przypadku.",

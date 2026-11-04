@@ -11,7 +11,7 @@ Starlinks are left out: their brightness comes from a published model instead
             the citation it came from.
   mccants   Mike McCants's qs.mag file, plus 0.75, which is 2.5 log10(2): it gives
             magnitudes at 100% illumination, the predictions' scale is for 50%.
-            https://www.prismnet.com/~mmccants/programs/qsmag.zip
+            https://www.mmccants.org/programs/qsmag.zip
   score     The IAU CPS SCORE repository of observations (CC BY 4.0): the median
             over each object's checked observations, turned into intrinsic
             magnitudes. Nothing of an observation but this median is kept.
@@ -23,9 +23,11 @@ Starlinks are left out: their brightness comes from a published model instead
             the same hardware, so not for debris.
 
 Physical sizes from Jonathan McDowell's GCAT (CC BY 4.0) check SCORE and Stellarium's
-values, but become no values themselves: estimates from size added few of the passes
-the website lists, and more passes that it does not.
+values, but become no values themselves: estimates from size were too rough to list
+passes by.
 https://planet4589.org/space/gcat
+
+A published mean for a whole constellation checks them too, where there is one.
 
 CelesTrak's SATCAT says what is on orbit, how low it comes, and each name.
 https://celestrak.org/pub/satcat.csv
@@ -60,8 +62,8 @@ OVERRIDES = ROOT / "scripts" / "brightness_overrides.csv"
 # ResolveSky documents the same conversion, https://resolvesky.com.
 MCCANTS_OFFSET = 0.75
 # How bright an object must be able to get: the magnitude it would reach
-# straight overhead at its perigee, before the air dims it. The website's
-# default cutoff is 3, about the faintest you can find from a suburb.
+# straight overhead at its perigee, before the air dims it. The default cutoff
+# is 3, about the faintest you can find from a suburb.
 BRIGHTEST_LIMIT = 3.0
 MIN_PERIGEE_KM = 100.0
 
@@ -75,6 +77,13 @@ BRIGHTEST_PLAUSIBLE = -3.0
 # A median this far from what the object's size suggests is more likely a
 # misidentification than a discovery.
 MAX_FROM_SIZE = 4.0
+# The same goes for a satellite's median against the published mean of its constellation,
+# all built alike: the mean and standard deviation by family, and how many of those to allow.
+# Qianfan: 5.24 at 1000 km and 0.72 (Mallama & Cole 2025, arXiv:2507.00107, table 1). That
+# still has the phase in it; on the predictions' scale it is 0.97 brighter, the difference
+# between the medians of SCORE's Qianfan observations with and without it.
+PUBLISHED_MEANS = {"QIANFAN": (5.24 - 0.97, 0.72)}
+MAX_FROM_PUBLISHED = 2.0
 
 HEADER = """\
 # How bright each satellite is: standard magnitude at 1000 km, on the predictions' scale.
@@ -82,14 +91,15 @@ HEADER = """\
 # scripts/brightness_overrides.csv and rebuild.
 #
 # Sources, in the "source" column:
-#   mccants  qs.mag by Mike McCants, plus 0.75. https://www.prismnet.com/~mmccants/
+#   mccants  qs.mag by Mike McCants, plus 0.75. https://www.mmccants.org/
 #   score    Medians computed from SCORE, IAU CPS, CC BY 4.0, changed by being turned into
 #            intrinsic magnitudes and reduced to one value. https://score.cps.iau.org
 #   stellarium  The satellite list of Stellarium, GPL. https://stellarium.org
 #   family   The median McCants value of objects of the same name, plus 0.75.
 #   override Added by hand, with its citation in scripts/brightness_overrides.csv.
 # score and stellarium were checked against physical sizes in GCAT by Jonathan C. McDowell,
-# CC BY 4.0. https://planet4589.org/space/gcat
+# CC BY 4.0, https://planet4589.org/space/gcat, and Qianfan's against Mallama & Cole 2025,
+# https://arxiv.org/abs/2507.00107.
 # Objects on orbit, perigees and names: SATCAT, CelesTrak, https://celestrak.org, from
 # US Space Force data published on https://www.space-track.org.
 """
@@ -233,10 +243,14 @@ def size_estimate(
     return constant - 2.5 * math.log10(shown) + MCCANTS_OFFSET
 
 
-def plausible(magnitude: float, estimate: float | None) -> bool:
-    """Whether an observed value could be right, given the object's size."""
+def plausible(magnitude: float, estimate: float | None, family: str = "") -> bool:
+    """Whether an observed value could be right, given the object's size and constellation."""
     if magnitude < BRIGHTEST_PLAUSIBLE:
         return False
+    if family in PUBLISHED_MEANS:
+        mean, deviation = PUBLISHED_MEANS[family]
+        if abs(magnitude - mean) > MAX_FROM_PUBLISHED * deviation:
+            return False
     return estimate is None or abs(magnitude - estimate) <= MAX_FROM_SIZE
 
 
@@ -296,14 +310,15 @@ def build(
         if perigee is None or not on_orbit(record) or name.upper().startswith("STARLINK"):
             continue
         estimate = size_estimate(norad, gcat, constants)
-        family = families.get(family_of(name))
+        family_name = family_of(name)
+        family = families.get(family_name)
         if norad in overrides:
             magnitude, source = overrides[norad], "override"
         elif norad in mccants:
             magnitude, source = mccants[norad] + MCCANTS_OFFSET, "mccants"
-        elif norad in score and plausible(score[norad], estimate):
+        elif norad in score and plausible(score[norad], estimate, family_name):
             magnitude, source = score[norad], "score"
-        elif norad in stellarium and plausible(stellarium[norad], estimate):
+        elif norad in stellarium and plausible(stellarium[norad], estimate, family_name):
             magnitude, source = stellarium[norad], "stellarium"
         elif family is not None and record.get("OBJECT_TYPE") != "DEB":
             magnitude, source = family + MCCANTS_OFFSET, "family"

@@ -1,14 +1,13 @@
 /**
  * The clock the globe, the street view and the time bar share.
  *
- * Live, it is Home Assistant's time. Simulating, it replays a pass the way
- * James Darpinian's See A Satellite Tonight does: the visible part in about
- * 20 seconds, looping, with a seek bar; optionally after an eased
- * fast-forward from now to the pass. Nothing here touches the DOM, so it is
- * unit tested in node.
+ * Live, it is Home Assistant's time. Simulating, it replays a pass: the
+ * visible part in about 20 seconds, looping, with a seek bar; optionally after
+ * an eased fast-forward from now to the pass. Nothing here touches the DOM, so
+ * it is unit tested in node.
  */
 
-// The visible part of a pass replays in about this many seconds (James's pace)…
+// The visible part of a pass replays in about this many seconds…
 const FIT_SECONDS = 20;
 // …but the whole loop, lead-in and tail included, takes no longer than this.
 const MAX_LOOP_SECONDS = 45;

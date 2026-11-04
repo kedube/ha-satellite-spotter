@@ -849,8 +849,7 @@ export function hiddenByPhoto(found, R, data) {
  * The photo darkened for a Sun ({elevation}) and Moon ({elevation,
  * fraction}): an exposure in linear light, how far colours fade (the eye
  * sees no colour by moonlight), and a cool tint. A moonless night keeps the
- * street just readable, as Darpinian's night filter does; the ground near
- * the camera (the car or bike it was on) fades into the dark below the
+ * street just readable; the ground near the camera (the car or bike it was on) fades into the dark below the
  * horizon.
  */
 export function photoLook(sun, moon = null) {

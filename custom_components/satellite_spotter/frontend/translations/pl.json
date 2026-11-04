@@ -286,19 +286,19 @@
     "show_all": "Pokaż wszystkie",
     "empty_filtered": "Żaden przelot nie pasuje do filtrów.",
     "empty": {
-      "one": "Brak wystarczająco jasnych satelitów w ciągu najbliższego dnia.",
-      "few": "Brak wystarczająco jasnych satelitów w ciągu najbliższych {count} dni.",
-      "many": "Brak wystarczająco jasnych satelitów w ciągu najbliższych {count} dni.",
-      "other": "Brak wystarczająco jasnych satelitów w ciągu najbliższych {count} dnia."
+      "one": "W ciągu najbliższego dnia nie będzie nic dość jasnego, by to zobaczyć.",
+      "few": "W ciągu najbliższych {count} dni nie będzie nic dość jasnego, by to zobaczyć.",
+      "many": "W ciągu najbliższych {count} dni nie będzie nic dość jasnego, by to zobaczyć.",
+      "other": "W ciągu najbliższych {count} dnia nie będzie nic dość jasnego, by to zobaczyć."
     },
-    "why_not": "Dlaczego?",
-    "why_not_text": "Wokół Ziemi krążą tysiące satelitów, ale tylko nieliczne są dość blisko i dość duże, by łatwo je dostrzec. Nawet jasnego satelitę widać tylko o właściwej porze: w środku nocy satelity są w cieniu Ziemi, więc pokazują się przez krótki czas po zmierzchu i przed świtem.",
-    "check_back": "Zajrzyj później",
+    "why_not": "Dlaczego tak jest?",
+    "why_not_text": "Większość satelitów jest zbyt mała lub zbyt daleko, by zobaczyć je gołym okiem. Tych kilka dość jasnych potrzebuje też właściwej chwili: Słońce musi je oświetlać, gdy u Ciebie jest już ciemno. Zwykle są to godziny po zmierzchu i przed świtem, bo później w nocy znajdują się w cieniu Ziemi.",
+    "check_back": "Kiedy zajrzeć ponownie",
     "check_back_text": {
-      "one": "Jutro mogą pojawić się nowe okazje do obserwacji.",
-      "few": "Za {count} dni mogą pojawić się nowe okazje do obserwacji.",
-      "many": "Za {count} dni mogą pojawić się nowe okazje do obserwacji.",
-      "other": "Za {count} dnia mogą pojawić się nowe okazje do obserwacji."
+      "one": "Ta lista sięga jeden dzień naprzód, więc jutro może pojawić się coś nowego.",
+      "few": "Ta lista sięga {count} dni naprzód, więc jutro może pojawić się coś nowego.",
+      "many": "Ta lista sięga {count} dni naprzód, więc jutro może pojawić się coś nowego.",
+      "other": "Ta lista sięga {count} dnia naprzód, więc jutro może pojawić się coś nowego."
     }
   },
   "kinds": {

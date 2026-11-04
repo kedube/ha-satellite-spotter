@@ -11,11 +11,11 @@ from unittest.mock import AsyncMock
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from pysatellitespotter import CatalogError
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.satellite_spotter.catalog import async_get_catalog
+from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import (
     CONF_GOOGLE_API_KEY,
     CONF_MAPILLARY_TOKEN,
@@ -30,7 +30,7 @@ from custom_components.satellite_spotter.frontend import (
     pass_track_payload,
 )
 
-from .common import FIRST_PASS_ID, NOW, UTRECHT, advance
+from .common import FIRST_PASS_ID, HONOLULU, NOW, advance
 
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
@@ -40,7 +40,7 @@ PASS_KEYS = {
 TRANSIT_KEYS = {
     "norad_id", "name", "kind", "start", "end", "magnitude", "brightest_time", "rise",
     "brightest", "set", "peak", "start_reason", "end_reason", "intrinsic_magnitude", "model",
-    "prediction", "period_s", "info_url", "confidence",
+    "period_s", "info_url", "confidence",
 }  # fmt: skip
 KINDS = {"iss", "tiangong", "hubble", "starlink", "rocket", "debris", "satellite"}
 
@@ -97,7 +97,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert result["location"] == {
         "entry_id": init_integration.entry_id,
         "title": "Home",
-        **UTRECHT,
+        **HONOLULU,
     }
     assert result["settings"] == {
         "max_magnitude": 3.0,
@@ -114,18 +114,18 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert 0 < catalog["median_epoch_age_days"] < 1
 
     passes = result["passes"]
-    assert len(passes) == 64
-    assert len({p["id"] for p in passes}) == 64
+    assert len(passes) == 18
+    assert len({p["id"] for p in passes}) == 18
     assert [p["start"] for p in passes] == sorted(p["start"] for p in passes)
     assert _no_negative_zero(passes)
     first = passes[0]
     assert first.keys() == PASS_KEYS
     assert first["id"] == FIRST_PASS_ID
-    assert first["title"] == "BlueWalker 3"
+    assert first["title"] == "BLUEWALKER-3"
     assert first["kind"] == "satellite"
-    assert first["start"] == 1791659316
+    assert first["start"] == 1793806408
     assert first["duration"] == first["end"] - first["start"]
-    assert (first["magnitude"], first["bright"], first["cloud_cover"]) == (0.3, True, 20)
+    assert (first["magnitude"], first["bright"], first["cloud_cover"]) == (1.0, True, 16)
     assert (first["satellite_count"], first["train"]) == (1, False)
     for p in passes:
         assert p["start"] < p["end"]
@@ -152,12 +152,12 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
                 assert t[point]["direction"] in DIRECTIONS
                 assert 10 <= t[point]["elevation"] <= 90
     kinds = {t["name"]: t["kind"] for p in passes for t in p["transits"]}
-    assert kinds["SL-4 R/B"] == "rocket"
-    assert kinds["BREEZE-M DEB (TANK)"] == "debris"
-    assert kinds["BlueWalker 3"] == "satellite"
-    group = next(p for p in passes if p["title"] == "SL-4 R/B +1")
+    assert kinds["SL-16 R/B"] == "rocket"
+    assert kinds["BLUEWALKER-3"] == "satellite"
+    assert kinds["ISS"] == "iss"
+    group = next(p for p in passes if p["title"] == "ISS +1")
     assert group["satellite_count"] == 2
-    assert [t["name"] for t in group["transits"]] == ["SL-4 R/B", "SAOCOM 1-A"]
+    assert [t["name"] for t in group["transits"]] == ["ISS", "Hubble"]
 
 
 async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
@@ -169,9 +169,9 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
     assert result["pass_id"] == p.id
     assert result["step"] == 2
     (transit,) = result["transits"]
-    t = p.primary
+    t = p.lead
     assert transit["norad_id"] == 53807
-    assert transit["name"] == "BlueWalker 3"
+    assert transit["name"] == "BLUEWALKER-3"
     assert transit["kind"] == "satellite"
     assert transit["offset_s"] == 0
     assert transit["visible_start"] == int(t.start.timestamp())
@@ -201,30 +201,30 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
             assert lit and el >= 10 and mag <= 3.0  # rounded
             # Drawn where the countdown says it is visible (give or take a few seconds).
             assert transit["visible_start"] - 6 <= when <= transit["visible_end"] + 6
-    # The library's own look angles (from interpolated positions) agree within a degree.
+    # The search's look angles agree with the rows' within a degree.
     start_row = next(row for row in rows if row[0] == transit["visible_start"])
-    assert abs(start_row[6] - t.rise.elevation) < 1
-    assert abs((start_row[5] - t.rise.azimuth + 180) % 360 - 180) < 1
+    assert abs(start_row[6] - t.appears.elevation) < 1
+    assert abs((start_row[5] - t.appears.azimuth + 180) % 360 - 180) < 1
 
     # The Sun every 30 s, all the way.
     sun = result["sun"]
     assert sun[0][0] == rows[0][0] and rows[-1][0] - 30 < sun[-1][0] <= rows[-1][0]
     assert {b[0] - a[0] for a, b in itertools.pairwise(sun)} == {30}
-    # Two hours after sunset: the Sun well below the north-west horizon, sinking.
-    assert -30 < sun[-1][2] < sun[0][2] < -12
-    assert 280 < sun[0][1] < 330
+    # An hour before sunrise in Honolulu: the Sun below the eastern horizon, climbing.
+    assert -20 < sun[0][2] < sun[-1][2] < -8
+    assert 90 < sun[0][1] < 130
 
 
 async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry) -> None:
-    p = next(p for p in init_integration.runtime_data.data.passes if p.id == "39679-1791693714")
+    p = next(p for p in init_integration.runtime_data.data.passes if p.flyover.satellite_count == 2)
     msg = await ws("pass_track", pass_id=p.id, step=5)
     result = msg["result"]
     assert result["step"] == 5
     first, second = result["transits"]
-    assert (first["name"], second["name"]) == ("SL-4 R/B", "SAOCOM 1-A")
+    assert (first["name"], second["name"]) == ("ISS", "Hubble")
     assert first["offset_s"] == 0
     assert second["offset_s"] == round(
-        (p.group.transits[1].brightest_time - p.group.transits[0].brightest_time).total_seconds()
+        (p.flyover.sightings[1].peak_time - p.flyover.sightings[0].peak_time).total_seconds()
     )
     for transit in result["transits"]:
         assert transit["rows"]
@@ -235,20 +235,20 @@ async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry)
 
 def _group(p: SatellitePass, names: list[str]) -> SatellitePass:
     """Satellites following the pass's first, 15 s apart, named as given."""
-    t = p.primary
+    t = p.lead
     members = [
         replace(
             t,
             satellite=replace(t.satellite, name=name, norad_id=70000 + i),
             start=t.start + timedelta(seconds=15 * i),
             end=t.end + timedelta(seconds=15 * i),
-            brightest_time=t.brightest_time + timedelta(seconds=15 * i),
+            peak_time=t.peak_time + timedelta(seconds=15 * i),
         )
         for i, name in enumerate(names)
     ]
     return SatellitePass(
         id=p.id,
-        group=replace(p.group, transits=members),
+        flyover=replace(p.flyover, sightings=members),
         cloud_cover=None,
         shapes=p.shapes * len(names),
         peak=p.peak,
@@ -278,7 +278,7 @@ async def test_trains_share_the_first_path(
     assert transits[8]["horizon_set"] == transits[0]["horizon_set"] + 120
 
     # A group that is not a train: everyone on their own path.
-    group = _group(p, ["BlueWalker 3", *names[:8]])
+    group = _group(p, ["BLUEWALKER-3", *names[:8]])
     result = await hass.async_add_executor_job(
         pass_track_payload, group, coordinator.observer, 2.0, 3.0
     )
@@ -447,7 +447,7 @@ async def test_catalog(hass: HomeAssistant, ws: Any) -> None:
         "norad_id", "name", "kind", "magnitude", "model", "epoch", "period_s", "perigee_km",
         "apogee_km", "inclination", "info_url",
     }  # fmt: skip
-    assert (iss["name"], iss["kind"], iss["magnitude"], iss["model"]) == ("ISS", "iss", -2.3, None)
+    assert (iss["name"], iss["kind"], iss["magnitude"], iss["model"]) == ("ISS", "iss", -1.8, None)
     assert 5500 < iss["period_s"] < 5600
     assert 400 < iss["perigee_km"] <= iss["apogee_km"] < 440
     assert iss["inclination"] == 51.6
@@ -523,7 +523,7 @@ async def test_street_hides_keys_from_non_admin(
         ("pass_track", {"pass_id": FIRST_PASS_ID}),
         (
             "track",
-            {"norad_id": 25544, "start": "2026-10-10T19:00:00Z", "end": "2026-10-10T20:00:00Z"},
+            {"norad_id": 25544, "start": "2026-11-04T19:00:00Z", "end": "2026-11-04T20:00:00Z"},
         ),
         ("positions", {}),
         ("catalog", {}),
@@ -557,10 +557,10 @@ async def test_paused_predictions(
     freezer: FrozenDateTimeFactory,
     ws: Any,
     init_integration: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Orbit data too old to trust: no passes, and the reason why."""
-    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("HTTP 503")
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("HTTP 503")
     later = NOW + timedelta(days=15)
     # Past the age limit, even before the next refresh notices.
     freezer.move_to(later)

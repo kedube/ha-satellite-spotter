@@ -727,7 +727,7 @@ test("a pass says what can make it easier or harder to see", () => {
   const view = new SatelliteGlobeView();
   const conds = (pass) => view._conditions(pass).map((c) => [c.cls, c.icon, c.text]);
   const pass = makePass(T0 + 600, T0 + 900, { cloud: 37 });
-  // The cloud for its forecast hour, as See A Satellite Tonight says it.
+  // The cloud for its forecast hour.
   const hour = view._fmt.hour(Math.floor(pass.start / 3600) * 3600 + 3600);
   assert.deepEqual(conds(pass), [["partly", "cloud", `37% cloud at ${hour}`]]);
   assert.equal(passesModule.cloudText(pass, view._fmt), `37% cloud at ${hour}`);

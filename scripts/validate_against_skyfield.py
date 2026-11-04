@@ -14,7 +14,7 @@ random instants, for several observers. With ``--write-fixture`` the Skyfield
 results are saved for tests/test_track.py, so the test suite needs neither
 Skyfield nor the ephemeris.
 
-Sunlight differs on purpose: like See A Satellite Tonight, track.py requires
+Sunlight differs on purpose: track.py requires
 the Sun's rays to clear 15 km of atmosphere, where Skyfield's Earth is a bare
 sphere. Disagreements are counted only away from the shadow's edge.
 """

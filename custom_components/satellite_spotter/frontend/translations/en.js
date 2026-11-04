@@ -346,18 +346,18 @@ export default {
     },
     show_all: "Show all",
     empty_filtered: "No pass matches the filters.",
-    // No pass at all, and why (after James Darpinian's See A Satellite Tonight).
+    // No pass at all, and why.
     empty: {
-      one: "No satellites bright enough to see in the next day.",
-      other: "No satellites bright enough to see in the next {count} days.",
+      one: "Nothing bright enough to see in the next day.",
+      other: "Nothing bright enough to see in the next {count} days.",
     },
-    why_not: "Why not?",
+    why_not: "Why is that?",
     why_not_text:
-      "Thousands of satellites orbit the Earth, but only a few are close enough and large enough to see easily. Even a bright one can only be seen at the right time: in the middle of the night satellites are in Earth's shadow, so they show for a short while after dusk and before dawn.",
-    check_back: "Check back later",
+      "Most satellites are too small or too far away to see with the naked eye. The few that are bright enough also need the right moment: the Sun has to light them while your sky is dark. That mostly means the hours after dusk and before dawn, because later in the night they are in Earth's shadow.",
+    check_back: "When to look again",
     check_back_text: {
-      one: "Tomorrow there may be new chances to see one.",
-      other: "In {count} days there may be new chances to see one.",
+      one: "This list looks one day ahead, so tomorrow it may hold something new.",
+      other: "This list looks {count} days ahead, so tomorrow it may hold something new.",
     },
   },
   // Kinds of object, as the integration tells them apart (track D2).

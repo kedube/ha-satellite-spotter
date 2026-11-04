@@ -14,11 +14,8 @@ USER_AGENT: Final = (
     f"HomeAssistant-SatelliteSpotter/{VERSION} (+https://github.com/kedube/ha-satellite-spotter)"
 )
 
-# James Darpinian's website, whose predictions the pysatellitespotter library ports.
-WEBSITE_URL: Final = "https://james.darpinian.com/satellites/"
 ATTRIBUTION: Final = (
-    "Predictions after See A Satellite Tonight (james.darpinian.com/satellites), "
-    "orbital data from CelesTrak, brightness from Mike McCants, SCORE (IAU CPS) and "
+    "Orbital data from CelesTrak, brightness from Mike McCants, SCORE (IAU CPS) and "
     "Stellarium, cloud cover from Open-Meteo"
 )
 
@@ -35,8 +32,8 @@ CONF_STREET_SOURCE: Final = "street_source"
 CONF_MAPILLARY_TOKEN: Final = "mapillary_token"
 CONF_GOOGLE_API_KEY: Final = "google_api_key"
 
-# The website's cutoff: about the faintest a satellite can be and still be
-# found from a suburb. Lower numbers are brighter.
+# About the faintest a satellite can be and still be found from a suburb.
+# Lower numbers are brighter.
 DEFAULT_MAX_MAGNITUDE: Final = 3.0
 DEFAULT_CLOUD_COVER: Final = True
 DEFAULT_ALERT_LEAD_MINUTES: Final = 15
@@ -84,14 +81,14 @@ STORAGE_SAVE_DELAY: Final = 10
 PREDICTION_REFRESH: Final = timedelta(hours=2)
 PREDICTION_DAYS: Final = 5
 PREDICTION_LOOKBACK: Final = timedelta(minutes=5)
-# The library's horizon: satellites lower than this count as hidden.
+# Satellites lower than this count as hidden.
 MIN_ELEVATION: Final = 10
 # How far ahead the passes_next_24h sensor looks.
 UPCOMING_WINDOW: Final = timedelta(hours=24)
 MAX_LISTED_PASSES: Final = 20
 MAX_GROUP_NAMES: Final = 20
 # A Starlink train can bring dozens of satellites; the payloads list this many.
-MAX_TRANSITS: Final = 60
+MAX_SIGHTINGS: Final = 60
 
 # Rough guide to how far the timing of a prediction can be trusted, by how far
 # the pass is from the epoch of the satellite's orbital elements. Drag and

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import STATE_OFF, STATE_ON
@@ -13,17 +14,18 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.satellite_spotter.const import (
     ATTRIBUTION,
+    CONF_SHOW_PANEL,
     DEFAULT_ALERT_LEAD_MINUTES,
     DOMAIN,
     VERSION,
 )
+from custom_components.satellite_spotter.entity import magnitude
 
-from .common import FIRST_PASS, FIRST_PASS_ID, NOW, advance
+from .common import DENVER, DENVER_ID, FIRST_PASS, FIRST_PASS_ID, NOW, add_location, advance
 
 pytestmark = pytest.mark.usefixtures("init_integration")
 
-# The attributes of See A Satellite Tonight's pass entities, which automations
-# and cards read, plus the pass id for links to the pass in the sidebar page.
+# The attributes of a pass, which automations and cards read.
 PASS_KEYS = {
     "satellite",
     "norad_id",
@@ -60,45 +62,54 @@ ENTITIES = {
 
 
 async def test_next_pass(hass: HomeAssistant) -> None:
-    """The next pass is the website's first one, with where to look."""
+    """The next pass comes with everything an automation needs to point someone at it."""
     state = hass.states.get("sensor.home_next_pass")
     assert state.state == FIRST_PASS
-    attrs = state.attributes
-    assert attrs.keys() == PASS_KEYS | {"attribution", "device_class", "friendly_name"}
-    assert attrs["satellite"] == "BlueWalker 3"
-    assert attrs["norad_id"] == 53807
-    assert attrs["start"] == FIRST_PASS
-    assert attrs["magnitude"] == 0.3
-    assert attrs["bright"] is True
-    assert attrs["before_sunset"] is False
-    assert attrs["rise_direction"] == "WNW"
-    assert attrs["cloud_cover"] == 20  # the first forecast hour after the start
-    assert attrs["satellite_count"] == 1
-    assert attrs["info_url"].startswith("https://ast-science.com/")
-    assert attrs["pass_id"] == FIRST_PASS_ID
-    assert attrs["attribution"] == ATTRIBUTION
+    assert state.attributes.keys() == PASS_KEYS | {"attribution", "device_class", "friendly_name"}
+    expected = {
+        "satellite": "BLUEWALKER-3",
+        "norad_id": 53807,
+        "start": FIRST_PASS,
+        "magnitude": 1.0,
+        "bright": True,
+        "before_sunset": False,
+        "rise_direction": "NW",
+        # The first forecast hour after the start.
+        "cloud_cover": 16,
+        "satellite_count": 1,
+        "info_url": "https://en.wikipedia.org/wiki/BlueWalker_3",
+        "pass_id": FIRST_PASS_ID,
+        "attribution": ATTRIBUTION,
+    }
+    assert {key: state.attributes[key] for key in expected} == expected
 
+
+async def test_what_comes_after_the_next_pass(hass: HomeAssistant) -> None:
+    """The other sensors tell the same story."""
     assert hass.states.get("sensor.home_next_bright_pass").state == FIRST_PASS
     passes = hass.states.get("sensor.home_passes_next_24_hours")
-    assert int(passes.state) == len(passes.attributes["passes"]) == 12
+    assert int(passes.state) == len(passes.attributes["passes"]) == 5
     assert passes.attributes["unit_of_measurement"] == "passes"
     assert passes.attributes["passes"][0] == {
         "start": FIRST_PASS,
-        "satellite": "BlueWalker 3",
-        "magnitude": 0.3,
-        "direction": "WNW",
-        "cloud_cover": 20,
+        "satellite": "BLUEWALKER-3",
+        "magnitude": 1.0,
+        "direction": "NW",
+        "cloud_cover": 16,
     }
+
+
+async def test_catalog_sensor(hass: HomeAssistant) -> None:
     catalog = hass.states.get("sensor.home_catalog_updated")
     assert catalog.state == NOW.isoformat()
-    assert catalog.attributes["satellites"] == 22
-    assert catalog.attributes["stale"] is False
-    assert catalog.attributes["last_download_error"] is None
-    assert 0 < catalog.attributes["age_days"] < 1
+    attributes = catalog.attributes
+    assert (attributes["satellites"], attributes["stale"]) == (22, False)
+    assert attributes["last_download_error"] is None
+    assert 0 < attributes["age_days"] < 1
 
 
 async def test_entities_and_device(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
-    """The entity ids of See A Satellite Tonight, one device per location."""
+    """The entity ids automations and cards rely on, with one device per location."""
     ent_reg = er.async_get(hass)
     entry_id = init_integration.entry_id
     for entity_id, key in ENTITIES.items():
@@ -111,11 +122,27 @@ async def test_entities_and_device(hass: HomeAssistant, init_integration: MockCo
     (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry_id)
     assert device.identifiers == {(DOMAIN, entry_id)}
     assert device.name == "Home"
-    assert device.manufacturer == "James Darpinian"
-    assert device.model == "See A Satellite Tonight"
+    assert device.manufacturer == "Satellite Spotter"
+    assert device.model == "Pass predictions"
     assert device.sw_version == VERSION
     assert device.entry_type is dr.DeviceEntryType.SERVICE
-    assert device.configuration_url == "https://james.darpinian.com/satellites/#loc=52.0907,5.1214"
+    # Visit opens this location on the page.
+    assert device.configuration_url == f"homeassistant://satellite-spotter?entry_id={entry_id}"
+
+
+async def test_no_link_to_a_page_that_is_switched_off(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Cabin",
+        data=DENVER,
+        unique_id=DENVER_ID,
+        options={CONF_SHOW_PANEL: False},
+    )
+    await add_location(hass, entry)
+    (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.configuration_url is None
 
 
 async def test_lists_stay_out_of_the_recorder(hass: HomeAssistant) -> None:
@@ -133,23 +160,30 @@ async def test_lists_stay_out_of_the_recorder(hass: HomeAssistant) -> None:
     assert "satellites" not in catalog.state_info["unrecorded_attributes"]
 
 
-async def test_pass_in_progress(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
-    """The binary sensor follows the pass without polling."""
-    visible = "binary_sensor.home_satellite_visible"
-    assert hass.states.get(visible).state == STATE_OFF
-    assert hass.states.get(visible).attributes.keys() == {"friendly_name", "attribution"}
+async def test_visible_while_a_pass_is_under_way(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, init_integration: MockConfigEntry
+) -> None:
+    """The binary sensor turns on and off by itself, at the pass's own times."""
+    sensor = "binary_sensor.home_satellite_visible"
+    before = hass.states.get(sensor)
+    assert before.state == STATE_OFF
+    # Off, it describes no pass.
+    assert before.attributes.keys() == {"friendly_name", "attribution"}
 
-    await advance(hass, freezer, datetime(2026, 10, 10, 19, 8, 42, tzinfo=UTC))
-    state = hass.states.get(visible)
-    assert state.state == STATE_ON
-    assert state.attributes["satellite"] == "BlueWalker 3"
-    assert state.attributes["pass_id"] == FIRST_PASS_ID
-    # While in progress, the "next pass" is still this one.
+    first = init_integration.runtime_data.data.passes[0]
+    await advance(hass, freezer, first.start + timedelta(seconds=5))
+    during = hass.states.get(sensor)
+    assert during.state == STATE_ON
+    assert (during.attributes["satellite"], during.attributes["pass_id"]) == (
+        "BLUEWALKER-3",
+        FIRST_PASS_ID,
+    )
+    # Under way, it is still the next pass.
     assert hass.states.get("sensor.home_next_pass").state == FIRST_PASS
 
-    await advance(hass, freezer, datetime(2026, 10, 10, 19, 9, 46, tzinfo=UTC))
-    assert hass.states.get(visible).state == STATE_OFF
-    assert hass.states.get("sensor.home_next_pass").state > "2026-10-10T19:09:44+00:00"
+    await advance(hass, freezer, first.end + timedelta(seconds=2))
+    assert hass.states.get(sensor).state == STATE_OFF
+    assert hass.states.get("sensor.home_next_pass").state > first.end.isoformat()
 
 
 async def test_bright_pass_soon(
@@ -159,14 +193,21 @@ async def test_bright_pass_soon(
     soon = "binary_sensor.home_bright_pass_soon"
     lead = timedelta(minutes=DEFAULT_ALERT_LEAD_MINUTES)
     second = timedelta(seconds=1)
-    first, following = [p for p in init_integration.runtime_data.data.passes if p.bright][:2]
+    first, close, following = [p for p in init_integration.runtime_data.data.passes if p.bright][:3]
     # The first bright pass is minutes away: the notice is already on.
     assert first.start - lead < NOW < first.start
     state = hass.states.get(soon)
     assert state.state == STATE_ON
     assert state.attributes["pass_id"] == first.id
 
+    # The next is close behind, so the notice moves straight on to it.
+    assert close.start - lead < first.end
     await advance(hass, freezer, first.end + second)
+    state = hass.states.get(soon)
+    assert state.state == STATE_ON
+    assert state.attributes["pass_id"] == close.id
+
+    await advance(hass, freezer, close.end + second)
     assert hass.states.get(soon).state == STATE_OFF
     assert hass.states.get(soon).attributes.keys() == {"friendly_name", "attribution"}
 
@@ -189,7 +230,7 @@ async def test_passes_next_24h_follow_the_window(
     init_integration: MockConfigEntry,
 ) -> None:
     """A pass is counted as soon as it is less than 24 hours away."""
-    now = datetime(2026, 10, 11, 3, 50, tzinfo=UTC)
+    now = datetime(2026, 11, 5, 15, 0, tzinfo=UTC)
     await advance(hass, freezer, now)
     sensor = "sensor.home_passes_next_24_hours"
     before = int(hass.states.get(sensor).state)
@@ -207,16 +248,17 @@ async def test_passes_next_24h_follow_the_window(
 
 async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
     """Satellites passing together are one pass, named after the first."""
+    start = datetime(2026, 11, 8, 4, 16, 9, tzinfo=UTC)
+    await advance(hass, freezer, start - timedelta(seconds=30))
     passes = hass.states.get("sensor.home_passes_next_24_hours").attributes["passes"]
-    group = next(p for p in passes if p["start"] == "2026-10-11T04:41:54+00:00")
-    assert group["satellite"] == "SL-4 R/B +1"
+    assert passes[0]["start"] == start.isoformat()
+    assert passes[0]["satellite"] == "ISS +1"
 
-    await advance(hass, freezer, datetime(2026, 10, 11, 4, 41, 30, tzinfo=UTC))
     attrs = hass.states.get("sensor.home_next_pass").attributes
-    assert attrs["satellite"] == "SL-4 R/B"
+    assert attrs["satellite"] == "ISS"
     assert attrs["satellite_count"] == 2
-    assert attrs["satellites"] == ["SL-4 R/B", "SAOCOM 1-A"]
-    assert attrs["pass_id"] == "39679-1791693714"
+    assert attrs["satellites"] == ["ISS", "Hubble"]
+    assert attrs["pass_id"] == f"25544-{int(start.timestamp())}"
     assert attrs.keys() == PASS_KEYS | {
         "satellites",
         "attribution",
@@ -225,17 +267,9 @@ async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTime
     }
 
 
-async def test_magnitudes_are_never_negative_zero(
-    hass: HomeAssistant, freezer: FrozenDateTimeFactory
-) -> None:
-    """BlueWalker 3 peaks at magnitude -0.009 on the 11th: that is 0.0."""
-    await advance(hass, freezer, datetime(2026, 10, 11, 18, 0, tzinfo=UTC))
-    attrs = hass.states.get("sensor.home_next_bright_pass").attributes
-    assert attrs["start"] == "2026-10-11T18:30:19+00:00"
-    assert attrs["magnitude"] == 0.0
-    assert repr(attrs["magnitude"]) == "0.0"
-    listed = hass.states.get("sensor.home_passes_next_24_hours").attributes["passes"]
-    assert repr(next(p for p in listed if p["satellite"] == "BlueWalker 3")["magnitude"]) == "0.0"
+@pytest.mark.parametrize("value", [-0.04, 0.0, 0.04])
+def test_magnitudes_are_never_negative_zero(value: float) -> None:
+    assert repr(magnitude(value)) == "0.0"
 
 
 async def test_pass_ids_are_stable(

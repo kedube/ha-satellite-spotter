@@ -12,13 +12,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
-from pysatellitespotter import LookAngle
 
 from . import SatelliteSpotterConfigEntry
 from .const import DOMAIN
 from .coordinator import SatelliteData, SatellitePass, SatelliteSpotterCoordinator
 from .entity import SatelliteSpotterEntity, compass, pass_title
 from .links import info_url
+from .predict import Direction
 
 PARALLEL_UPDATES = 0
 
@@ -71,7 +71,7 @@ class PassText:
             text = "0.0"
         return text.replace(".", self._t("decimal_separator"))
 
-    def _look(self, angle: LookAngle) -> dict[str, str]:
+    def _look(self, angle: Direction) -> dict[str, str]:
         return {
             "direction": self._t(f"compass_{compass(angle.azimuth).lower()}"),
             "elevation": f"{angle.elevation:.0f}",
@@ -84,20 +84,20 @@ class PassText:
 
     def description(self, p: SatellitePass) -> str:
         """When and where to look, as the primary satellite crosses the sky."""
-        t = p.primary
+        t = p.lead
         sat = t.satellite
         lines = [
-            self._t("calendar_appears", time=_clock(t.start), **self._look(t.rise)),
+            self._t("calendar_appears", time=_clock(t.start), **self._look(t.appears)),
             self._t(
                 "calendar_brightest",
-                time=_clock(t.brightest_time),
-                magnitude=self._number(t.min_magnitude),
-                **self._look(t.brightest),
+                time=_clock(t.peak_time),
+                magnitude=self._number(t.peak_magnitude),
+                **self._look(t.peak),
             ),
-            self._t("calendar_disappears", time=_clock(t.end), **self._look(t.set)),
+            self._t("calendar_disappears", time=_clock(t.end), **self._look(t.vanishes)),
         ]
-        if p.group.satellite_count > 1:
-            lines.append(self._t("calendar_together", count=p.group.satellite_count))
+        if p.flyover.satellite_count > 1:
+            lines.append(self._t("calendar_together", count=p.flyover.satellite_count))
         if p.cloud_cover is not None:
             lines.append(self._t("calendar_cloud_cover", cloud_cover=p.cloud_cover))
         lines.append(self._t("calendar_about", name=sat.name, url=info_url(sat.norad_id, sat.name)))

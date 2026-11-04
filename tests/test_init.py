@@ -21,8 +21,6 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.setup import async_setup_component
 from multidict import CIMultiDict, CIMultiDictProxy
-from pysatellitespotter import CatalogError, Satellite, parse_site_catalog
-from pysatellitespotter.weather import OPEN_METEO_URL
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
@@ -30,7 +28,14 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from yarl import URL
 
 from custom_components.satellite_spotter.catalog import DATA_CATALOG, async_get_catalog
-from custom_components.satellite_spotter.celestrak import GP_URL, QUERIES, DownloadRefused
+from custom_components.satellite_spotter.celestrak import (
+    GP_URL,
+    QUERIES,
+    SUPPLEMENTAL_QUERY,
+    SUPPLEMENTAL_URL,
+    CatalogError,
+    DownloadRefused,
+)
 from custom_components.satellite_spotter.const import (
     CATALOG_REFUSED_RETRY,
     CATALOG_STALE_UPSTREAM,
@@ -48,14 +53,17 @@ from custom_components.satellite_spotter.const import (
 from custom_components.satellite_spotter.coordinator import SatelliteSpotterCoordinator
 from custom_components.satellite_spotter.diagnostics import async_get_config_entry_diagnostics
 from custom_components.satellite_spotter.frontend import catalog_payload
+from custom_components.satellite_spotter.predict import Satellite, read_catalog
 from custom_components.satellite_spotter.street import GOOGLE_SESSION_URL, MAPILLARY_IMAGES_URL
+from custom_components.satellite_spotter.weather import OPEN_METEO_URL, CloudCoverError
 
 from .common import (
     DENVER,
     DENVER_ID,
     FIRST_PASS,
+    HONOLULU,
     NOW,
-    UTRECHT,
+    add_location,
     advance,
     aged,
     catalog_json,
@@ -72,12 +80,6 @@ STORE_REMOVE = Store.async_remove
 
 def _stale_issue(hass: HomeAssistant) -> ir.IssueEntry | None:
     return ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CATALOG_STALE)
-
-
-async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
 
 
 def _other_location(**kwargs: Any) -> MockConfigEntry:
@@ -98,11 +100,11 @@ async def test_setup_and_unload(hass: HomeAssistant, init_integration: MockConfi
 async def test_catalog_unavailable(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Setup is retried while there is no catalog at all, and says why."""
-    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("boom")
-    await _setup(hass, mock_config_entry)
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("boom")
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
     assert mock_config_entry.reason == "No satellite catalog: boom"
 
@@ -121,7 +123,7 @@ async def test_setup_errors_are_translatable(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     stored: datetime | None,
     key: str,
     placeholders: dict[str, str],
@@ -130,7 +132,7 @@ async def test_setup_errors_are_translatable(
     freezer.move_to(STALE)
     if stored is not None:
         store_catalog(hass_storage, stored)
-    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("boom")
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("boom")
     mock_config_entry.add_to_hass(hass)
     coordinator = SatelliteSpotterCoordinator(hass, mock_config_entry, async_get_catalog(hass))
     await coordinator.async_refresh()
@@ -146,13 +148,13 @@ async def test_catalog_restored_from_storage(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """A stored catalog is used when it cannot be refreshed."""
     freezer.move_to(NOW)
     store_catalog(hass_storage, NOW - timedelta(days=1))
-    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("boom")
-    await _setup(hass, mock_config_entry)
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("boom")
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert hass.states.get("sensor.home_next_pass").state == FIRST_PASS
     catalog = hass.states.get("sensor.home_catalog_updated")
@@ -166,7 +168,7 @@ async def test_unreadable_stored_catalog_is_downloaded(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A stored catalog that cannot be read does not block setup."""
@@ -174,11 +176,11 @@ async def test_unreadable_stored_catalog_is_downloaded(
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "key": STORAGE_KEY,
-        "data": {"updated": NOW.isoformat(), "catalog": [{"MAG": 1}]},
+        "data": {"updated": NOW.isoformat(), "catalog": [{"magnitude": 1}]},
     }
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    mock_pysatellitespotter["fetch_catalog"].assert_awaited_once()
+    mock_downloads["fetch_catalog"].assert_awaited_once()
     assert "Ignoring the stored satellite catalog" in caplog.text
 
 
@@ -187,14 +189,14 @@ async def test_fresh_stored_catalog_is_not_downloaded(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """A recently stored catalog saves a download after a restart."""
     freezer.move_to(NOW)
     store_catalog(hass_storage, NOW - timedelta(hours=1))
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    mock_pysatellitespotter["fetch_catalog"].assert_not_awaited()
+    mock_downloads["fetch_catalog"].assert_not_awaited()
 
 
 async def test_catalog_shared_and_stored(
@@ -202,22 +204,22 @@ async def test_catalog_shared_and_stored(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """All locations share one catalog download, which is stored."""
     freezer.move_to(NOW)
     entries = [mock_config_entry, _other_location()]
     for entry in entries:
-        await _setup(hass, entry)
+        await add_location(hass, entry)
     assert all(entry.state is ConfigEntryState.LOADED for entry in entries)
-    mock_pysatellitespotter["fetch_catalog"].assert_awaited_once()
+    mock_downloads["fetch_catalog"].assert_awaited_once()
     assert STORAGE_KEY not in hass_storage
 
     await advance(hass, freezer, NOW + timedelta(seconds=11))
     stored = hass_storage[STORAGE_KEY]["data"]
     assert stored["updated"] == NOW.isoformat()
     assert len(stored["catalog"]) == 22
-    assert len(parse_site_catalog(stored["catalog"])) == 22
+    assert len(read_catalog(stored["catalog"])) == 22
 
 
 async def test_catalog_goes_with_the_last_location(
@@ -225,14 +227,14 @@ async def test_catalog_goes_with_the_last_location(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """The stored catalog stays while any location is left, a disabled one included."""
     freezer.move_to(NOW)
     store_catalog(hass_storage, NOW - timedelta(hours=1))
     other = _other_location()
     for entry in (mock_config_entry, other):
-        await _setup(hass, entry)
+        await add_location(hass, entry)
     await hass.config_entries.async_set_disabled_by(other.entry_id, ConfigEntryDisabler.USER)
     await hass.config_entries.async_remove(mock_config_entry.entry_id)
     await hass.async_block_till_done()
@@ -249,11 +251,11 @@ async def test_catalog_save_is_cancelled_with_the_last_location(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """A catalog downloaded moments before its location goes is not saved after all."""
     freezer.move_to(NOW)
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert STORAGE_KEY not in hass_storage
     # Home Assistant's own removal, which cancels the save still to come; the
     # tests' stand-in for it only drops what is stored.
@@ -268,13 +270,13 @@ async def test_catalog_save_is_cancelled_with_the_last_location(
 async def test_cloud_cover_failure_is_tolerated(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Passes are still predicted without a cloud cover forecast."""
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 20
-    mock_pysatellitespotter["fetch_cloud_cover"].side_effect = CatalogError("boom")
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 16
+    mock_downloads["fetch_cloud_cover"].side_effect = CloudCoverError("boom")
     await advance(hass, freezer, NOW + timedelta(hours=2, seconds=1))
-    assert mock_pysatellitespotter["fetch_cloud_cover"].await_count == 2
+    assert mock_downloads["fetch_cloud_cover"].await_count == 2
     state = hass.states.get("sensor.home_next_pass")
     assert state.state not in ("unknown", "unavailable")
     assert state.attributes["cloud_cover"] is None
@@ -283,16 +285,16 @@ async def test_cloud_cover_failure_is_tolerated(
 async def test_cloud_cover_can_be_switched_off(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Without the option, Open-Meteo is never asked (it would learn the location)."""
     freezer.move_to(NOW)
     entry = MockConfigEntry(
-        domain=DOMAIN, title="Home", data=UTRECHT, options={CONF_CLOUD_COVER: False}
+        domain=DOMAIN, title="Home", data=HONOLULU, options={CONF_CLOUD_COVER: False}
     )
-    await _setup(hass, entry)
+    await add_location(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
-    mock_pysatellitespotter["fetch_cloud_cover"].assert_not_awaited()
+    mock_downloads["fetch_cloud_cover"].assert_not_awaited()
     assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] is None
     assert entry.runtime_data.data.cloud_cover is None
 
@@ -306,7 +308,14 @@ async def test_requests_identify_the_integration(
     """The real download and parsing: CelesTrak and Open-Meteo, with our User-Agent."""
     freezer.move_to(NOW)
     for query in QUERIES:
-        aioclient_mock.get(GP_URL, params={**query, "FORMAT": "csv"}, text=gp_csv(catalog_json()))
+        aioclient_mock.get(
+            GP_URL,
+            params={**query, "FORMAT": "csv"},
+            text=gp_csv([e["elements"] for e in catalog_json()]),
+        )
+    aioclient_mock.get(
+        SUPPLEMENTAL_URL, params={**SUPPLEMENTAL_QUERY, "FORMAT": "csv"}, text=gp_csv([])
+    )
     start = int(NOW.replace(hour=0, minute=0).timestamp())
     aioclient_mock.get(
         OPEN_METEO_URL,
@@ -317,15 +326,15 @@ async def test_requests_identify_the_integration(
             }
         },
     )
-    brightness = {entry["NORAD_CAT_ID"]: entry["MAG"] for entry in catalog_json()}
+    brightness = {int(e["elements"]["NORAD_CAT_ID"]): e["magnitude"] for e in catalog_json()}
     with patch(
         "custom_components.satellite_spotter.celestrak.brightness_table", return_value=brightness
     ):
-        await _setup(hass, mock_config_entry)
+        await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 20
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 16
 
-    assert aioclient_mock.call_count == len(QUERIES) + 1
+    assert aioclient_mock.call_count == len(QUERIES) + 2
     for _method, url, _data, headers in aioclient_mock.mock_calls:
         assert headers["User-Agent"].startswith("HomeAssistant-SatelliteSpotter/"), url
         assert "github.com/kedube/ha-satellite-spotter" in headers["User-Agent"]
@@ -335,15 +344,15 @@ async def test_catalog_refreshed_twice_a_day(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     init_integration: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Predictions every two hours from the cached catalog, a new download every twelve."""
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     manager = async_get_catalog(hass)
     for hours in (2, 4, 6, 8, 10):
         await advance(hass, freezer, NOW + timedelta(hours=hours, seconds=1))
     assert fetch.await_count == 1
-    assert mock_pysatellitespotter["fetch_cloud_cover"].await_count == 6
+    assert mock_downloads["fetch_cloud_cover"].await_count == 6
     assert manager.version == 1
 
     await advance(hass, freezer, NOW + timedelta(hours=12, seconds=1))
@@ -359,7 +368,7 @@ async def test_predictions_go_on_without_entities(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     init_integration: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """The panel and the cards need no entity: with every one disabled, predictions go on."""
     ent_reg = er.async_get(hass)
@@ -368,7 +377,7 @@ async def test_predictions_go_on_without_entities(
     await hass.async_block_till_done()
     assert hass.states.get("sensor.home_next_pass") is None
     coordinator = init_integration.runtime_data
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     for hours in (2, 4, 6, 8, 10, 12):
         await advance(hass, freezer, NOW + timedelta(hours=hours, seconds=1))
     assert coordinator.data.computed_at == NOW + timedelta(hours=12, seconds=1)
@@ -385,11 +394,11 @@ async def test_refusal_waits_two_hours(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     init_integration: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     hass_storage: dict[str, Any],
 ) -> None:
     """After CelesTrak refuses it is left alone, and the wait is kept for a restart."""
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     fetch.side_effect = DownloadRefused("CelesTrak answered 403")
     refused_at = NOW + timedelta(hours=12, seconds=1)
     await advance(hass, freezer, refused_at)
@@ -419,7 +428,7 @@ async def test_refusal_outlasts_a_restart(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     hass_storage: dict[str, Any],
 ) -> None:
     """A catalog due for a refresh waits, and the sensor still says why."""
@@ -427,9 +436,9 @@ async def test_refusal_outlasts_a_restart(
     store_catalog(hass_storage, NOW - timedelta(hours=13))
     hass_storage[STORAGE_KEY]["data"]["refused_until"] = (NOW + timedelta(hours=1)).isoformat()
     hass_storage[STORAGE_KEY]["data"]["last_error"] = "CelesTrak answered 403"
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    mock_pysatellitespotter["fetch_catalog"].assert_not_awaited()
+    mock_downloads["fetch_catalog"].assert_not_awaited()
     catalog = hass.states.get("sensor.home_catalog_updated")
     assert catalog.attributes["last_download_error"] == "CelesTrak answered 403"
 
@@ -438,7 +447,7 @@ async def test_refusal_before_any_catalog_outlasts_a_restart(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     hass_storage: dict[str, Any],
 ) -> None:
     """Only the refusal is stored; setup waits for it without asking."""
@@ -451,23 +460,23 @@ async def test_refusal_before_any_catalog_outlasts_a_restart(
             "last_error": "CelesTrak answered 403",
         },
     }
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
     assert mock_config_entry.reason == "No satellite catalog: CelesTrak answered 403"
-    mock_pysatellitespotter["fetch_catalog"].assert_not_awaited()
+    mock_downloads["fetch_catalog"].assert_not_awaited()
 
 
 async def test_no_usable_satellites_waits_like_a_refusal(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Downloading megabytes again in five minutes would not make them any more usable."""
     freezer.move_to(NOW)
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     fetch.return_value = []
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
     with pytest.raises(DownloadRefused):
         await async_get_catalog(hass).async_get(retry_now=True)
@@ -478,7 +487,7 @@ async def test_recovers_when_network_comes_up(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Home Assistant often starts before the network; setup must not stall for long."""
     # Load the platform components up front: setting them up for the first
@@ -486,9 +495,9 @@ async def test_recovers_when_network_comes_up(
     for component in ("binary_sensor", "calendar", "sensor"):
         assert await async_setup_component(hass, component, {})
     freezer.move_to(NOW)
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     fetch.side_effect = CatalogError("Error fetching the catalog: Cannot connect")
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
 
     fetch.side_effect = None
@@ -508,12 +517,12 @@ async def test_failed_refresh_keeps_the_catalog(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     init_integration: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A failed refresh keeps predicting from the cached catalog, and tries again later."""
     caplog.set_level(logging.INFO, logger="custom_components.satellite_spotter")
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     fetch.side_effect = CatalogError("Error fetching the catalog: 503")
     await advance(hass, freezer, NOW + timedelta(hours=12, seconds=1))
     assert fetch.await_count == 2
@@ -553,24 +562,24 @@ async def test_clock_set_back(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     stored: Any,
     downloads: int,
 ) -> None:
     freezer.move_to(NOW)
     store_catalog(hass_storage, stored)
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert mock_pysatellitespotter["fetch_catalog"].await_count == downloads
+    assert mock_downloads["fetch_catalog"].await_count == downloads
 
 
 async def test_clock_set_back_ends_back_offs(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """A back-off set while the clock ran fast does not outlast the correction."""
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     manager = async_get_catalog(hass)
     freezer.move_to(NOW + timedelta(days=30))
     fetch.side_effect = CatalogError("down")
@@ -587,25 +596,33 @@ async def test_unusable_satellites_are_skipped(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     catalog: list[Satellite],
 ) -> None:
     """One malformed or decayed entry must not break every prediction."""
     good = catalog_json()[0]
+
+    def unusable(
+        norad_id: int, name: str, magnitude: float = 2.0, **elements: Any
+    ) -> dict[str, Any]:
+        fields = {**good["elements"], "NORAD_CAT_ID": norad_id, "OBJECT_NAME": name, **elements}
+        return {"name": name, "magnitude": magnitude, "elements": fields}
+
+    without_inclination = unusable(90002, "NO INCLINATION")
+    del without_inclination["elements"]["INCLINATION"]
     broken = [
         # SGP4 refuses an eccentricity above 1.
-        {**good, "NORAD_CAT_ID": 90001, "OBJECT_NAME": "BAD ORBIT", "ECCENTRICITY": "1.5"},
+        unusable(90001, "BAD ORBIT", ECCENTRICITY="1.5"),
         # Without an inclination there is no orbit at all.
-        {k: v for k, v in good.items() if k != "INCLINATION"}
-        | {"NORAD_CAT_ID": 90002, "OBJECT_NAME": "NO INCLINATION"},
+        without_inclination,
         # Not a number: nothing fails, but there is no orbit or brightness to go by.
-        {**good, "NORAD_CAT_ID": 90003, "OBJECT_NAME": "NAN MOTION", "MEAN_MOTION": "NaN"},
-        {**good, "NORAD_CAT_ID": 90004, "OBJECT_NAME": "NAN SHAPE", "ECCENTRICITY": math.nan},
-        {**good, "NORAD_CAT_ID": 90005, "OBJECT_NAME": "NAN MAGNITUDE", "MAG": math.nan},
+        unusable(90003, "NAN MOTION", MEAN_MOTION="NaN"),
+        unusable(90004, "NAN SHAPE", ECCENTRICITY=math.nan),
+        unusable(90005, "NAN MAGNITUDE", magnitude=math.nan),
     ]
-    mock_pysatellitespotter["fetch_catalog"].return_value = catalog + parse_site_catalog(broken)
+    mock_downloads["fetch_catalog"].return_value = catalog + read_catalog(broken)
     freezer.move_to(NOW)
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert hass.states.get("sensor.home_next_pass").state == FIRST_PASS
     assert hass.states.get("sensor.home_catalog_updated").attributes["satellites"] == 22
@@ -621,15 +638,15 @@ async def test_stale_catalog_pauses_predictions(
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Orbit data too old to trust pauses predictions, with a repair issue that says why."""
     freezer.move_to(STALE)
     # Downloaded an hour ago, and CelesTrak's data is just as old.
     store_catalog(hass_storage, STALE - timedelta(hours=1))
-    await _setup(hass, mock_config_entry)
+    await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
-    mock_pysatellitespotter["fetch_catalog"].assert_not_awaited()
+    mock_downloads["fetch_catalog"].assert_not_awaited()
     assert "15 days old, and CelesTrak's own data is just as old" in mock_config_entry.reason
 
     issue = _stale_issue(hass)
@@ -653,7 +670,7 @@ async def _paused_while_loaded(
 ) -> None:
     """Set up at NOW, then let downloads fail until the orbit data is too old."""
     freezer.move_to(NOW)
-    await _setup(hass, entry)
+    await add_location(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
     fetch.side_effect = CatalogError("Error fetching the catalog: 503")
     await advance(hass, freezer, STALE)
@@ -664,11 +681,11 @@ async def test_paused_predictions_explain_themselves(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     catalog: list[Satellite],
 ) -> None:
     entry = mock_config_entry
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     await _paused_while_loaded(hass, freezer, entry, fetch)
 
     for entity_id in (
@@ -737,11 +754,11 @@ async def test_paused_location_resumes_within_minutes(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Paused while loaded, a location tries again as soon as the catalog may, not hours later."""
     entry = mock_config_entry
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     await _paused_while_loaded(hass, freezer, entry, fetch)
     assert hass.states.get("sensor.home_next_pass").state == "unavailable"
     downloads = fetch.await_count
@@ -766,13 +783,13 @@ async def test_paused_retry_does_not_wake_before_the_catalog_may_download(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Home Assistant can wake a refresh up to a second early: the retry still downloads."""
     entry = mock_config_entry
-    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch = mock_downloads["fetch_catalog"]
     freezer.move_to(NOW)
-    await _setup(hass, entry)
+    await add_location(hass, entry)
     # Home Assistant wakes a refresh at a whole second of its loop clock plus a
     # random 0.05 to 0.5 s; the failed download below is 0.9 s into a second.
     entry.runtime_data._microsecond = 0.2
@@ -795,11 +812,11 @@ async def test_options_change_keeps_the_ignored_issue(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """An options change reloads the location; the user's "Ignore" must survive it."""
     entry = mock_config_entry
-    await _paused_while_loaded(hass, freezer, entry, mock_pysatellitespotter["fetch_catalog"])
+    await _paused_while_loaded(hass, freezer, entry, mock_downloads["fetch_catalog"])
     ir.async_get(hass).async_ignore(DOMAIN, ISSUE_CATALOG_STALE, True)
     result = await hass.config_entries.options.async_init(entry.entry_id)
     await hass.config_entries.options.async_configure(
@@ -816,14 +833,14 @@ async def test_issue_goes_with_the_last_location(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
     action: str,
 ) -> None:
     """The issue outlives a reload, but goes with the last enabled location."""
     entry = mock_config_entry
-    await _paused_while_loaded(hass, freezer, entry, mock_pysatellitespotter["fetch_catalog"])
+    await _paused_while_loaded(hass, freezer, entry, mock_downloads["fetch_catalog"])
     other = _other_location()
-    await _setup(hass, other)
+    await add_location(hass, other)
     assert other.state is ConfigEntryState.SETUP_RETRY
     ir.async_get(hass).async_ignore(DOMAIN, ISSUE_CATALOG_STALE, True)
 
@@ -845,13 +862,13 @@ async def test_new_catalog_updates_every_location(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """A catalog downloaded for one location (or a new one) is used by all at once."""
     freezer.move_to(NOW)
     entries = [mock_config_entry, _other_location()]
     for entry in entries:
-        await _setup(hass, entry)
+        await add_location(hass, entry)
     computed = [entry.runtime_data.data.computed_at for entry in entries]
 
     # Half a day later another location is added, which fetches a new catalog.
@@ -863,7 +880,7 @@ async def test_new_catalog_updates_every_location(
     for entry, before in zip(entries, computed, strict=True):
         assert entry.runtime_data.data.catalog_version == 2
         assert entry.runtime_data.data.computed_at > before
-    assert mock_pysatellitespotter["fetch_catalog"].await_count == 2
+    assert mock_downloads["fetch_catalog"].await_count == 2
 
 
 async def test_diagnostics_are_private(
@@ -877,9 +894,9 @@ async def test_diagnostics_are_private(
     assert diag["catalog"]["version"] == 1
     assert diag["catalog"]["last_error"] is None
     assert 0 < diag["catalog"]["median_epoch_age_days"] < 1
-    assert diag["predictions"]["pass_count"] == 64
-    assert diag["predictions"]["bright_pass_count"] == 6
-    assert diag["predictions"]["transit_count"] == 75
+    assert diag["predictions"]["pass_count"] == 18
+    assert diag["predictions"]["bright_pass_count"] == 9
+    assert diag["predictions"]["sighting_count"] == 20
     assert diag["predictions"]["cloud_cover"] == {"enabled": True, "available": True}
     assert diag["paused"] is None
     text = repr(diag)
@@ -964,7 +981,7 @@ async def test_location_stays_out_of_logs(
         "custom_components.satellite_spotter.catalog.async_fetch_catalog",
         return_value=satellites(),
     ):
-        await _setup(hass, mock_config_entry)
+        await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert "No cloud cover forecast" in caplog.text
     assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] is None
@@ -973,7 +990,7 @@ async def test_location_stays_out_of_logs(
     logged = "\n".join(
         r.getMessage()
         for r in caplog.records
-        if r.name.startswith(("custom_components.satellite_spotter", "pysatellitespotter"))
+        if r.name.startswith("custom_components.satellite_spotter")
     )
     for secret in ("52.0907", "5.1214"):
         assert secret not in logged

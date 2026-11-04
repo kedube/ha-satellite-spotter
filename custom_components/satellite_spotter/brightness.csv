@@ -3,14 +3,15 @@
 # scripts/brightness_overrides.csv and rebuild.
 #
 # Sources, in the "source" column:
-#   mccants  qs.mag by Mike McCants, plus 0.75. https://www.prismnet.com/~mmccants/
+#   mccants  qs.mag by Mike McCants, plus 0.75. https://www.mmccants.org/
 #   score    Medians computed from SCORE, IAU CPS, CC BY 4.0, changed by being turned into
 #            intrinsic magnitudes and reduced to one value. https://score.cps.iau.org
 #   stellarium  The satellite list of Stellarium, GPL. https://stellarium.org
 #   family   The median McCants value of objects of the same name, plus 0.75.
 #   override Added by hand, with its citation in scripts/brightness_overrides.csv.
 # score and stellarium were checked against physical sizes in GCAT by Jonathan C. McDowell,
-# CC BY 4.0. https://planet4589.org/space/gcat
+# CC BY 4.0, https://planet4589.org/space/gcat, and Qianfan's against Mallama & Cole 2025,
+# https://arxiv.org/abs/2507.00107.
 # Objects on orbit, perigees and names: SATCAT, CelesTrak, https://celestrak.org, from
 # US Space Force data published on https://www.space-track.org.
 norad_id,magnitude,source,name
@@ -503,7 +504,7 @@ norad_id,magnitude,source,name
 46116,3.75,family,ARIANE 5 R/B
 46265,1.43,stellarium,SAOCOM 1B
 47257,5.25,family,PSLV R/B
-48274,1.87,stellarium,CSS (TIANHE)
+48274,0.00,override,CSS (TIANHE)
 49058,3.75,family,ARIANE 5 R/B
 49331,2.75,family,CZ-3B R/B
 49335,3.75,family,ARIANE 5 R/B
@@ -559,7 +560,6 @@ norad_id,magnitude,source,name
 61555,3.12,score,QIANFAN-22
 61558,2.96,score,QIANFAN-25
 61560,3.28,score,QIANFAN-27
-61563,0.72,score,QIANFAN-30
 61617,4.12,score,YAOGAN-43 03A
 61873,3.50,family,CZ-2C R/B
 61938,4.25,family,CZ-4B R/B
@@ -573,7 +573,6 @@ norad_id,magnitude,source,name
 62851,3.75,family,GSLV R/B
 63076,2.75,family,CZ-3B R/B
 63127,3.50,family,CZ-2C R/B
-63166,1.88,score,QIANFAN-80
 63362,2.75,family,CZ-3B R/B
 63429,3.69,score,HULIANWANG JISHU SHIYAN 6B
 63525,2.75,family,CZ-3B R/B

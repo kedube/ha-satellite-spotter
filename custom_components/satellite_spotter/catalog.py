@@ -14,11 +14,10 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
-from pysatellitespotter import CatalogError, Satellite, dump_catalog, parse_site_catalog
 from sgp4.api import Satrec
 
 from . import track
-from .celestrak import DownloadRefused, async_fetch_catalog
+from .celestrak import CatalogError, DownloadRefused, async_fetch_catalog
 from .const import (
     CATALOG_CLOCK_SLACK,
     CATALOG_MAX_AGE,
@@ -32,6 +31,7 @@ from .const import (
     STORAGE_SAVE_DELAY,
     STORAGE_VERSION,
 )
+from .predict import Satellite, read_catalog, write_catalog
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,21 +41,21 @@ DATA_CATALOG: HassKey[CatalogManager] = HassKey(DOMAIN)
 def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec], list[str]]:
     """Keep the satellites the predictions can use: them, their propagators, and the rest's ids.
 
-    The library builds the propagators of a whole batch of satellites at
-    once, so one malformed or decayed entry would otherwise break every
-    prediction. Runs in the executor, before the propagators are shared.
+    Predictions build the propagators of a whole batch of satellites at once,
+    so one malformed or decayed entry would otherwise break every prediction.
+    Runs in the executor, before the propagators are shared.
     """
     kept: list[Satellite] = []
     satrecs: list[Satrec] = []
     dropped: list[str] = []
     for sat in satellites:
         try:
-            satrec = sat.satrec()
+            satrec = sat.sgp4_record()
             error, position, _ = satrec.sgp4(satrec.jdsatepoch, satrec.jdsatepochF)
-            # The library's brightness bound and the payloads use these. A
-            # value that is not finite ("NaN" in the orbital data) gets this
-            # far without an error, but would spoil the library's sort by
-            # brightness, which then skips satellites that are fine.
+            # The brightness bound and the payloads use these. A value that is
+            # not finite ("NaN" in the orbital data) gets this far without an
+            # error, but would spoil the search's sort by brightness, which then
+            # skips satellites that are fine.
             numbers = [*position, *track.apsides_km(sat), track.period_s(sat)]
             if sat.magnitude is not None:
                 numbers.append(sat.magnitude)
@@ -153,7 +153,7 @@ class CatalogManager:
         if "catalog" not in stored:
             return
         try:
-            satellites = parse_site_catalog(stored["catalog"])
+            satellites = read_catalog(stored["catalog"])
             updated = dt_util.parse_datetime(stored["updated"])
             if updated is None:
                 raise ValueError(f"invalid time {stored['updated']!r}")
@@ -229,7 +229,7 @@ class CatalogManager:
         data: dict[str, Any] = {}
         if self.updated is not None:
             data["updated"] = self.updated.isoformat()
-            data["catalog"] = dump_catalog(self.satellites or ())
+            data["catalog"] = write_catalog(self.satellites or ())
         if self._refused and self._retry_after is not None:
             data["refused_until"] = self._retry_after.isoformat()
             data["last_error"] = self.last_error

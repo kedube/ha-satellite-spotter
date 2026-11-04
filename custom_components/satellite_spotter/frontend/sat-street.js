@@ -1782,7 +1782,7 @@ export class SatelliteStreetView extends BaseElement {
    * the camera locks on and follows it smoothly (with reduced motion: jumps).
    */
   _follow(now, dtMs) {
-    // Live, during the pass, the view always keeps the satellite (as James's site centres on it).
+    // Live, during the pass, the view always keeps the satellite.
     const pass = this._pass;
     const tS = this._timeS();
     const live = this._clock?.mode === "live" && pass && tS >= pass.start && tS < pass.end;

@@ -143,6 +143,26 @@ def test_observed_values_are_checked_against_the_size() -> None:
     assert result[3] == (3.0, "score")
 
 
+def test_observed_values_are_checked_against_a_published_mean() -> None:
+    """Two standard deviations either way, for the constellation with a published mean."""
+    mean, deviation = table.PUBLISHED_MEANS["QIANFAN"]
+    near, far = mean - 1.9 * deviation, mean - 2.1 * deviation
+    satcat = _satcat(n1="QIANFAN-1", n2="QIANFAN-2", n3="QIANFAN-3", n4="OTHER-1", n5="QIANFAN-5")
+    result = _build(
+        satcat,
+        score={1: near, 2: far, 4: far},
+        stellarium={3: far, 5: mean + 2.1 * deviation},
+    )
+    assert result == {1: (round(near, 2), "score"), 4: (round(far, 2), "score")}
+
+
+def test_a_published_mean_does_not_overrule_mccants_or_a_citation() -> None:
+    far = table.PUBLISHED_MEANS["QIANFAN"][0] - 3.0
+    result = _build(_satcat(n1="QIANFAN-1", n2="QIANFAN-2"), mccants={1: far}, overrides={2: far})
+    assert result[1][1] == "mccants"
+    assert result[2][1] == "override"
+
+
 def test_objects_that_can_never_get_bright_are_left_out() -> None:
     satcat = {
         1: {**LOW, "OBJECT_NAME": "NEAR", "PERIGEE": "400"},
@@ -177,7 +197,7 @@ def test_an_override_needs_a_citation(tmp_path: Path) -> None:
 
 
 def test_the_overrides_shipped_can_be_read() -> None:
-    table.read_overrides(table.OVERRIDES)
+    assert table.read_overrides(table.OVERRIDES)[48274] == 0.0
 
 
 def test_written_table_carries_its_attribution(tmp_path: Path) -> None:

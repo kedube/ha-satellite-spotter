@@ -377,8 +377,8 @@ test("nothing to list: why not, or what the filters hide", () => {
   const empty = root.querySelector(".empty");
   assert.equal(empty.hidden, false);
   assert.equal(root.querySelector(".scroll").hidden, true);
-  assert.equal(empty.querySelector("h3").textContent, "No satellites bright enough to see in the next 5 days.");
-  assert.deepEqual(empty.querySelectorAll("h4").map((h) => h.textContent), ["Why not?", "Check back later"]);
+  assert.equal(empty.querySelector("h3").textContent, "Nothing bright enough to see in the next 5 days.");
+  assert.deepEqual(empty.querySelectorAll("h4").map((h) => h.textContent), ["Why is that?", "When to look again"]);
   assert.match(empty.textContent, /in Earth's shadow/);
   list.render([], { nowS: BOSTON_NOW, emptyText: "Predictions paused" });
   assert.equal(empty.querySelector("h3").textContent, "Predictions paused");
@@ -389,7 +389,7 @@ test("nothing to list: why not, or what the filters hide", () => {
   assert.equal(empty.hidden, true);
   assert.equal(root.querySelectorAll("li.row").length, 1);
   list.render([], { nowS: BOSTON_NOW, days: 1 });
-  assert.equal(empty.querySelector("h3").textContent, "No satellites bright enough to see in the next day.");
+  assert.equal(empty.querySelector("h3").textContent, "Nothing bright enough to see in the next day.");
   list.destroy();
 });
 

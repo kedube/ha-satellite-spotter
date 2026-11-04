@@ -12,37 +12,38 @@ from typing import Any
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
-from pysatellitespotter import Satellite, dump_catalog, parse_site_catalog
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
 from custom_components.satellite_spotter.const import STORAGE_KEY
+from custom_components.satellite_spotter.predict import Satellite, read_catalog, write_catalog
 
 ROOT = Path(__file__).parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
 INTEGRATION = ROOT / "custom_components/satellite_spotter"
 
-# The website's catalog trimmed to 22 satellites that pass the test places
-# (from the See A Satellite Tonight integration's tests). Its satellites pass
-# Utrecht from 19:08:36 UTC on NOW, the first BlueWalker 3.
-NOW = datetime(2026, 10, 10, 19, 5, tzinfo=UTC)
-# The Dom Tower in Utrecht: 64 passes in five days, 6 of them bright.
-UTRECHT = {CONF_LATITUDE: 52.0907, CONF_LONGITUDE: 5.1214, CONF_ELEVATION: 5.0}
-UTRECHT_ID = "52.0907_5.1214"
-# Denver: 25 passes, among them three bright ISS passes.
+# A small catalog: CelesTrak's elements of 22 objects, as read on 2026-11-04, with
+# the magnitudes brightness.csv gave them then. They do not follow later changes to the
+# table, so a rebuilt table does not move these tests.
+CATALOG_FILE = FIXTURES / "catalog.json"
+NOW = datetime(2026, 11, 4, 15, 30, tzinfo=UTC)
+# 18 passes in five days, 9 of them bright, and a bright one first.
+HONOLULU = {CONF_LATITUDE: 21.3069, CONF_LONGITUDE: -157.8583, CONF_ELEVATION: 5.0}
+HONOLULU_ID = "21.3069_-157.8583"
+# 25 passes, 2 of them bright, and the first not until the next day.
 DENVER = {CONF_LATITUDE: 39.74, CONF_LONGITUDE: -104.99, CONF_ELEVATION: 1609.0}
 DENVER_ID = "39.7400_-104.9900"
-FIRST_PASS = "2026-10-10T19:08:36+00:00"
-FIRST_PASS_ID = "53807-1791659316"
+FIRST_PASS = "2026-11-04T15:33:28+00:00"
+FIRST_PASS_ID = "53807-1793806408"
 
 
 def catalog_json() -> list[dict[str, Any]]:
-    """The 22-satellite catalog, as the website serves it."""
-    return json.loads((FIXTURES / "brightest-sats.json").read_text())
+    """The test catalog, as it is stored."""
+    return json.loads(CATALOG_FILE.read_text())
 
 
 def satellites() -> list[Satellite]:
-    """The 22-satellite catalog, parsed."""
-    return parse_site_catalog(catalog_json())
+    """The test catalog, read."""
+    return read_catalog(catalog_json())
 
 
 # CelesTrak's columns, in its order.
@@ -76,9 +77,16 @@ def gp_csv(entries: list[dict[str, Any]]) -> str:
     return out.getvalue()
 
 
+async def add_location(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Add a location to Home Assistant, and wait until it has settled."""
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 def cloud_cover() -> list[tuple[datetime, int]]:
     """Hourly cloud cover from midnight on NOW's day, equal to the hour of the week."""
-    start = datetime(2026, 10, 10, tzinfo=UTC).timestamp()
+    start = datetime(2026, 11, 4, tzinfo=UTC).timestamp()
     return [(datetime.fromtimestamp(start + 3600 * i, UTC), i % 100) for i in range(168)]
 
 
@@ -91,7 +99,7 @@ def store_catalog(
         "key": STORAGE_KEY,
         "data": {
             "updated": updated.isoformat(),
-            "catalog": dump_catalog(satellites() if catalog is None else catalog),
+            "catalog": write_catalog(satellites() if catalog is None else catalog),
         },
     }
 
@@ -100,7 +108,7 @@ def aged(catalog: list[Satellite], days: float) -> list[Satellite]:
     """The catalog with every epoch moved back: the same orbits, older elements."""
     for sat in catalog:
         sat.epoch -= timedelta(days=days)
-        sat.omm = {**sat.omm, "EPOCH": sat.epoch.strftime("%Y-%m-%dT%H:%M:%S.%f")}
+        sat.elements = {**sat.elements, "EPOCH": sat.epoch.strftime("%Y-%m-%dT%H:%M:%S.%f")}
     return catalog
 
 

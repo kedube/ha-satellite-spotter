@@ -2,8 +2,7 @@
 # CI also runs the tests on the oldest supported one: requirements_test_oldest.txt.
 pytest-homeassistant-custom-component==0.13.372
 home-assistant-frontend==20260930.4
-# The prediction library, and the SGP4 the integration imports itself, as the manifest pins them.
-pysatellitespotter==0.2.0
+# The SGP4 the integration imports, as the manifest pins it (numpy comes with the tools above).
 sgp4==2.27
 # Checks the pre-compressed MapLibre copies (tests/test_frontend.py).
 Brotli

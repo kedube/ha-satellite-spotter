@@ -58,7 +58,7 @@ async def async_get_config_entry_diagnostics(
             "catalog_version": data.catalog_version,
             "pass_count": len(data.passes),
             "bright_pass_count": sum(p.bright for p in data.passes),
-            "transit_count": sum(len(p.group.transits) for p in data.passes),
+            "sighting_count": sum(len(p.flyover.sightings) for p in data.passes),
             "cloud_cover": {
                 "enabled": coordinator.settings.cloud_cover,
                 "available": data.cloud_cover,

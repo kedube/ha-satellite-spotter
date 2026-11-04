@@ -16,12 +16,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
-from pysatellitespotter import CatalogError, LookAngle, Satellite, Transit, TransitGroup
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.calendar import PassText, event_times, resolve_language
+from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import (
     CONF_SHOW_CALENDAR,
     DOMAIN,
@@ -31,8 +31,9 @@ from custom_components.satellite_spotter.const import (
 from custom_components.satellite_spotter.coordinator import SatellitePass
 from custom_components.satellite_spotter.entity import compass, pass_title
 from custom_components.satellite_spotter.links import info_url
+from custom_components.satellite_spotter.predict import Direction, Flyover, Satellite, Sighting
 
-from .common import INTEGRATION, NOW, UTRECHT, UTRECHT_ID, advance, aged, satellites
+from .common import HONOLULU, HONOLULU_ID, INTEGRATION, NOW, advance, aged, satellites
 
 CALENDAR = "calendar.home_satellite_passes"
 LANGUAGES = sorted(p.stem for p in (INTEGRATION / "translations").glob("*.json"))
@@ -54,7 +55,7 @@ async def _setup(
     options: dict[str, Any] | None = None,
 ) -> MockConfigEntry:
     entry = MockConfigEntry(
-        domain=DOMAIN, title="Home", data=UTRECHT, options=options or {}, unique_id=UTRECHT_ID
+        domain=DOMAIN, title="Home", data=HONOLULU, options=options or {}, unique_id=HONOLULU_ID
     )
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
@@ -76,13 +77,13 @@ async def _events(
     return response[entity_id]["events"]
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     """Every pass of the next five days has the right event data and viewing text."""
     entry = await _setup(hass)
     data = entry.runtime_data.data
     events = await _events(hass, NOW, NOW + timedelta(days=5))
-    assert len(events) == len(data.passes) == 64
+    assert len(events) == len(data.passes) == 18
     entity = hass.data["calendar"].get_entity(CALENDAR)
     uids = [e.uid for e in await entity.async_get_events(hass, NOW, NOW + timedelta(days=5))]
     assert uids == [p.id for p in data.passes]
@@ -91,24 +92,23 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
         assert dt_util.parse_datetime(event["end"]) == p.end
         assert event["summary"] == f"🛰️ {pass_title(p)}" + (" (bright)" if p.bright else "")
         assert event["description"].splitlines()[-1] == (
-            f"Object: {p.primary.satellite.name} — "
-            f"{info_url(p.primary.satellite.norad_id, p.primary.satellite.name)}"
+            f"Object: {p.lead.satellite.name} — "
+            f"{info_url(p.lead.satellite.norad_id, p.lead.satellite.name)}"
         )
-    assert events[0]["summary"] == "🛰️ BlueWalker 3 (bright)"
+    assert events[0]["summary"] == "🛰️ BLUEWALKER-3 (bright)"
     p = data.passes[0]
-    t = p.primary
+    t = p.lead
     lines = events[0]["description"].splitlines()
     assert lines[:3] == [
-        f"At {dt_util.as_local(t.start):%H:%M:%S}, look toward {compass(t.rise.azimuth)}: "
-        f"{t.rise.elevation:.0f}° above the horizon.",
-        f"Best view at {dt_util.as_local(t.brightest_time):%H:%M:%S}: "
-        f"{compass(t.brightest.azimuth)}, {t.brightest.elevation:.0f}° high, magnitude 0.3.",
+        f"At {dt_util.as_local(t.start):%H:%M:%S}, look toward {compass(t.appears.azimuth)}: "
+        f"{t.appears.elevation:.0f}° above the horizon.",
+        f"Best view at {dt_util.as_local(t.peak_time):%H:%M:%S}: "
+        f"{compass(t.peak.azimuth)}, {t.peak.elevation:.0f}° high, magnitude 1.0.",
         f"Last visible at {dt_util.as_local(t.end):%H:%M:%S} toward "
-        f"{compass(t.set.azimuth)}, {t.set.elevation:.0f}° high.",
+        f"{compass(t.vanishes.azimuth)}, {t.vanishes.elevation:.0f}° high.",
     ]
-    assert "Cloud cover near the pass: 20%" in events[0]["description"]
-    assert sum("magnitude 0.0" in e["description"] for e in events) == 4
-    assert sum(" +1" in e["summary"] for e in events) == 11
+    assert "Cloud cover near the pass: 16%" in events[0]["description"]
+    assert sum(" +1" in e["summary"] for e in events) == 2
 
     sensor = hass.states.get("sensor.home_next_pass")
     assert dt_util.parse_datetime(events[0]["start"]) == dt_util.parse_datetime(sensor.state)
@@ -128,7 +128,7 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     assert await _events(hass, first_end - timedelta(seconds=1), first_end) == events[:1]
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_follows_the_passes(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -154,7 +154,7 @@ async def test_calendar_follows_the_passes(
     assert state() == ("on", local(following_start))
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_can_be_switched_off(hass: HomeAssistant) -> None:
     entry = await _setup(hass, options={CONF_SHOW_CALENDAR: False})
     assert hass.states.get(CALENDAR) is None
@@ -166,7 +166,7 @@ async def test_calendar_can_be_switched_off(hass: HomeAssistant) -> None:
     assert hass.states.get("sensor.home_next_pass").state != "unavailable"
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_follows_the_option(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -191,7 +191,7 @@ async def test_calendar_follows_the_option(
     assert "Ignored unload request" not in caplog.text
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_switched_on_later(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -213,15 +213,15 @@ async def test_calendar_is_empty_while_predictions_are_paused(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     hass_ws_client,
-    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Passes predicted from orbit data too old to trust are not shown."""
     # Predicted from elements 13.6 days old (the median), just in time.
-    mock_pysatellitespotter["fetch_catalog"].return_value = aged(satellites(), 13)
+    mock_downloads["fetch_catalog"].return_value = aged(satellites(), 13)
     entry = await _setup(hass)
     # Signed in now, while the test user's token is still valid.
     client = await hass_ws_client(hass)
-    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("503")
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("503")
     later = NOW + timedelta(days=1)
     await advance(hass, freezer, later)
     assert not entry.runtime_data.last_update_success
@@ -245,7 +245,7 @@ async def test_calendar_is_empty_while_predictions_are_paused(
 
 
 @needs_subscribe
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_wake_ups_do_not_resend_the_events(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
 ) -> None:
@@ -311,7 +311,7 @@ async def test_wake_ups_do_not_resend_the_events(
     await hass.async_block_till_done()
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 async def test_calendar_trigger_before_a_pass(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -358,22 +358,22 @@ async def test_calendar_trigger_before_a_pass(
     await hass.services.async_call("automation", "turn_off", {"entity_id": "all"}, blocking=True)
 
 
-@pytest.mark.usefixtures("mock_pysatellitespotter")
+@pytest.mark.usefixtures("mock_downloads")
 @pytest.mark.parametrize(
     ("language", "summary", "appears", "brightest"),
     [
-        ("de", "🛰️ BlueWalker 3 (hell)", "Um {} nach WNW schauen: 37° über dem Horizont.",
-         "Helligkeit 0,3"),
+        ("de", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
+         "Helligkeit 1,0"),
         # Regional variants get their language's text, as on the globe.
-        ("de-CH", "🛰️ BlueWalker 3 (hell)", "Um {} nach WNW schauen: 37° über dem Horizont.",
-         "Helligkeit 0,3"),
-        ("pt", "🛰️ BlueWalker 3 (brilhante)",
-         "Às {}, olhe para ONO: 37° acima do horizonte.", "magnitude 0,3"),
-        ("fr", "🛰️ BlueWalker 3 (brillant)",
-         "À {}, regardez vers O-NO : 37° au-dessus de l'horizon.", "magnitude 0,3"),
+        ("de-CH", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
+         "Helligkeit 1,0"),
+        ("pt", "🛰️ BLUEWALKER-3 (brilhante)",
+         "Às {}, olhe para NO: 29° acima do horizonte.", "magnitude 1,0"),
+        ("fr", "🛰️ BLUEWALKER-3 (brillant)",
+         "À {}, regardez vers NO : 29° au-dessus de l'horizon.", "magnitude 1,0"),
         # Languages without a translation get English.
-        ("ja", "🛰️ BlueWalker 3 (bright)", "At {}, look toward WNW: 37° above the horizon.",
-         "magnitude 0.3"),
+        ("ja", "🛰️ BLUEWALKER-3 (bright)", "At {}, look toward NW: 29° above the horizon.",
+         "magnitude 1.0"),
     ],
 )  # fmt: skip
 async def test_events_follow_the_home_assistant_language(
@@ -388,7 +388,7 @@ async def test_events_follow_the_home_assistant_language(
     p = entry.runtime_data.data.passes[0]
     assert events[0]["summary"] == summary
     lines = events[0]["description"].splitlines()
-    assert lines[0] == appears.format(f"{dt_util.as_local(p.primary.start):%H:%M:%S}")
+    assert lines[0] == appears.format(f"{dt_util.as_local(p.lead.start):%H:%M:%S}")
     assert lines[1].endswith(f"{brightest}.")
 
 
@@ -414,38 +414,30 @@ def _pass(
         name="ISS",
         magnitude=-1.8,
         model=None,
-        omm={},
+        elements={},
         epoch=start - timedelta(days=1),
     )
     end = start + timedelta(minutes=6)
-    transits = [
-        Transit(
+    sightings = [
+        Sighting(
             satellite=sat,
             start=start + timedelta(seconds=10 * i),
             end=end,
-            min_magnitude=magnitude,
+            peak_magnitude=magnitude,
             before_sunset=False,
-            limiting_magnitude=4.0,
-            rise=LookAngle(315.0, 10.2),
-            brightest=LookAngle(45.0, 67.4),
-            brightest_time=start + timedelta(minutes=3),
-            set=LookAngle(135.0, 24.6),
+            sky_limit=4.0,
+            appears=Direction(315.0, 10.2),
+            peak=Direction(45.0, 67.4),
+            peak_time=start + timedelta(minutes=3),
+            vanishes=Direction(135.0, 24.6),
         )
         for i in range(count)
     ]
-    group = TransitGroup(
-        start=start,
-        end=end,
-        min_magnitude=magnitude,
-        limiting_magnitude=4.0,
-        before_sunset=False,
-        transits=transits,
-    )
     peak = track.SkyPoint(start.timestamp() + 180, 45.0, 67.4)
-    shape = track.TransitShape(peak, "rise", "shadow")
+    shape = track.SightingShape(peak, "rise", "shadow")
     return SatellitePass(
         id=f"25544-{int(start.timestamp())}",
-        group=group,
+        flyover=Flyover(sightings),
         cloud_cover=cloud,
         shapes=[shape] * count,
         peak=peak,
@@ -453,9 +445,9 @@ def _pass(
 
 
 def test_every_pass_lasts_at_least_a_second() -> None:
-    noon = datetime(2026, 10, 12, 12, 0, tzinfo=UTC)
+    noon = datetime(2026, 11, 6, 12, 0, tzinfo=UTC)
     p = _pass(noon, -1.0)
-    p.group.end = noon
+    p.flyover.sightings[0].end = noon
     start, end = event_times(p)
     assert (start, end - start) == (noon, timedelta(seconds=1))
     assert start.tzinfo is not None
@@ -479,7 +471,7 @@ def test_every_language_describes_a_pass(language: str) -> None:
         assert _placeholders(text) == _placeholders(english[key]), key
 
     text = PassText(local)
-    when = datetime(2026, 10, 12, 20, 0, tzinfo=UTC)
+    when = datetime(2026, 11, 6, 20, 0, tzinfo=UTC)
     for magnitude, count, cloud in ((-3.44, 2, 37), (-0.04, 1, None), (2.46, 1, 0)):
         p = _pass(when, magnitude, count, cloud)
         summary = text.summary(p)

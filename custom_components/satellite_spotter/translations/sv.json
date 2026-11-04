@@ -55,7 +55,7 @@
           "units": "Enheter"
         },
         "data_description": {
-          "max_magnitude": "Rapportera bara passager som är minst så här ljusstarka. Lägre tal är ljusare: 3 är vad webbplatsen använder, ungefär det svagaste man hittar från en förort; 1 behåller de lätta, och under 0 återstår bara de bländande.",
+          "max_magnitude": "Rapportera bara passager som är minst så här ljusstarka. Lägre tal är ljusare: 3 är ungefär det svagaste man hittar från en förort; 1 behåller de lätta, och under 0 återstår bara de bländande.",
           "cloud_cover": "Lägger till Open-Meteos molnprognos för varje passage. Open-Meteo får den här platsens koordinater (med fyra decimaler) varannan timme.",
           "alert_lead_minutes": "Sensorn ”Ljusstark passage snart” slås på så här lång tid innan en ljusstark passage börjar.",
           "show_in_sidebar": "Lägger till en Satellite Spotter-sida i sidofältet med passagerna, en 3D-glob och en vy av himlen från gatunivå. Gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS (och från Esri med flygbilder). Instrumentpanelskorten fungerar oavsett.",

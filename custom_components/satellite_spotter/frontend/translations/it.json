@@ -274,15 +274,15 @@
     "show_all": "Mostra tutti",
     "empty_filtered": "Nessun passaggio corrisponde ai filtri.",
     "empty": {
-      "one": "Nessun satellite abbastanza luminoso da vedere nelle prossime 24 ore.",
-      "other": "Nessun satellite abbastanza luminoso da vedere nei prossimi {count} giorni."
+      "one": "Niente di abbastanza luminoso da vedere nelle prossime 24 ore.",
+      "other": "Niente di abbastanza luminoso da vedere nei prossimi {count} giorni."
     },
-    "why_not": "Come mai?",
-    "why_not_text": "Migliaia di satelliti orbitano intorno alla Terra, ma solo pochi sono abbastanza vicini e grandi da vedersi facilmente. Anche uno luminoso si vede solo al momento giusto: nel cuore della notte i satelliti sono nell'ombra della Terra, quindi si vedono per poco tempo dopo il tramonto e prima dell'alba.",
-    "check_back": "Ricontrolla più tardi",
+    "why_not": "Perché?",
+    "why_not_text": "La maggior parte dei satelliti è troppo piccola o troppo lontana per essere vista a occhio nudo. I pochi abbastanza luminosi hanno bisogno anche del momento giusto: il Sole deve illuminarli mentre il tuo cielo è buio. Di solito questo accade nelle ore dopo il crepuscolo e prima dell'alba, perché più avanti nella notte sono nell'ombra della Terra.",
+    "check_back": "Quando ricontrollare",
     "check_back_text": {
-      "one": "Domani potrebbero esserci nuove occasioni per vederne uno.",
-      "other": "Tra {count} giorni potrebbero esserci nuove occasioni per vederne uno."
+      "one": "Questo elenco guarda avanti di un giorno, quindi domani potrebbe contenere qualcosa di nuovo.",
+      "other": "Questo elenco guarda avanti di {count} giorni, quindi domani potrebbe contenere qualcosa di nuovo."
     }
   },
   "kinds": {

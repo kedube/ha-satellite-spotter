@@ -35,8 +35,8 @@ export function mercator(lat, lon, limit = MERCATOR_MAX_LAT) {
 }
 
 /**
- * Greenwich mean sidereal time in radians (IAU 1982, as pysatellitespotter's
- * `_gmst`) for a Julian date in UT1 (UTC is near enough).
+ * Greenwich mean sidereal time in radians (IAU 1982, as track.py's `gmst`) for
+ * a Julian date in UT1 (UTC is near enough).
  */
 export function gmst(jd) {
   const t = (jd - 2451545.0) / 36525.0;
@@ -255,8 +255,7 @@ const KIND_BY_ID = { 25544: "iss", 48274: "tiangong", 20580: "hubble" };
  * What a satellite is, for its sprite and icon: iss, tiangong, hubble,
  * starlink, rocket, debris or satellite. The same rules as the integration's
  * satellite_kind(), so a satellite looks the same everywhere: the stations by
- * NORAD id (the catalogue's names are the website's), then by name, ignoring
- * case (Starlink names come in mixed case).
+ * NORAD id, then by name, ignoring case.
  */
 export function satelliteKind({ norad_id: id, name } = {}) {
   const known = KIND_BY_ID[Number(id)];

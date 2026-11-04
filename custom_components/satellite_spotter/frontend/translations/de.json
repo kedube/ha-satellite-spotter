@@ -274,15 +274,15 @@
     "show_all": "Alle anzeigen",
     "empty_filtered": "Kein Überflug entspricht den Filtern.",
     "empty": {
-      "one": "In den nächsten 24 Stunden ist kein ausreichend heller Satellit zu sehen.",
-      "other": "In den nächsten {count} Tagen ist kein ausreichend heller Satellit zu sehen."
+      "one": "In den nächsten 24 Stunden ist nichts hell genug, um es zu sehen.",
+      "other": "In den nächsten {count} Tagen ist nichts hell genug, um es zu sehen."
     },
-    "why_not": "Warum nicht?",
-    "why_not_text": "Tausende Satelliten umkreisen die Erde, aber nur wenige sind nah und groß genug, um sie gut sehen zu können. Selbst einen hellen Satelliten sieht man nur zur richtigen Zeit: Mitten in der Nacht stehen die Satelliten im Erdschatten, deshalb sind sie nur eine Weile nach Sonnenuntergang und vor Sonnenaufgang zu sehen.",
-    "check_back": "Schau später wieder vorbei",
+    "why_not": "Woran liegt das?",
+    "why_not_text": "Die meisten Satelliten sind zu klein oder zu weit entfernt, um sie mit bloßem Auge zu sehen. Die wenigen, die hell genug sind, brauchen außerdem den richtigen Moment: Die Sonne muss sie anstrahlen, während dein Himmel dunkel ist. Das sind meist die Stunden nach der Abenddämmerung und vor der Morgendämmerung, denn später in der Nacht liegen sie im Erdschatten.",
+    "check_back": "Wann du wieder nachsehen kannst",
     "check_back_text": {
-      "one": "Morgen gibt es vielleicht neue Gelegenheiten, einen zu sehen.",
-      "other": "In {count} Tagen gibt es vielleicht neue Gelegenheiten, einen zu sehen."
+      "one": "Diese Liste reicht einen Tag voraus, morgen steht also vielleicht etwas Neues darin.",
+      "other": "Diese Liste reicht {count} Tage voraus, morgen steht also vielleicht etwas Neues darin."
     }
   },
   "kinds": {

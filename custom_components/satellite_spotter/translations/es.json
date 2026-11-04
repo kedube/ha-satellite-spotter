@@ -55,7 +55,7 @@
           "units": "Unidades"
         },
         "data_description": {
-          "max_magnitude": "Solo notifica los pasos al menos así de brillantes. Los números más bajos son más brillantes: 3 es lo que usa la web, más o menos lo más débil que se encuentra desde una zona residencial; 1 deja los fáciles, y por debajo de 0 solo quedan los deslumbrantes.",
+          "max_magnitude": "Solo notifica los pasos al menos así de brillantes. Los números más bajos son más brillantes: 3 es más o menos lo más débil que se encuentra desde una zona residencial; 1 deja los fáciles, y por debajo de 0 solo quedan los deslumbrantes.",
           "cloud_cover": "Añade a cada paso la previsión de nubosidad de Open-Meteo. Open-Meteo recibe las coordenadas de esta ubicación (con cuatro decimales) cada dos horas.",
           "alert_lead_minutes": "El sensor \"Paso brillante inminente\" se activa con esta antelación antes de que empiece un paso brillante.",
           "show_in_sidebar": "Añade a la barra lateral una página de Satellite Spotter con los pasos, un globo 3D y una vista del cielo a pie de calle. La vista de calle carga teselas de mapa de los alrededores desde OpenFreeMap y AWS (y desde Esri con imágenes aéreas). Las tarjetas del panel funcionan en cualquier caso.",

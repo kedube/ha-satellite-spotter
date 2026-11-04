@@ -134,8 +134,8 @@ def _listed_pass(p: SatellitePass) -> dict[str, Any]:
     return {
         "start": p.start.isoformat(),
         "satellite": pass_title(p),
-        "magnitude": magnitude(p.group.min_magnitude),
-        "direction": compass(p.primary.rise.azimuth),
+        "magnitude": magnitude(p.flyover.peak_magnitude),
+        "direction": compass(p.lead.appears.azimuth),
         "cloud_cover": p.cloud_cover,
     }
 

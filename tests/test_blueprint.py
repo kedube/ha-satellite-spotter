@@ -110,8 +110,8 @@ async def test_every_pass_is_announced(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, init_integration: MockConfigEntry
 ) -> None:
     """Once per pass, ten minutes ahead, even passes a few minutes apart."""
-    # Skip the first pass, under way in four minutes.
-    passes = init_integration.runtime_data.data.passes[1:13]
+    # The first two are under ten minutes away, too soon for the notice.
+    passes = init_integration.runtime_data.data.passes[2:14]
     gaps = [b.start - a.end for a, b in itertools.pairwise(passes)]
     assert min(gaps) < timedelta(minutes=10)
     notifications = await _run(hass, freezer, passes, bright_only=False, max_cloud_cover=100)
@@ -129,29 +129,30 @@ async def test_every_pass_is_announced(
         assert event.data["title"].startswith("🛰️ ")
         assert event.data["message"] == " ".join(text.description(p).splitlines()[:-1])
 
-    assert notifications[0].data["title"] == "🛰️ TERRA in 10 min"
+    assert notifications[0].data["title"] == "🛰️ SAOCOM 1A in 10 min"
 
 
 async def test_bright_passes_under_clear_skies(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, init_integration: MockConfigEntry
 ) -> None:
     """By default only bright passes, and none under heavy cloud."""
-    passes = init_integration.runtime_data.data.passes[1:]
+    passes = init_integration.runtime_data.data.passes[2:]
     bright = [p for p in passes if p.bright][:3]
-    assert [p.cloud_cover for p in bright] == [43, 66, 91]
+    assert [p.cloud_cover for p in bright] == [39, 54, 64]
     notifications = await _run(hass, freezer, [*passes[:2], *bright])
-    # The 66% and 91% skies are cloudier than the default 60%.
+    # The 64% sky is cloudier than the default 60%.
     assert [e.data["data"]["url"] for e in notifications] == [
-        f"/satellite-spotter?entry_id={init_integration.entry_id}&pass={bright[0].id}&view=street"
+        f"/satellite-spotter?entry_id={init_integration.entry_id}&pass={p.id}&view=street"
+        for p in bright[:2]
     ]
-    assert notifications[0].data["title"] == "🛰️ BlueWalker 3 in 10 min"
+    assert notifications[0].data["title"] == "🛰️ ISS in 10 min"
 
 
 async def test_other_languages(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
-    mock_pysatellitespotter: dict[str, Any],
+    mock_downloads: dict[str, Any],
 ) -> None:
     """The calendar speaks German: the notification quotes it, and still knows bright and clouds."""
     hass.config.language = "de"
@@ -159,7 +160,7 @@ async def test_other_languages(
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
-    passes = mock_config_entry.runtime_data.data.passes[1:]
+    passes = mock_config_entry.runtime_data.data.passes[2:]
     bright = next(p for p in passes if p.bright)
     calendar = er.async_get(hass).async_get_entity_id(
         "calendar", DOMAIN, f"{mock_config_entry.entry_id}_passes"
@@ -167,7 +168,7 @@ async def test_other_languages(
     assert calendar == "calendar.home_satellitenuberfluge"
     notifications = await _run(hass, freezer, [bright], calendar=calendar, max_cloud_cover=50)
     (event,) = notifications
-    assert event.data["title"] == "🛰️ BlueWalker 3 in 10 min"
+    assert event.data["title"] == "🛰️ ISS in 10 min"
     assert event.data["data"]["url"] == (
         f"/satellite-spotter?entry_id={mock_config_entry.entry_id}&pass={bright.id}&view=street"
     )

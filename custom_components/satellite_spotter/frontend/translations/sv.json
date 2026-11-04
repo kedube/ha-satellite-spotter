@@ -274,15 +274,15 @@
     "show_all": "Visa alla",
     "empty_filtered": "Ingen passage matchar filtren.",
     "empty": {
-      "one": "Inga tillräckligt ljusstarka satelliter det närmaste dygnet.",
-      "other": "Inga tillräckligt ljusstarka satelliter de närmaste {count} dagarna."
+      "one": "Inget är tillräckligt ljust för att synas det närmaste dygnet.",
+      "other": "Inget är tillräckligt ljust för att synas de närmaste {count} dagarna."
     },
-    "why_not": "Varför inte?",
-    "why_not_text": "Tusentals satelliter kretsar runt jorden, men bara några få är tillräckligt nära och tillräckligt stora för att synas lätt. Även en ljusstark satellit syns bara vid rätt tidpunkt: mitt i natten är satelliterna i jordskuggan, så de syns en kort stund efter skymningen och före gryningen.",
-    "check_back": "Titta in senare",
+    "why_not": "Varför då?",
+    "why_not_text": "De flesta satelliter är för små eller för långt borta för att synas med blotta ögat. De få som är tillräckligt ljusa behöver också rätt ögonblick: solen måste lysa på dem medan din himmel är mörk. Det är oftast timmarna efter skymningen och före gryningen, för senare på natten är de i jordens skugga.",
+    "check_back": "När du kan titta igen",
     "check_back_text": {
-      "one": "I morgon kan det finnas nya chanser att se en.",
-      "other": "Om {count} dagar kan det finnas nya chanser att se en."
+      "one": "Den här listan ser ett dygn framåt, så i morgon kan det finnas något nytt.",
+      "other": "Den här listan ser {count} dagar framåt, så i morgon kan det finnas något nytt."
     }
   },
   "kinds": {
