@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Waarvandaan kijk je?",
-        "description": "Overkomsten worden in je Home Assistant voorspeld, met de catalogus van See A Satellite Tonight van ongeveer 900 heldere satellieten. Standaard is de locatie je thuis. Twee dingen verraden haar: de bewolkingsverwachting stuurt de coördinaten naar Open-Meteo (uit te zetten in de opties), en de straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS.",
+        "description": "Overkomsten worden in je Home Assistant voorspeld, met de baangegevens van CelesTrak van ongeveer 750 heldere satellieten. Standaard is de locatie je thuis. Twee dingen verraden haar: de bewolkingsverwachting stuurt de coördinaten naar Open-Meteo (uit te zetten in de opties), en de straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS.",
         "data": {
           "name": "Naam",
           "location": "Locatie",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Voer een breedtegraad tussen -90° en 90° en een geldige lengtegraad in.",
       "cannot_connect": "De satellietcatalogus kon niet worden gedownload. Controleer of Home Assistant het internet bereikt en probeer het opnieuw.",
+      "download_limited": "CelesTrak, waar de baangegevens vandaan komen, staat nog geen nieuwe download toe. Probeer het over twee uur opnieuw.",
       "unknown": "Onverwachte fout bij het laden van de satellietcatalogus. Het logboek bevat de details."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud en konden niet worden bijgewerkt ({error}); de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
     },
     "catalog_stale_upstream": {
-      "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud, en de catalogus van de website is net zo oud; de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
+      "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud, en de gegevens van CelesTrak zijn net zo oud; de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellietvoorspellingen zijn gepauzeerd",
-      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en er kon geen nieuwere catalogus worden gedownload ({error}). Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot een download lukt. Controleer of Home Assistant het internet bereikt: de catalogus komt van de website See A Satellite Tonight. Deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
+      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en er kon geen nieuwere catalogus worden gedownload ({error}). Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot een download lukt. Controleer of Home Assistant het internet bereikt: de baangegevens komen van CelesTrak. Deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
     },
     "catalog_stale_upstream": {
       "title": "Satellietvoorspellingen zijn gepauzeerd",
-      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en de catalogus van de website See A Satellite Tonight zelf is net zo oud: er valt niets nieuwers te downloaden. Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot de website een nieuwe catalogus publiceert. In Home Assistant valt niets op te lossen: deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
+      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en de gegevens van CelesTrak zelf zijn net zo oud: er valt niets nieuwers te downloaden. Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot CelesTrak nieuwe gegevens publiceert. In Home Assistant valt niets op te lossen: deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
     }
   },
   "common": {

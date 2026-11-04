@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Von wo aus beobachtest du?",
-        "description": "Überflüge werden in deinem Home Assistant vorhergesagt, mit dem Katalog von See A Satellite Tonight mit rund 900 hellen Satelliten. Standardmäßig ist der Standort dein Zuhause. Zwei Dinge verraten ihn: Die Bewölkungsvorhersage schickt seine Koordinaten an Open-Meteo (in den Optionen abschaltbar), und die Straßenansicht lädt Kartenkacheln der Umgebung von OpenFreeMap und AWS.",
+        "description": "Überflüge werden in deinem Home Assistant vorhergesagt, mit den Bahndaten von CelesTrak für rund 750 helle Satelliten. Standardmäßig ist der Standort dein Zuhause. Zwei Dinge verraten ihn: Die Bewölkungsvorhersage schickt seine Koordinaten an Open-Meteo (in den Optionen abschaltbar), und die Straßenansicht lädt Kartenkacheln der Umgebung von OpenFreeMap und AWS.",
         "data": {
           "name": "Name",
           "location": "Standort",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Gib einen Breitengrad zwischen -90° und 90° und einen gültigen Längengrad ein.",
       "cannot_connect": "Der Satellitenkatalog konnte nicht heruntergeladen werden. Prüfe, ob Home Assistant das Internet erreicht, und versuche es dann erneut.",
+      "download_limited": "CelesTrak, die Quelle der Bahndaten, lässt noch keinen weiteren Download zu. Versuche es in zwei Stunden erneut.",
       "unknown": "Unerwarteter Fehler beim Laden des Satellitenkatalogs. Details stehen im Protokoll."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt und konnten nicht aktualisiert werden ({error}); die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
     },
     "catalog_stale_upstream": {
-      "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt, und der Katalog der Website ist genauso alt; die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
+      "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt, und die Daten von CelesTrak sind genauso alt; die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellitenvorhersagen sind pausiert",
-      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und es konnte kein aktuellerer Katalog heruntergeladen werden ({error}). Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis ein Download gelingt. Prüfe, ob Home Assistant das Internet erreicht: Der Katalog kommt von der Website See A Satellite Tonight. Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
+      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und es konnte kein aktuellerer Katalog heruntergeladen werden ({error}). Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis ein Download gelingt. Prüfe, ob Home Assistant das Internet erreicht: Die Bahndaten kommen von CelesTrak. Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
     },
     "catalog_stale_upstream": {
       "title": "Satellitenvorhersagen sind pausiert",
-      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und der Katalog der Website See A Satellite Tonight selbst ist genauso alt: Es gibt nichts Aktuelleres herunterzuladen. Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis die Website einen aktuellen Katalog veröffentlicht. In Home Assistant ist nichts zu beheben: Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
+      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und die Daten von CelesTrak selbst sind genauso alt: Es gibt nichts Aktuelleres herunterzuladen. Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis CelesTrak aktuellere Daten veröffentlicht. In Home Assistant ist nichts zu beheben: Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
     }
   },
   "common": {

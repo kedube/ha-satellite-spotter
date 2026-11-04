@@ -205,7 +205,7 @@ async def test_panel_while_setup_retries(
     hass_ws_client,
 ) -> None:
     freezer.move_to(NOW)
-    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("HTTP 500")
+    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("HTTP 500")
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()

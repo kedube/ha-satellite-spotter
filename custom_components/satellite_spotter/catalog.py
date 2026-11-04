@@ -11,25 +11,19 @@ import statistics
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
-from pysatellitespotter import (
-    CatalogError,
-    Satellite,
-    dump_catalog,
-    fetch_site_catalog,
-    parse_site_catalog,
-)
+from pysatellitespotter import CatalogError, Satellite, dump_catalog, parse_site_catalog
 from sgp4.api import Satrec
 
 from . import track
+from .celestrak import DownloadRefused, async_fetch_catalog
 from .const import (
     CATALOG_CLOCK_SLACK,
     CATALOG_MAX_AGE,
-    CATALOG_NAME,
     CATALOG_REFRESH,
+    CATALOG_REFUSED_RETRY,
     CATALOG_RETRY,
     CATALOG_UNREACHABLE_RETRY,
     DOMAIN,
@@ -37,7 +31,6 @@ from .const import (
     STORAGE_KEY,
     STORAGE_SAVE_DELAY,
     STORAGE_VERSION,
-    USER_AGENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,7 +53,7 @@ def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec]
             satrec = sat.satrec()
             error, position, _ = satrec.sgp4(satrec.jdsatepoch, satrec.jdsatepochF)
             # The library's brightness bound and the payloads use these. A
-            # value that is not finite ("NaN" in the website's data) gets this
+            # value that is not finite ("NaN" in the orbital data) gets this
             # far without an error, but would spoil the library's sort by
             # brightness, which then skips satellites that are fine.
             numbers = [*position, *track.apsides_km(sat), track.period_s(sat)]
@@ -79,9 +72,9 @@ def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec]
 
 
 class CatalogManager:
-    """Downloads the website's catalog and keeps it, for every location.
+    """Downloads the catalog from CelesTrak and keeps it, for every location.
 
-    The website's author hosts the catalog, so it is downloaded once for all
+    CelesTrak is a non-profit, so the catalog is downloaded once for all
     locations, at most twice a day, and kept in Home Assistant's storage, so
     a restart does not download it again and predictions keep working
     offline. Every new catalog gets a new ``version``.
@@ -94,6 +87,8 @@ class CatalogManager:
         self._lock = asyncio.Lock()
         self._loaded = False
         self._retry_after: datetime | None = None
+        # The back-off is CelesTrak's refusal, which nothing may cut short.
+        self._refused = False
         self._failing = False
         self._listeners: list[Callable[[], None]] = []
         self._satrecs: list[Satrec] = []
@@ -110,24 +105,31 @@ class CatalogManager:
     async def async_get(self, *, retry_now: bool = False) -> list[Satellite]:
         """Return the catalog, downloading a new one when due.
 
-        After a failed download the website is left alone for a while, unless
-        ``retry_now`` (someone asked, in the config flow). Raises CatalogError
-        when there is no catalog, cached or downloaded.
+        After a failed download CelesTrak is left alone for a while, unless
+        ``retry_now`` (someone asked, in the config flow) and it never refused.
+        Raises CatalogError when there is no catalog, cached or downloaded:
+        DownloadRefused if that is because CelesTrak refused.
         """
         async with self._lock:
             if not self._loaded:
                 await self._async_load()
             now = dt_util.utcnow()
-            # No back-off is longer than CATALOG_RETRY: one further ahead was
-            # set while the clock ran fast and has since been set back.
-            if self._retry_after is not None and self._retry_after - now > CATALOG_RETRY:
+            # No back-off is longer than this: one further ahead was set while
+            # the clock ran fast and has since been set back.
+            longest = CATALOG_REFUSED_RETRY if self._refused else CATALOG_RETRY
+            if self._retry_after is not None and self._retry_after - now > longest:
                 self._retry_after = None
+            if self._retry_after is None or now >= self._retry_after:
+                self._refused = False
             if self._due(now) and (
-                retry_now or self._retry_after is None or now >= self._retry_after
+                (retry_now and not self._refused)
+                or self._retry_after is None
+                or now >= self._retry_after
             ):
                 await self._async_refresh(now)
             if self.satellites is None:
-                raise CatalogError(self.last_error or "No satellite catalog available")
+                error = DownloadRefused if self._refused else CatalogError
+                raise error(self.last_error or "No satellite catalog available")
             return self.satellites
 
     def _due(self, now: datetime) -> bool:
@@ -141,6 +143,14 @@ class CatalogManager:
         self._loaded = True
         stored = await self._store.async_load()
         if not stored:
+            return
+        # A restart must not ask CelesTrak again while it is refusing.
+        if (until := dt_util.parse_datetime(stored.get("refused_until") or "")) is not None:
+            self._retry_after = dt_util.as_utc(until)
+            self._refused = True
+            self.last_error = stored.get("last_error")
+        # Only the refusal was stored: it came before any catalog.
+        if "catalog" not in stored:
             return
         try:
             satellites = parse_site_catalog(stored["catalog"])
@@ -156,18 +166,21 @@ class CatalogManager:
 
     async def _async_refresh(self, now: datetime) -> None:
         try:
-            satellites = await fetch_site_catalog(
-                async_get_clientsession(self._hass), CATALOG_NAME, user_agent=USER_AGENT
-            )
+            satellites = await async_fetch_catalog(self._hass)
             if not await self._async_accept(satellites, now):
-                raise CatalogError("The satellite catalog has no usable satellites")
+                raise DownloadRefused("The satellite catalog has no usable satellites")
         except CatalogError as err:
             self.last_error = str(err)
-            # Soon while there is nothing to predict from (or only orbit data too
-            # old to use), otherwise less eagerly.
-            age = self.median_epoch_age(now)
-            usable = age is not None and age <= CATALOG_MAX_AGE
-            self._retry_after = now + (CATALOG_RETRY if usable else CATALOG_UNREACHABLE_RETRY)
+            self._refused = isinstance(err, DownloadRefused)
+            if self._refused:
+                self._retry_after = now + CATALOG_REFUSED_RETRY
+                self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
+            else:
+                # Soon while there is nothing to predict from (or only orbit data
+                # too old to use), otherwise less eagerly.
+                age = self.median_epoch_age(now)
+                usable = age is not None and age <= CATALOG_MAX_AGE
+                self._retry_after = now + (CATALOG_RETRY if usable else CATALOG_UNREACHABLE_RETRY)
             # Loudly once per outage, then quietly until a download succeeds.
             log = _LOGGER.debug if self._failing else _LOGGER.warning
             self._failing = True
@@ -184,6 +197,7 @@ class CatalogManager:
             _LOGGER.info("The satellite catalog downloaded again")
         self._failing = False
         self._retry_after = None
+        self._refused = False
         self.last_error = None
         self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
 
@@ -212,8 +226,14 @@ class CatalogManager:
 
     @callback
     def _data_to_save(self) -> dict[str, Any]:
-        assert self.updated is not None
-        return {"updated": self.updated.isoformat(), "catalog": dump_catalog(self.satellites or ())}
+        data: dict[str, Any] = {}
+        if self.updated is not None:
+            data["updated"] = self.updated.isoformat()
+            data["catalog"] = dump_catalog(self.satellites or ())
+        if self._refused and self._retry_after is not None:
+            data["refused_until"] = self._retry_after.isoformat()
+            data["last_error"] = self.last_error
+        return data
 
     @callback
     def async_add_listener(self, listener: Callable[[], None]) -> CALLBACK_TYPE:

@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Skąd obserwujesz?",
-        "description": "Przeloty są przewidywane w twoim Home Assistant na podstawie katalogu See A Satellite Tonight z około 900 jasnymi satelitami. Domyślnie lokalizacją jest twój dom. Ujawniają ją dwie rzeczy: prognoza zachmurzenia wysyła jej współrzędne do Open-Meteo (można to wyłączyć w opcjach), a widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS.",
+        "description": "Przeloty są przewidywane w twoim Home Assistant na podstawie danych orbitalnych CelesTrak o około 750 jasnych satelitach. Domyślnie lokalizacją jest twój dom. Ujawniają ją dwie rzeczy: prognoza zachmurzenia wysyła jej współrzędne do Open-Meteo (można to wyłączyć w opcjach), a widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS.",
         "data": {
           "name": "Nazwa",
           "location": "Lokalizacja",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Wprowadź szerokość geograficzną z zakresu od -90° do 90° i prawidłową długość geograficzną.",
       "cannot_connect": "Nie udało się pobrać katalogu satelitów. Sprawdź, czy Home Assistant ma dostęp do internetu, i spróbuj ponownie.",
+      "download_limited": "CelesTrak, skąd pochodzą dane orbitalne, nie pozwala jeszcze na kolejne pobranie. Spróbuj ponownie za dwie godziny.",
       "unknown": "Nieoczekiwany błąd podczas wczytywania katalogu satelitów. Szczegóły są w dzienniku."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "Elementy orbitalne w katalogu satelitów mają {age} dni i nie udało się ich odświeżyć ({error}); prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
     },
     "catalog_stale_upstream": {
-      "message": "Elementy orbitalne w katalogu satelitów mają {age} dni, a katalog na stronie jest równie stary; prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
+      "message": "Elementy orbitalne w katalogu satelitów mają {age} dni, a dane CelesTrak są równie stare; prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Prognozy satelitów są wstrzymane",
-      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a nie udało się pobrać nowszego katalogu ({error}). Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki pobieranie się nie powiedzie. Sprawdź, czy Home Assistant ma dostęp do internetu: katalog pochodzi ze strony See A Satellite Tonight. Ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
+      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a nie udało się pobrać nowszego katalogu ({error}). Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki pobieranie się nie powiedzie. Sprawdź, czy Home Assistant ma dostęp do internetu: dane orbitalne pochodzą z CelesTrak. Ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
     },
     "catalog_stale_upstream": {
       "title": "Prognozy satelitów są wstrzymane",
-      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a sam katalog na stronie See A Satellite Tonight jest równie stary: nie ma niczego nowszego do pobrania. Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki strona nie opublikuje aktualnego katalogu. W Home Assistant nie ma nic do naprawienia: ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
+      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a same dane CelesTrak są równie stare: nie ma niczego nowszego do pobrania. Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki CelesTrak nie opublikuje aktualnych danych. W Home Assistant nie ma nic do naprawienia: ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
     }
   },
   "common": {

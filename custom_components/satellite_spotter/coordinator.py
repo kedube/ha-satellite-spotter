@@ -298,7 +298,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
         now = dt_util.utcnow()
         age = self.catalog.median_epoch_age(now)
         if age is not None and age > CATALOG_MAX_AGE:
-            # The downloads fail, or the website's own catalog is just as old.
+            # The downloads fail, or CelesTrak's own data is just as old.
             placeholders = {"age": str(age.days)}
             if error := self.catalog.last_error:
                 key = ISSUE_CATALOG_STALE

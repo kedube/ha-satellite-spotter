@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Where are you watching from?",
-        "description": "Passes are predicted on your Home Assistant, from the See A Satellite Tonight catalog of about 900 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
+        "description": "Passes are predicted on your Home Assistant, from CelesTrak's orbital data for about 750 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
         "data": {
           "name": "Name",
           "location": "Location",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Enter a latitude between -90° and 90° and a valid longitude.",
       "cannot_connect": "Could not download the satellite catalog. Check that Home Assistant can reach the internet, then try again.",
+      "download_limited": "CelesTrak, where the orbital data comes from, is not allowing another download yet. Try again in two hours.",
       "unknown": "Unexpected error while loading the satellite catalog. The log has the details."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "The satellite catalog's orbital elements are {age} days old and could not be refreshed ({error}); predictions are paused until a fresh catalog downloads"
     },
     "catalog_stale_upstream": {
-      "message": "The satellite catalog's orbital elements are {age} days old, and the website's own catalog is just as old; predictions are paused until a fresh catalog downloads"
+      "message": "The satellite catalog's orbital elements are {age} days old, and CelesTrak's own data is just as old; predictions are paused until a fresh catalog downloads"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellite predictions are paused",
-      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and no fresher catalog could be downloaded ({error}). Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until a download succeeds. Check that Home Assistant can reach the internet: the catalog comes from the See A Satellite Tonight website. This message goes away by itself once a fresh catalog arrives."
+      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and no fresher catalog could be downloaded ({error}). Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until a download succeeds. Check that Home Assistant can reach the internet: the orbital data comes from CelesTrak. This message goes away by itself once a fresh catalog arrives."
     },
     "catalog_stale_upstream": {
       "title": "Satellite predictions are paused",
-      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and the See A Satellite Tonight website's own catalog is just as old: there is nothing fresher to download. Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until the website publishes a fresh catalog. There is nothing to fix in Home Assistant: this message goes away by itself once a fresh catalog arrives."
+      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and CelesTrak's own data is just as old: there is nothing fresher to download. Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until CelesTrak publishes fresher data. There is nothing to fix in Home Assistant: this message goes away by itself once a fresh catalog arrives."
     }
   },
   "common": {

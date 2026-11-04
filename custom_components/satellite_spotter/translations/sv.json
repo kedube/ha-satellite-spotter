@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Var tittar du från?",
-        "description": "Passager förutsägs i din Home Assistant, med See A Satellite Tonights katalog med omkring 900 ljusstarka satelliter. Som standard är platsen ditt hem. Två saker röjer den: molnprognosen skickar dess koordinater till Open-Meteo (kan stängas av i alternativen), och gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS.",
+        "description": "Passager förutsägs i din Home Assistant, med CelesTraks bandata för omkring 750 ljusstarka satelliter. Som standard är platsen ditt hem. Två saker röjer den: molnprognosen skickar dess koordinater till Open-Meteo (kan stängas av i alternativen), och gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS.",
         "data": {
           "name": "Namn",
           "location": "Plats",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Ange en latitud mellan -90° och 90° och en giltig longitud.",
       "cannot_connect": "Satellitkatalogen kunde inte laddas ned. Kontrollera att Home Assistant når internet och försök igen.",
+      "download_limited": "CelesTrak, där bandatan kommer från, tillåter inte någon ny nedladdning än. Försök igen om två timmar.",
       "unknown": "Oväntat fel när satellitkatalogen lästes in. Loggen har detaljerna."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "Banelementen i satellitkatalogen är {age} dagar gamla och kunde inte uppdateras ({error}); förutsägelserna är pausade tills en ny katalog har laddats ned"
     },
     "catalog_stale_upstream": {
-      "message": "Banelementen i satellitkatalogen är {age} dagar gamla, och webbplatsens katalog är lika gammal; förutsägelserna är pausade tills en ny katalog har laddats ned"
+      "message": "Banelementen i satellitkatalogen är {age} dagar gamla, och CelesTraks data är lika gamla; förutsägelserna är pausade tills en ny katalog har laddats ned"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellitförutsägelserna är pausade",
-      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och ingen nyare katalog kunde laddas ned ({error}). Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills en nedladdning lyckas. Kontrollera att Home Assistant når internet: katalogen kommer från webbplatsen See A Satellite Tonight. Meddelandet försvinner av sig självt när en ny katalog kommer in."
+      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och ingen nyare katalog kunde laddas ned ({error}). Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills en nedladdning lyckas. Kontrollera att Home Assistant når internet: bandatan kommer från CelesTrak. Meddelandet försvinner av sig självt när en ny katalog kommer in."
     },
     "catalog_stale_upstream": {
       "title": "Satellitförutsägelserna är pausade",
-      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och webbplatsen See A Satellite Tonights egen katalog är lika gammal: det finns inget nyare att ladda ned. Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills webbplatsen publicerar en ny katalog. Det finns inget att åtgärda i Home Assistant: meddelandet försvinner av sig självt när en ny katalog kommer in."
+      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och CelesTraks egna data är lika gamla: det finns inget nyare att ladda ned. Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills CelesTrak publicerar nya data. Det finns inget att åtgärda i Home Assistant: meddelandet försvinner av sig självt när en ny katalog kommer in."
     }
   },
   "common": {

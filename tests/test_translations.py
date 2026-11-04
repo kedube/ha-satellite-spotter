@@ -93,8 +93,8 @@ def test_the_code_uses_only_defined_strings() -> None:
     strings = _load(INTEGRATION / "strings.json")
     assert set(strings["selector"]["units"]["options"]) == set(UNITS)
     assert set(strings["selector"]["street_source"]["options"]) == set(STREET_SOURCES)
-    # The repair, and the setup errors, each worded for failing downloads or for a
-    # website catalog just as old.
+    # The repair, and the setup errors, each worded for failing downloads or for
+    # data at CelesTrak just as old.
     issues = {key: _placeholders(issue["description"]) for key, issue in strings["issues"].items()}
     assert issues == {ISSUE_CATALOG_STALE: {"age", "error"}, CATALOG_STALE_UPSTREAM: {"age"}}
     errors = {key: _placeholders(error["message"]) for key, error in strings["exceptions"].items()}

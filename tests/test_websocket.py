@@ -560,7 +560,7 @@ async def test_paused_predictions(
     mock_pysatellitespotter: dict[str, AsyncMock],
 ) -> None:
     """Orbit data too old to trust: no passes, and the reason why."""
-    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("HTTP 503")
+    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("HTTP 503")
     later = NOW + timedelta(days=15)
     # Past the age limit, even before the next refresh notices.
     freezer.move_to(later)

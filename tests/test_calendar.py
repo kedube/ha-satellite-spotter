@@ -217,11 +217,11 @@ async def test_calendar_is_empty_while_predictions_are_paused(
 ) -> None:
     """Passes predicted from orbit data too old to trust are not shown."""
     # Predicted from elements 13.6 days old (the median), just in time.
-    mock_pysatellitespotter["fetch_site_catalog"].return_value = aged(satellites(), 13)
+    mock_pysatellitespotter["fetch_catalog"].return_value = aged(satellites(), 13)
     entry = await _setup(hass)
     # Signed in now, while the test user's token is still valid.
     client = await hass_ws_client(hass)
-    mock_pysatellitespotter["fetch_site_catalog"].side_effect = CatalogError("503")
+    mock_pysatellitespotter["fetch_catalog"].side_effect = CatalogError("503")
     later = NOW + timedelta(days=1)
     await advance(hass, freezer, later)
     assert not entry.runtime_data.last_update_success

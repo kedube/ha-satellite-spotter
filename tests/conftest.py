@@ -43,15 +43,15 @@ def mock_pysatellitespotter(catalog: list[Satellite]) -> Generator[dict[str, Asy
     """Mock the library's network calls (the catalog and the cloud cover forecast)."""
     with (
         patch(
-            "custom_components.satellite_spotter.catalog.fetch_site_catalog",
+            "custom_components.satellite_spotter.catalog.async_fetch_catalog",
             return_value=catalog,
-        ) as fetch_site_catalog,
+        ) as fetch_catalog,
         patch(
             "custom_components.satellite_spotter.coordinator.fetch_cloud_cover",
             return_value=cloud_cover(),
         ) as fetch_cloud_cover,
     ):
-        yield {"fetch_site_catalog": fetch_site_catalog, "fetch_cloud_cover": fetch_cloud_cover}
+        yield {"fetch_catalog": fetch_catalog, "fetch_cloud_cover": fetch_cloud_cover}
 
 
 @pytest.fixture

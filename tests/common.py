@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 from datetime import UTC, datetime, timedelta
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,37 @@ def catalog_json() -> list[dict[str, Any]]:
 def satellites() -> list[Satellite]:
     """The 22-satellite catalog, parsed."""
     return parse_site_catalog(catalog_json())
+
+
+# CelesTrak's columns, in its order.
+GP_COLUMNS = (
+    "OBJECT_NAME",
+    "OBJECT_ID",
+    "EPOCH",
+    "MEAN_MOTION",
+    "ECCENTRICITY",
+    "INCLINATION",
+    "RA_OF_ASC_NODE",
+    "ARG_OF_PERICENTER",
+    "MEAN_ANOMALY",
+    "EPHEMERIS_TYPE",
+    "CLASSIFICATION_TYPE",
+    "NORAD_CAT_ID",
+    "ELEMENT_SET_NO",
+    "REV_AT_EPOCH",
+    "BSTAR",
+    "MEAN_MOTION_DOT",
+    "MEAN_MOTION_DDOT",
+)
+
+
+def gp_csv(entries: list[dict[str, Any]]) -> str:
+    """Orbital data as CelesTrak answers it when asked for CSV."""
+    out = io.StringIO()
+    writer = csv.DictWriter(out, GP_COLUMNS, extrasaction="ignore", restval="0")
+    writer.writeheader()
+    writer.writerows(entries)
+    return out.getvalue()
 
 
 def cloud_cover() -> list[tuple[datetime, int]]:

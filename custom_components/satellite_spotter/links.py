@@ -15,7 +15,7 @@ _BY_NORAD_ID = {
 }
 # The first prefix that fits wins, so "CZ-3" has to stay ahead of "CZ-".
 _BY_NAME_PREFIX = (
-    ("Starlink", "https://en.wikipedia.org/wiki/Starlink"),
+    ("STARLINK", "https://en.wikipedia.org/wiki/Starlink"),
     ("SPACEMOBILE", "https://en.wikipedia.org/wiki/AST_SpaceMobile"),
     ("QIANFAN", "https://en.wikipedia.org/wiki/Qianfan"),
     ("HULIANWANG", "https://en.wikipedia.org/wiki/Guowang"),
@@ -38,5 +38,6 @@ def info_url(norad_id: int, name: str) -> str:
     """Return the page about a satellite; Heavens-Above has one for any other."""
     if (url := _BY_NORAD_ID.get(norad_id)) is not None:
         return url
-    by_name = (url for prefix, url in _BY_NAME_PREFIX if name.startswith(prefix))
+    upper = name.upper()
+    by_name = (url for prefix, url in _BY_NAME_PREFIX if upper.startswith(prefix))
     return next(by_name, f"https://heavens-above.com/satinfo.aspx?satid={norad_id}")

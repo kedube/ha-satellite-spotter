@@ -9,23 +9,24 @@
 ![The Satellite Spotter page: a bright pass of the ISS simulated over the night side of the Earth, with where to look and the passes of the next five days](docs/images/hero.jpg)
 
 Know when to step outside and look up. This custom integration predicts when satellites
-will be **visible to the naked eye** from your home: every bright satellite in James
-Darpinian's catalogue, about 890 of them, from the International Space Station, China's
-Tiangong and Hubble to trains of Starlink satellites and spent rocket stages. For each pass
+will be **visible to the naked eye** from your home: about 750 bright satellites, from the
+International Space Station, China's Tiangong and Hubble to trains of Starlink satellites
+and spent rocket stages. For each pass
 it tells you when and where to look, how high the satellite climbs and how bright it will
 be. The **Satellite Spotter** page then shows you the pass: on a 3D globe, flying its real
 orbit, and from your own street, in a photo of it or among the buildings around you in
 3D, under the stars it will cross.
 
-The predictions are those of James Darpinian's
-[See A Satellite Tonight](https://james.darpinian.com/satellites/): his catalogue of the
-satellites worth looking for, and his model of how bright each one looks and when your sky
-is dark enough to see it. Willem Vooijs ported them to Python as the see-a-satellite
-library, which was made with James's permission. Satellite Spotter uses a
-fork of that library with additional bug fixes and optimizations,
+The predictions follow James Darpinian's
+[See A Satellite Tonight](https://james.darpinian.com/satellites/): his model of how bright
+a satellite looks and when your sky is dark enough to see it. Willem Vooijs ported it to
+Python as the see-a-satellite library, which was made with James's permission. Satellite
+Spotter uses a fork of that library with additional bug fixes and optimizations,
 [pysatellitespotter](https://github.com/kedube/pysatellitespotter), on your Home
-Assistant, so you get the website's passes, worked out locally. Nothing about where you are
-goes to the website; only the optional cloud forecast and the maps and street photos your
+Assistant. Which satellites to look for, and how bright each one is, come from
+[public sources](#how-it-works), with orbital data downloaded directly from CelesTrak, so
+the passes are close to the website's but not the same. Nothing about where you are
+goes to either; only the optional cloud forecast and the maps and street photos your
 browser loads see your area (see
 [Data sources, privacy and etiquette](#data-sources-privacy-and-etiquette)).
 
@@ -77,18 +78,21 @@ to 30 days ahead. The two can be installed side by side.
 ## How it works
 
 ```
-See A Satellite Tonight catalogue, every 12 h ─► check ─► cache (.storage)
+CelesTrak orbital data, every 12 h ─► brightness table ─► check ─► cache (.storage)
   └─► SGP4 ─► brightness ─► visibility ─► groups ─► passes, 5 days ahead, every 2 h
               Open-Meteo cloud cover (optional) ─┘    ├─► sensors, calendar, blueprint
                                                       └─► page, cards, street view
 ```
 
-1. **The catalogue.** James Darpinian keeps it for his website: the satellites' orbital
-   elements, mostly from Space-Track (US Space Force) and for Starlink from CelesTrak, and
-   how bright each one is, from observations (Mike McCants's list and the MMT-9 survey). In mid-October 2026 it held 893: 469 rocket bodies, 188 Starlinks, 120
-   large pieces of debris (mostly spent fuel tanks and launch adapters), 113 other
-   satellites, and the ISS, Tiangong and Hubble. The integration downloads it every 12
-   hours, once for all your locations, and keeps it in Home Assistant's storage, so a
+1. **The catalogue.** The integration downloads the satellites' orbital elements from
+   CelesTrak every 12 hours, once for all your locations, and joins them with a table of how
+   bright each one is, which comes with the integration (`brightness.csv`). Each value is
+   the first of: Mike McCants's list, the median of observations in the IAU's SCORE
+   repository, Stellarium's list, or the median of its family in McCants's list. An object
+   is listed if it could reach magnitude 3 overhead. Starlinks are chosen by height instead:
+   those below 350 km, new ones still climbing and old ones coming down. In November 2026
+   this came to 754: 391 rocket bodies, 253 Starlinks and 110 other satellites. The
+   catalogue is kept in Home Assistant's storage, so a
    restart does not download it again and predictions carry on through internet outages.
    Each satellite is checked once (SGP4 must be able to place it), and any that fails is
    left out.
@@ -97,15 +101,15 @@ See A Satellite Tonight catalogue, every 12 h ─► check ─► cache (.storag
    way is still listed.
 3. **Brightness.** Each satellite's standard magnitude is adjusted for its distance from
    you, the angle between the Sun, the satellite and you (as for a diffuse sphere), and the
-   air its light crosses (Green 1992). Starlink and AST SpaceMobile's BlueBird satellites
-   have published models of their own (Mallama et al. 2025; Cole et al. 2025).
+   air its light crosses (Green 1992). Starlinks have published models of their own
+   (Mallama et al. 2025).
 4. **Visibility.** A satellite counts as visible while it is at least 10° up, lit by the
    Sun (whose rays must clear the lowest 15 km of the atmosphere), brighter than your
    **Faintest magnitude** option, and bright enough for the sky: the faintest magnitude the
    sky shows is about 4 once the Sun is 10° below the horizon, and -1 while the Sun is on
    it (Weaver 1947). Each pass is then refined to the second.
 5. **Groups.** Satellites whose passes overlap, or follow within a minute, make one pass,
-   named after the first ("COSMO-SKYMED-FM3 +1"). Starlinks count only in numbers: fewer
+   named after the first ("SAOCOM 1B +1"). Starlinks count only in numbers: fewer
    than five crossing together are left out, as on the website, and more than five led by
    a Starlink make a **train**. A pass is **bright** when, at its best, it is brighter than
    magnitude 1 and at least 3 magnitudes brighter than the faintest the sky shows, with the
@@ -126,11 +130,22 @@ with the same model. Your browser only draws.
 
 ### Accuracy
 
-The passes are the website's. The library was checked against See A Satellite Tonight for
-every pass the website showed over five days: start times agreed within 9 s, end times
-within 19 s and magnitudes within 0.03 (the
+The method is the website's. Given the website's catalogue, the library was checked against
+See A Satellite Tonight for every pass the website showed over five days: start times
+agreed within 9 s, end times within 19 s and magnitudes within 0.03 (the
 [library's README](https://github.com/kedube/pysatellitespotter#what-it-computes) has the
 details).
+
+The catalogue is not the website's, so the passes differ. Against the website's own
+catalogue, over five days at eight cities in November 2026, it found 33 of the 34 bright
+passes and showed no bright pass the website did not. Of all the passes outside Starlink
+trains it found 185 of 339, and showed 173 the website did not: near the cutoff of
+magnitude 3, a small difference in a satellite's brightness decides whether a pass is listed
+at all. Five objects with no good public value yet, among them Tiangong,
+COSMO-SKYMED-FM3 and BIOMASS, account for over half of the passes it missed. Starlink trains
+matched in the next two days (2 of 2), but only 8 of the 17 over all five days: their orbits
+change too quickly to say that far ahead, and the website's own list on slightly newer
+elements matched only 10 of 18.
 
 What the page draws comes from `track.py`, written from the library's own formulas: its
 brightness and visibility agree with the library's exactly (no difference in 126,000
@@ -152,9 +167,9 @@ within 0.05°, the Moon within 0.5° and the planets within 1°.
 The limits are in the sky, not the maths:
 
 * **Orbits drift.** Satellites manoeuvre, and the thin upper atmosphere slows the low
-  ones, so predictions from older orbital elements drift by seconds to minutes. Two in
-  three of the catalogue's elements are less than a day old and nine in ten less than two
-  days, but a handful are weeks old. The page marks a pass **Medium confidence** when its
+  ones, so predictions from older orbital elements drift by seconds to minutes. Three in
+  four of the catalogue's elements are less than a day old and nearly all less than two
+  days, but a couple are over a week old. The page marks a pass **Medium confidence** when its
   elements are more than 3 days from the pass, and **Low confidence** beyond a week.
 * **Brightness is an estimate.** The model treats most satellites as dull spheres. Real
   ones have flat panels that catch the Sun at some angles and not at others, so a
@@ -162,8 +177,8 @@ The limits are in the sky, not the maths:
 * **Rocket bodies tumble.** Spent stages, about half the catalogue, flash and fade as they
   turn.
 * **Starlinks vary.** Newly launched ones, still low and raising their orbits, are far
-  brighter than those on station, which are made to be dim; the catalogue gives the
-  newcomers a model of their own.
+  brighter than those on station, which are made to be dim, and have a model of their
+  own.
 * **The Moon and light pollution are not modelled**, here or on the website. A pass near a
   bright Moon, or seen from a city centre, is harder to spot.
 * **People miss some.** In the website's own survey (20,724 reports, 2021–2022), about two
@@ -224,7 +239,7 @@ dashboards, remove Satellite Spotter in HACS (or delete its
 (the name starts its entity ids: **Home** gives `sensor.home_next_pass`), check it on the
 map (it starts at your Home Assistant's home), and give its elevation in metres; a rough
 value is fine. The catalogue downloads there and then. If it cannot, the form says so and
-you can try again.
+you can try again; if CelesTrak refused, wait two hours first.
 
 ### Options
 
@@ -317,7 +332,7 @@ still work.
 
 The two can be installed side by side, each with its own storage. With a location of the
 same name in both, though, whichever you add second gets
-`_2` at the end of its entity ids, and each downloads the catalogue. To take over the old
+`_2` at the end of its entity ids, and each downloads its own catalogue. To take over the old
 entity ids, delete the old location first, then add it here with the same name.
 
 ## The Satellite Spotter page
@@ -777,7 +792,7 @@ and who learns what:
 
 | What | From | When | What the server learns |
 |---|---|---|---|
-| The satellite catalogue | See A Satellite Tonight's own storage, `pub-ac416a81df124ba7997caa2baca8bc2c.r2.dev` (Cloudflare R2) | Every 12 hours, once for all locations | Nothing about you or where you are |
+| The satellite catalogue | [CelesTrak](https://celestrak.org) | Every 12 hours, once for all locations | Nothing about you or where you are |
 | Cloud cover (optional) | [Open-Meteo](https://open-meteo.com) | Every 2 hours, for each location | The location's coordinates, to four decimals (about 10 m) |
 
 Your browser loads the maps itself, while the page, a card or the street view is open:
@@ -803,15 +818,16 @@ that location: that is James's website, under its own terms.
 
 Etiquette:
 
-* The catalogue is hosted by James Darpinian for his website. Satellite Spotter downloads
-  it at most twice a day, once for all locations, keeps it across restarts and names itself
-  in every request. After a failed download it leaves the website alone for at least 30
-  minutes, or 5 minutes while it has no catalogue it can use.
+* CelesTrak is a non-profit, and each Home Assistant downloads from it directly. Satellite
+  Spotter downloads about 2.8 MB at most twice a day, once for all locations, keeps it across
+  restarts and names itself in every request. As
+  [CelesTrak's usage policy](https://celestrak.org/usage-policy.php) asks, any answer but a
+  200 stops the download at once, and CelesTrak is then left alone for two hours, even
+  across a restart. If it could not be reached at all, the next try is 30 minutes later,
+  or 5 minutes while there is no catalogue that can be used.
 * Open-Meteo is free for non-commercial use; a location makes about a dozen requests a
   day.
 * Map tiles load only for what is on screen, while it is on screen.
-* With the See A Satellite Tonight integration installed as well, the catalogue is
-  downloaded twice as often: once your automations have moved over, remove it.
 
 ## Troubleshooting
 
@@ -845,15 +861,19 @@ of 3 also leaves passes out. In five days there may be new chances to see one.
 **Predictions paused.** The repair issue "Satellite predictions are paused" means the
 catalogue's orbital elements are more than two weeks old and no fresher catalogue could be
 downloaded; the entities stay unavailable until one is. Check that Home Assistant can
-reach the internet, and allow `pub-ac416a81df124ba7997caa2baca8bc2c.r2.dev` if your network
+reach the internet, and allow `celestrak.org` if your network
 filters traffic; `sensor.home_catalog_updated` shows the last error. While paused, the
-integration tries again every five minutes and resumes by itself as soon as a fresh
-catalogue downloads. If instead the repair says the website's own catalogue is just as
-old, there is nothing to fix in Home Assistant: the catalogue is downloaded again twice a
-day, and predictions resume once the website has a fresh one.
+integration tries again every five minutes, or two hours after CelesTrak refused, and
+resumes by itself as soon as a fresh catalogue downloads. If instead the repair says
+CelesTrak's own data is just as old, there is nothing to fix in Home Assistant: the catalogue
+is downloaded again twice a day, and predictions resume once CelesTrak has fresher data.
 
 **Setup says it could not download the satellite catalogue.** The same cause, the same
-check: Home Assistant needs to reach the catalogue the first time.
+check: Home Assistant needs to reach CelesTrak the first time.
+
+**Setup says CelesTrak is not allowing another download yet.** CelesTrak refuses a second
+download of the same data, which is what happens if you remove your last location and
+add one again soon after. Wait two hours and try again.
 
 **The Satellite Spotter page is missing.** Either every location has **Show Satellite
 Spotter in the sidebar** switched off, or another dashboard already uses
@@ -884,6 +904,15 @@ python scripts/validate_against_skyfield.py   # downloads the ISS's elements and
 
 Its `--write-fixture tests/fixtures/skyfield_reference.json` option stores the results the
 tests use.
+
+How bright each satellite is, `brightness.csv`, is built from files you download yourself
+(the script's header says where from). Values added by hand go in
+`scripts/brightness_overrides.csv`, each with its citation:
+
+```bash
+python -I scripts/make_brightness_table.py --qsmag qs.mag --score observations.csv \
+    --stellarium satellites.json --gcat satcat.tsv --gcat satcat100k.tsv --satcat satcat.csv
+```
 
 The street view's stars, `frontend/sat-stars.js`, are generated from pinned sources with
 checked digests, and the brand images are drawn by a script:
@@ -953,7 +982,7 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
 
 ## Credits and licence
 
-* **The predictions, the catalogue and the brightness model** are James Darpinian's
+* **The prediction method and the brightness model** are James Darpinian's
   [See A Satellite Tonight](https://james.darpinian.com/satellites/). Willem Vooijs's
   Python port was made with James's permission. The "Why not?" explanation when no pass is coming is
   adapted from James's website, and the links to read about a satellite (`links.py`) are
@@ -969,8 +998,17 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
   permission notice is in
   [LICENSE.wildekek](custom_components/satellite_spotter/LICENSE.wildekek).
 * **Orbits** are computed with [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes,
-  the official Vallado SGP4, from elements published by Space-Track and CelesTrak. Cloud
-  cover comes from [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
+  the official Vallado SGP4, from elements published by
+  [CelesTrak](https://celestrak.org), which come from US Space Force data on
+  [Space-Track](https://www.space-track.org). Cloud cover comes from
+  [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
+* **How bright each satellite is** (`brightness.csv`, which credits each value's source)
+  comes from [Mike McCants's list](https://www.prismnet.com/~mmccants/), from medians worked
+  out from observations in [SCORE](https://score.cps.iau.org), the IAU CPS's repository
+  (CC BY 4.0), and from [Stellarium](https://stellarium.org)'s satellite list (GPL). The
+  last two are checked against physical sizes in Jonathan McDowell's
+  [GCAT](https://planet4589.org/space/gcat) (CC BY 4.0). `scripts/make_brightness_table.py`
+  builds it.
 * **The globe and the street view** are drawn with [MapLibre GL JS](https://maplibre.org)
   6.11.2 (BSD-3-Clause, bundled under `custom_components/satellite_spotter/frontend/vendor/`).
   Imagery: NASA Blue Marble and Black Marble via GIBS (the city lights are bundled under

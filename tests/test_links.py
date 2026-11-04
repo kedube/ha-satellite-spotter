@@ -15,6 +15,11 @@ def test_name_prefix_for_a_family_of_satellites() -> None:
     assert info_url(1, "Starlink-1234") == "https://en.wikipedia.org/wiki/Starlink"
 
 
+def test_name_prefix_ignores_case() -> None:
+    """CelesTrak writes STARLINK-1234 in capitals."""
+    assert info_url(1, "STARLINK-1234") == "https://en.wikipedia.org/wiki/Starlink"
+
+
 def test_more_specific_prefix_wins() -> None:
     """The Long March 3's stages have a page of their own, the other stages the family's."""
     assert info_url(1, "CZ-3B R/B") == "https://en.wikipedia.org/wiki/Long_March_3"

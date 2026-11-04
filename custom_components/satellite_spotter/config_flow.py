@@ -43,6 +43,7 @@ import voluptuous as vol
 
 from . import SatelliteSpotterConfigEntry
 from .catalog import async_get_catalog
+from .celestrak import DownloadRefused
 from .const import (
     CONF_ALERT_LEAD_MINUTES,
     CONF_CLOUD_COVER,
@@ -163,6 +164,8 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
                 try:
                     # Shared with every location, so it is downloaded once.
                     await async_get_catalog(self.hass).async_get(retry_now=True)
+                except DownloadRefused:
+                    errors["base"] = "download_limited"
                 except CatalogError:
                     errors["base"] = "cannot_connect"
                 except Exception:

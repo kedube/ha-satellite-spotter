@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from aiohttp import ClientError, RequestInfo, TooManyRedirects
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.const import (
     CONF_ELEVATION,
@@ -26,7 +27,9 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 import voluptuous as vol
 from yarl import URL
 
+from custom_components.satellite_spotter.celestrak import DownloadRefused
 from custom_components.satellite_spotter.const import (
+    CATALOG_REFUSED_RETRY,
     CONF_ALERT_LEAD_MINUTES,
     CONF_CLOUD_COVER,
     CONF_GOOGLE_API_KEY,
@@ -40,6 +43,8 @@ from custom_components.satellite_spotter.const import (
     DOMAIN,
 )
 from custom_components.satellite_spotter.street import GOOGLE_SESSION_URL, MAPILLARY_IMAGES_URL
+
+from .common import NOW
 
 OPTIONS = {
     CONF_MAX_MAGNITUDE: 1.5,
@@ -96,7 +101,7 @@ async def test_user_flow(
         CONF_ELEVATION: 12.0,
     }
     assert result["result"].unique_id == "42.3601_-71.0589"
-    mock_pysatellitespotter["fetch_site_catalog"].assert_awaited_once()
+    mock_pysatellitespotter["fetch_catalog"].assert_awaited_once()
     assert mock_setup_entry.call_count == 1
 
 
@@ -111,7 +116,7 @@ async def test_user_flow_errors(
     error: str,
 ) -> None:
     """Errors are shown, what was typed is kept, and the form can be sent again."""
-    mock_pysatellitespotter["fetch_site_catalog"].side_effect = side_effect
+    mock_pysatellitespotter["fetch_catalog"].side_effect = side_effect
     result = await _add(hass, _user_input())
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": error}
@@ -122,9 +127,34 @@ async def test_user_flow_errors(
     }
     assert suggested[CONF_NAME] == "Backyard"
 
-    mock_pysatellitespotter["fetch_site_catalog"].side_effect = None
+    mock_pysatellitespotter["fetch_catalog"].side_effect = None
     result = await hass.config_entries.flow.async_configure(result["flow_id"], _user_input())
     assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_user_flow_keeps_to_a_refusal(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_pysatellitespotter: dict[str, AsyncMock],
+    mock_setup_entry: AsyncMock,
+) -> None:
+    """Sending the form again does not ask CelesTrak again while it is refusing."""
+    freezer.move_to(NOW)
+    fetch = mock_pysatellitespotter["fetch_catalog"]
+    fetch.side_effect = DownloadRefused("CelesTrak answered 403")
+    result = await _add(hass, _user_input())
+    assert result["errors"] == {"base": "download_limited"}
+
+    flow_id = result["flow_id"]
+    result = await hass.config_entries.flow.async_configure(flow_id, _user_input())
+    assert result["errors"] == {"base": "download_limited"}
+    assert fetch.await_count == 1
+
+    fetch.side_effect = None
+    freezer.move_to(NOW + CATALOG_REFUSED_RETRY)
+    result = await hass.config_entries.flow.async_configure(flow_id, _user_input())
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert fetch.await_count == 2
 
 
 async def test_catalog_shared_between_flows(
@@ -134,18 +164,18 @@ async def test_catalog_shared_between_flows(
     for latitude in (52.0, 60.0):
         result = await _add(hass, _user_input(lat=latitude))
         assert result["type"] is FlowResultType.CREATE_ENTRY
-    mock_pysatellitespotter["fetch_site_catalog"].assert_awaited_once()
+    mock_pysatellitespotter["fetch_catalog"].assert_awaited_once()
 
 
 async def test_duplicate_location_aborts(
     hass: HomeAssistant, mock_pysatellitespotter: dict[str, AsyncMock]
 ) -> None:
-    """The same place (to about 10 m) can only be added once, without asking the website."""
+    """The same place (to about 10 m) can only be added once, without asking CelesTrak."""
     MockConfigEntry(domain=DOMAIN, unique_id="42.3601_-71.0589").add_to_hass(hass)
     result = await _add(hass, _user_input(42.36011, -71.05894))
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
-    mock_pysatellitespotter["fetch_site_catalog"].assert_not_awaited()
+    mock_pysatellitespotter["fetch_catalog"].assert_not_awaited()
 
 
 @pytest.mark.usefixtures("mock_pysatellitespotter")

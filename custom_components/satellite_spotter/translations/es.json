@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "¿Desde dónde observas?",
-        "description": "Los pasos se predicen en tu Home Assistant a partir del catálogo de See A Satellite Tonight, con unos 900 satélites brillantes. Por defecto, la ubicación es la de tu casa. Dos cosas la revelan: la previsión de nubosidad envía sus coordenadas a Open-Meteo (puedes desactivarla en las opciones) y la vista de calle carga teselas de mapa de los alrededores desde OpenFreeMap y AWS.",
+        "description": "Los pasos se predicen en tu Home Assistant a partir de los datos orbitales de CelesTrak de unos 750 satélites brillantes. Por defecto, la ubicación es la de tu casa. Dos cosas la revelan: la previsión de nubosidad envía sus coordenadas a Open-Meteo (puedes desactivarla en las opciones) y la vista de calle carga teselas de mapa de los alrededores desde OpenFreeMap y AWS.",
         "data": {
           "name": "Nombre",
           "location": "Ubicación",
@@ -34,6 +34,7 @@
     "error": {
       "invalid_location": "Introduce una latitud entre -90° y 90° y una longitud válida.",
       "cannot_connect": "No se ha podido descargar el catálogo de satélites. Comprueba que Home Assistant tiene acceso a internet y vuelve a intentarlo.",
+      "download_limited": "CelesTrak, de donde vienen los datos orbitales, aún no permite otra descarga. Vuelve a intentarlo dentro de dos horas.",
       "unknown": "Error inesperado al cargar el catálogo de satélites. El registro tiene los detalles."
     },
     "abort": {
@@ -143,17 +144,17 @@
       "message": "Los elementos orbitales del catálogo de satélites tienen {age} días y no se han podido actualizar ({error}); las predicciones están en pausa hasta que se descargue un catálogo reciente"
     },
     "catalog_stale_upstream": {
-      "message": "Los elementos orbitales del catálogo de satélites tienen {age} días, y el catálogo de la web es igual de antiguo; las predicciones están en pausa hasta que se descargue un catálogo reciente"
+      "message": "Los elementos orbitales del catálogo de satélites tienen {age} días, y los datos de CelesTrak son igual de antiguos; las predicciones están en pausa hasta que se descargue un catálogo reciente"
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Las predicciones de satélites están en pausa",
-      "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y no se ha podido descargar un catálogo más reciente ({error}). Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que una descarga funcione. Comprueba que Home Assistant tiene acceso a internet: el catálogo viene de la web See A Satellite Tonight. Este mensaje desaparece solo en cuanto llega un catálogo reciente."
+      "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y no se ha podido descargar un catálogo más reciente ({error}). Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que una descarga funcione. Comprueba que Home Assistant tiene acceso a internet: los datos orbitales vienen de CelesTrak. Este mensaje desaparece solo en cuanto llega un catálogo reciente."
     },
     "catalog_stale_upstream": {
       "title": "Las predicciones de satélites están en pausa",
-      "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y el propio catálogo de la web See A Satellite Tonight es igual de antiguo: no hay nada más reciente que descargar. Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que la web publique un catálogo reciente. No hay nada que arreglar en Home Assistant: este mensaje desaparece solo en cuanto llega un catálogo reciente."
+      "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y los propios datos de CelesTrak son igual de antiguos: no hay nada más reciente que descargar. Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que CelesTrak publique datos recientes. No hay nada que arreglar en Home Assistant: este mensaje desaparece solo en cuanto llega un catálogo reciente."
     }
   },
   "common": {

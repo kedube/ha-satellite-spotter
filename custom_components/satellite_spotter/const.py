@@ -17,8 +17,9 @@ USER_AGENT: Final = (
 # James Darpinian's website, whose predictions the pysatellitespotter library ports.
 WEBSITE_URL: Final = "https://james.darpinian.com/satellites/"
 ATTRIBUTION: Final = (
-    "Predictions by See A Satellite Tonight (james.darpinian.com/satellites), "
-    "orbital data from Space-Track and CelesTrak, cloud cover from Open-Meteo"
+    "Predictions after See A Satellite Tonight (james.darpinian.com/satellites), "
+    "orbital data from CelesTrak, brightness from Mike McCants, SCORE (IAU CPS) and "
+    "Stellarium, cloud cover from Open-Meteo"
 )
 
 CONF_MAX_MAGNITUDE: Final = "max_magnitude"
@@ -50,15 +51,18 @@ DEFAULT_UNITS: Final = "auto"
 STREET_SOURCES: Final = ("auto", "google", "mapillary", "panoramax", "model")
 DEFAULT_STREET_SOURCE: Final = "auto"
 
-# The website's catalog of the brightest satellites (about 900), downloaded
-# once for every location. Its author refreshes it a few times a day.
-CATALOG_NAME: Final = "brightest"
+# The catalog of the brightest satellites (about 750), downloaded once for
+# every location, from CelesTrak (celestrak.py).
 CATALOG_REFRESH: Final = timedelta(hours=12)
-# After a failed download, try again this much later: soon while there is no
-# catalog at all (Home Assistant often starts before the network is up), less
-# eagerly while a cached one still predicts well.
+# When CelesTrak could not be reached, try again this much later: soon while
+# there is no catalog at all (Home Assistant often starts before the network is
+# up), less eagerly while a cached one still predicts well.
 CATALOG_RETRY: Final = timedelta(minutes=30)
 CATALOG_UNREACHABLE_RETRY: Final = timedelta(minutes=5)
+# When CelesTrak answered with anything but orbital data. Its data changes at
+# most this often, and it can block an address that keeps asking after a refusal,
+# so nothing shortens this wait: not a restart, not someone adding a location.
+CATALOG_REFUSED_RETRY: Final = timedelta(hours=2)
 # A download stamped further ahead than this means the clock was set back
 # since: refresh rather than wait for the clock to catch up.
 CATALOG_CLOCK_SLACK: Final = timedelta(hours=2)
@@ -66,7 +70,7 @@ CATALOG_CLOCK_SLACK: Final = timedelta(hours=2)
 # misleading predictions, so they are paused and a repair issue explains why.
 CATALOG_MAX_AGE: Final = timedelta(days=14)
 ISSUE_CATALOG_STALE: Final = "catalog_stale"
-# Its wording (and the error's) when the catalog downloads but the website's is as old.
+# Its wording (and the error's) when the catalog downloads but CelesTrak's data is as old.
 CATALOG_STALE_UPSTREAM: Final = "catalog_stale_upstream"
 
 STORAGE_KEY: Final = f"{DOMAIN}.catalog"
