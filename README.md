@@ -957,11 +957,11 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
 * **The library**, [pysatellitespotter](https://github.com/kedube/pysatellitespotter), is a
   fork of [see-a-satellite](https://github.com/wildekek/see-a-satellite), Willem Vooijs's
   Python port of the website (MIT); Satellite Spotter uses version 0.2.0.
-* **The integration** keeps the entity ids and pass attributes of Willem Vooijs's
+* **The integration** uses the same entity ids and pass attributes as Willem Vooijs's
   [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
-  (MIT), so automations carry over. Its entities and sensors have been rewritten, but parts
-  of the rest, including some test code and data, still come from that integration.
-  Willem's copyright and MIT permission notice is in
+  (MIT). Its entities and sensors have been rewritten, but parts of the rest, including some
+  test code and data, still come from that integration. Willem's copyright and MIT
+  permission notice is in
   [LICENSE.wildekek](custom_components/satellite_spotter/LICENSE.wildekek).
 * **Orbits** are computed with [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes,
   the official Vallado SGP4, from elements published by Space-Track and CelesTrak. Cloud
