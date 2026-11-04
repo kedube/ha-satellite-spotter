@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Zdjęcia w widoku z ulicy",
-            "description": "Widok z ulicy pokazuje twoją ulicę na zdjęciu 360° zrobionym w pobliżu domu, a tam, gdzie go nie ma, model 3D. Panoramax nie wymaga klucza. Mapillary wymaga darmowego tokenu dostępu, a Google Street View klucza API Google Cloud: z nimi oferowane są też zdjęcia z tych usług. Przeglądarka sama pobiera zdjęcia, więc otrzymuje klucze.",
+            "description": "Widok z ulicy pokazuje twoją ulicę na zdjęciu 360° zrobionym w pobliżu domu, a tam, gdzie go nie ma, model 3D. Panoramax nie wymaga klucza. Mapillary wymaga darmowego tokenu dostępu, a Google Street View klucza API Google Cloud: z nimi oferowane są też zdjęcia z tych usług. Przeglądarki same pobierają zdjęcia, więc klucze otrzymują przeglądarki administratorów; pozostali użytkownicy dostają wyłącznie zdjęcia z Panoramax.",
             "data": {
               "street_source": "Zdjęcia z",
               "mapillary_token": "Token dostępu Mapillary",

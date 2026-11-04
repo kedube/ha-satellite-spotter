@@ -20,8 +20,9 @@ orbit, and from your own street, in a photo of it or among the buildings around 
 The predictions are those of James Darpinian's
 [See A Satellite Tonight](https://james.darpinian.com/satellites/): his catalogue of the
 satellites worth looking for, and his model of how bright each one looks and when your sky
-is dark enough to see it. Willem Vooijs ported them to Python, with James's permission, as
-the see-a-satellite library. Satellite Spotter uses a fork of that library,
+is dark enough to see it. Willem Vooijs ported them to Python as the see-a-satellite
+library, which was made with James's permission. Satellite Spotter uses a
+fork of that library with additional bug fixes and optimizations,
 [pysatellitespotter](https://github.com/kedube/pysatellitespotter), on your Home
 Assistant, so you get the website's passes, worked out locally. Nothing about where you are
 goes to the website; only the optional cloud forecast and the maps and street photos your
@@ -504,9 +505,11 @@ if you want a ceiling. Google's photos show its copyright and a **Report a probl
 this image** link in their corner, as its terms ask. Projects with a billing address in
 the European Economic Area come under Google's EEA terms.
 
-The keys go to your browser, which fetches the photos itself: anyone who can open your
-Home Assistant's dashboards can find them in the browser's developer tools. Restricting
-the Google key to your Home Assistant's addresses keeps it from working anywhere else.
+Only Home Assistant administrators receive the keys. Their browsers fetch the photos
+themselves, so an administrator can find the keys in the browser's developer tools.
+Everyone else gets Panoramax's photos only, even where the options choose Google Street
+View or Mapillary. Restricting the Google key to your Home Assistant's addresses keeps it
+from working anywhere else.
 
 ### The 3D model
 
@@ -591,7 +594,8 @@ faces the way its service says.
 Home Assistant works out the passes. For a street photo, your browser asks Panoramax for
 photos taken near your home and downloads the one shown from the server that keeps it
 (Panoramax is a federation of servers run by different organisations); with their keys
-set, it asks Mapillary and Google Street View too, with those keys. For the 3D model it
+set, an administrator's browser asks Mapillary and Google Street View too, with those keys.
+For the 3D model it
 downloads map tiles of the area around your home: buildings and roads from OpenFreeMap,
 terrain from Amazon Web Services and, if you choose aerial photos, imagery from Esri. Like
 any web map, these servers can see which area is asked about. No cookies go with any of it,
@@ -788,8 +792,8 @@ Your browser loads the maps itself, while the page, a card or the street view is
 | Street view: buildings and ground | [OpenFreeMap](https://openfreemap.org) | © OpenStreetMap contributors (ODbL) | The area around your home |
 | Street view: terrain and skyline | [Mapzen Terrain Tiles](https://github.com/tilezen/joerd/blob/master/docs/attribution.md) on AWS Open Data | Free to use with credit | The area around your home, out to 40 km |
 | Street view: street photos | [Panoramax](https://panoramax.fr): the search goes to its meta-catalogue, `api.panoramax.xyz`, each photo comes from the server that keeps it | Each photographer's licence, usually CC BY-SA 4.0, credited in **About this view** | Your home's position, to four decimals (about 10 m), and which photo is shown |
-| Street view: street photos (with a token) | [Mapillary](https://www.mapillary.com) (Meta) | CC BY-SA 4.0, the photographer credited in **About this view** | The area within 250 m of your home's position (rounded to about 10 m), your token, and which photo is shown |
-| Street view: street photos (with a key) | [Google Street View](https://www.google.com/streetview/), through the Map Tiles API | Google's terms: its copyright and report link are shown with each photo | Your home's position (rounded to about 10 m) and 24 points around it, your key, which photo is shown, and your Home Assistant's address (the key's restriction needs it) |
+| Street view: street photos (with a token, administrators only) | [Mapillary](https://www.mapillary.com) (Meta) | CC BY-SA 4.0, the photographer credited in **About this view** | The area within 250 m of your home's position (rounded to about 10 m), your token, and which photo is shown |
+| Street view: street photos (with a key, administrators only) | [Google Street View](https://www.google.com/streetview/), through the Map Tiles API | Google's terms: its copyright and report link are shown with each photo | Your home's position (rounded to about 10 m) and 24 points around it, your key, which photo is shown, and your Home Assistant's address (the key's restriction needs it) |
 
 Credits for what is on screen are shown in the corner of the globe and in the street
 view's **About this view**. Place names, borders and the street map need a Home Assistant
@@ -950,10 +954,11 @@ python scripts/release.py package satellite_spotter.zip   # the zip HACS install
 ## Credits and licence
 
 * **The predictions, the catalogue and the brightness model** are James Darpinian's
-  [See A Satellite Tonight](https://james.darpinian.com/satellites/), ported with his
-  permission; the "Why not?" explanation when no pass is coming is adapted from his
-  website, and the links to read about a satellite (`links.py`) are the website's.
-  Satellite Spotter is not made or supported by James: please report problems here.
+  [See A Satellite Tonight](https://james.darpinian.com/satellites/). Willem Vooijs's
+  Python port was made with James's permission. The "Why not?" explanation when no pass is coming is
+  adapted from James's website, and the links to read about a satellite (`links.py`) are
+  the website's. Satellite Spotter is not made or supported by James: please report
+  problems here.
 * **The library**, [pysatellitespotter](https://github.com/kedube/pysatellitespotter), is a
   fork of [see-a-satellite](https://github.com/wildekek/see-a-satellite), Willem Vooijs's
   Python port of the website (MIT); Satellite Spotter uses version 0.2.0.

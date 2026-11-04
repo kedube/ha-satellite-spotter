@@ -24,7 +24,8 @@
     "pysatellitespotter"
   ],
   "requirements": [
-    "pysatellitespotter==0.2.0"
+    "pysatellitespotter==0.2.0",
+    "sgp4==2.27"
   ],
   "version": "1.06"
 }

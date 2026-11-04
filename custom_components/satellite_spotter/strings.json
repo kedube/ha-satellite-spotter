@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Street view photos",
-            "description": "The street view shows your street in a 360° photo taken near home, or the 3D model where there is none. Panoramax needs no key. Mapillary needs a free access token and Google Street View a Google Cloud API key: with them, those services' photos are offered too. Your browser fetches the photos itself, so it receives the keys.",
+            "description": "The street view shows your street in a 360° photo taken near home, or the 3D model where there is none. Panoramax needs no key. Mapillary needs a free access token and Google Street View a Google Cloud API key: with them, those services' photos are offered too. Browsers fetch the photos themselves, so administrators' browsers receive the keys; other users get Panoramax's photos only.",
             "data": {
               "street_source": "Photos from",
               "mapillary_token": "Mapillary access token",

@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Photos de la vue de rue",
-            "description": "La vue de rue montre votre rue sur une photo à 360° prise près de chez vous, ou le modèle 3D là où il n'y en a pas. Panoramax ne demande aucune clé. Mapillary demande un jeton d'accès gratuit et Google Street View une clé d'API Google Cloud : avec eux, les photos de ces services sont proposées aussi. Votre navigateur télécharge lui-même les photos, il reçoit donc les clés.",
+            "description": "La vue de rue montre votre rue sur une photo à 360° prise près de chez vous, ou le modèle 3D là où il n'y en a pas. Panoramax ne demande aucune clé. Mapillary demande un jeton d'accès gratuit et Google Street View une clé d'API Google Cloud : avec eux, les photos de ces services sont proposées aussi. Les navigateurs téléchargent eux-mêmes les photos : ceux des administrateurs reçoivent donc les clés, et les autres utilisateurs n'obtiennent que les photos de Panoramax.",
             "data": {
               "street_source": "Photos de",
               "mapillary_token": "Jeton d'accès Mapillary",

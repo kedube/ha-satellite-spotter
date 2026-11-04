@@ -127,9 +127,10 @@ def test_privacy_is_described_honestly() -> None:
     options = strings["options"]["step"]["init"]["data_description"]
     assert "Open-Meteo" in options["cloud_cover"]
     assert "OpenFreeMap" in options["show_in_sidebar"]
-    # The keys go to the browser, and Mapillary sees the area around home.
+    # The keys go to administrators' browsers only, and Mapillary sees the area around home.
     street = strings["options"]["step"]["init"]["sections"]["street_view"]
-    assert "browser" in street["description"] and "keys" in street["description"]
+    assert "administrators' browsers receive the keys" in street["description"]
+    assert "Panoramax's photos only" in street["description"]
     assert "area around home" in street["data_description"]["mapillary_token"]
 
 
@@ -137,11 +138,15 @@ def test_manifest_and_requirements_agree() -> None:
     manifest = _load(INTEGRATION / "manifest.json")
     assert manifest["domain"] == "satellite_spotter"
     assert manifest["name"] == "Satellite Spotter"
-    (requirement,) = manifest["requirements"]
-    # Home Assistant installs it from PyPI, so it is pinned by version.
-    assert re.fullmatch(r"pysatellitespotter==[\d.]+", requirement)
+    # Home Assistant installs them from PyPI, so they are pinned by version: the
+    # library, and the SGP4 the integration imports itself.
+    (library, sgp4) = manifest["requirements"]
+    assert re.fullmatch(r"pysatellitespotter==[\d.]+", library)
+    assert re.fullmatch(r"sgp4==[\d.]+", sgp4)
     for name in ("requirements_test.txt", "requirements_test_oldest.txt"):
-        assert requirement in (ROOT / name).read_text().splitlines()
+        lines = (ROOT / name).read_text().splitlines()
+        assert library in lines
+        assert sgp4 in lines
     hacs = _load(ROOT / "hacs.json")
     assert hacs["name"] == "Satellite Spotter"
 

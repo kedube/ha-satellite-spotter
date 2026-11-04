@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Foto's in de straatweergave",
-            "description": "De straatweergave toont je straat op een 360°-foto die bij je huis is genomen, of het 3D-model waar er geen is. Panoramax heeft geen sleutel nodig. Mapillary heeft een gratis toegangstoken nodig en Google Street View een API-sleutel van Google Cloud: daarmee worden ook de foto's van die diensten aangeboden. Je browser haalt de foto's zelf op en krijgt daarvoor de sleutels.",
+            "description": "De straatweergave toont je straat op een 360°-foto die bij je huis is genomen, of het 3D-model waar er geen is. Panoramax heeft geen sleutel nodig. Mapillary heeft een gratis toegangstoken nodig en Google Street View een API-sleutel van Google Cloud: daarmee worden ook de foto's van die diensten aangeboden. Browsers halen de foto's zelf op, dus die van beheerders krijgen de sleutels; andere gebruikers krijgen alleen de foto's van Panoramax.",
             "data": {
               "street_source": "Foto's van",
               "mapillary_token": "Mapillary-toegangstoken",

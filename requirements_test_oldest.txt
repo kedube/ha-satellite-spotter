@@ -1,7 +1,8 @@
 # The tests' tools on the oldest Home Assistant hacs.json allows (2026.2.3, Python 3.13).
 pytest-homeassistant-custom-component==0.13.316
 home-assistant-frontend==20260128.6
-# The prediction library, as the manifest pins it.
+# The prediction library, and the SGP4 the integration imports itself, as the manifest pins them.
 pysatellitespotter==0.2.0
+sgp4==2.27
 # Checks the pre-compressed MapLibre copies (tests/test_frontend.py).
 Brotli

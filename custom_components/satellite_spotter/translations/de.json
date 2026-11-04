@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Fotos in der Straßenansicht",
-            "description": "Die Straßenansicht zeigt deine Straße auf einem 360°-Foto, das in der Nähe deines Zuhauses aufgenommen wurde, und wo es keines gibt, das 3D-Modell. Panoramax braucht keinen Schlüssel. Mapillary braucht ein kostenloses Zugriffstoken und Google Street View einen API-Schlüssel von Google Cloud: Damit werden auch deren Fotos angeboten. Dein Browser lädt die Fotos selbst und erhält dafür die Schlüssel.",
+            "description": "Die Straßenansicht zeigt deine Straße auf einem 360°-Foto, das in der Nähe deines Zuhauses aufgenommen wurde, und wo es keines gibt, das 3D-Modell. Panoramax braucht keinen Schlüssel. Mapillary braucht ein kostenloses Zugriffstoken und Google Street View einen API-Schlüssel von Google Cloud: Damit werden auch deren Fotos angeboten. Browser laden die Fotos selbst, deshalb erhalten die Browser von Administratoren die Schlüssel; andere Benutzer bekommen nur die Fotos von Panoramax.",
             "data": {
               "street_source": "Fotos von",
               "mapillary_token": "Mapillary-Zugriffstoken",

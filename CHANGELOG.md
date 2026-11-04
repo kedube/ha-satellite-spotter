@@ -4,6 +4,18 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.06
+
+- **Calendar descriptions are worded differently**, in every language: "Appears at
+  20:31:02 in the W, 21° up." now reads "At 20:31:02, look toward W: 21° above the
+  horizon." An automation that reads the old text needs updating. Calendar triggers,
+  event titles and event links are unchanged.
+- **Google Street View and Mapillary photos are for administrators only.** The street
+  view used to send the keys to the browser of anyone who opened it. Now only
+  administrators' browsers receive them, and everyone else gets Panoramax's photos only.
+- **The notification blueprint** now sends the calendar's directions, in Home Assistant's
+  language and without the final link, rather than its own short English message.
+
 ## 1.05
 
 - Ready for Home Assistant 2026.11. Its location picker now refuses a latitude beyond

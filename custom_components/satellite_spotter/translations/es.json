@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Fotos de la vista de calle",
-            "description": "La vista de calle muestra tu calle en una foto de 360° tomada cerca de tu casa o, donde no hay ninguna, el modelo 3D. Panoramax no necesita clave. Mapillary necesita un token de acceso gratuito y Google Street View una clave de API de Google Cloud: con ellos también se ofrecen las fotos de esos servicios. Tu navegador descarga las fotos por sí mismo, así que recibe las claves.",
+            "description": "La vista de calle muestra tu calle en una foto de 360° tomada cerca de tu casa o, donde no hay ninguna, el modelo 3D. Panoramax no necesita clave. Mapillary necesita un token de acceso gratuito y Google Street View una clave de API de Google Cloud: con ellos también se ofrecen las fotos de esos servicios. Los navegadores descargan las fotos por sí mismos, así que los de los administradores reciben las claves; los demás usuarios solo obtienen las fotos de Panoramax.",
             "data": {
               "street_source": "Fotos de",
               "mapillary_token": "Token de acceso de Mapillary",

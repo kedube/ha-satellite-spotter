@@ -18,7 +18,7 @@ USER_AGENT: Final = (
 WEBSITE_URL: Final = "https://james.darpinian.com/satellites/"
 ATTRIBUTION: Final = (
     "Predictions by See A Satellite Tonight (james.darpinian.com/satellites), "
-    "orbital data from CelesTrak, cloud cover from Open-Meteo"
+    "orbital data from Space-Track and CelesTrak, cloud cover from Open-Meteo"
 )
 
 CONF_MAX_MAGNITUDE: Final = "max_magnitude"

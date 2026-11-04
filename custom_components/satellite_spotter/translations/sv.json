@@ -64,7 +64,7 @@
         "sections": {
           "street_view": {
             "name": "Foton i gatuvyn",
-            "description": "Gatuvyn visar din gata på ett 360°-foto taget nära hemmet, eller 3D-modellen där det inte finns något. Panoramax behöver ingen nyckel. Mapillary behöver en gratis åtkomsttoken och Google Street View en API-nyckel från Google Cloud: med dem erbjuds även de tjänsternas foton. Webbläsaren hämtar fotona själv och får därför nycklarna.",
+            "description": "Gatuvyn visar din gata på ett 360°-foto taget nära hemmet, eller 3D-modellen där det inte finns något. Panoramax behöver ingen nyckel. Mapillary behöver en gratis åtkomsttoken och Google Street View en API-nyckel från Google Cloud: med dem erbjuds även de tjänsternas foton. Webbläsare hämtar fotona själva, så administratörers webbläsare får nycklarna; andra användare får bara foton från Panoramax.",
             "data": {
               "street_source": "Foton från",
               "mapillary_token": "Åtkomsttoken för Mapillary",
