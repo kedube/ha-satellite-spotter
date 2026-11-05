@@ -48,7 +48,8 @@ You only need MMT's list. Python's standard library and `curl` are enough to run
 ### What the update changes
 
 The command downloads CelesTrak's catalogue and the orbit lists the integration uses. It never
-contacts MMT.
+contacts MMT. A Home Assistant on the same connection may then be refused its next download of those
+lists, and it tries again by itself two hours later.
 
 | Object | What happens |
 |---|---|

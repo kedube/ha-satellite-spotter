@@ -41,7 +41,7 @@ from homeassistant.helpers.selector import (
 import voluptuous as vol
 
 from . import SatelliteSpotterConfigEntry
-from .catalog import async_get_catalog
+from .catalog import async_shared_catalog
 from .celestrak import CatalogError, DownloadRefused
 from .const import (
     CONF_ALERT_LEAD_MINUTES,
@@ -162,7 +162,7 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 try:
                     # Shared with every location, so it is downloaded once.
-                    await async_get_catalog(self.hass).async_get(retry_now=True)
+                    await async_shared_catalog(self.hass).async_satellites(retry_now=True)
                 except DownloadRefused:
                     errors["base"] = "download_limited"
                 except CatalogError:

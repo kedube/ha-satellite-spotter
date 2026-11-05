@@ -734,7 +734,7 @@ test("a pass says what can make it easier or harder to see", () => {
   assert.deepEqual(conds({ ...pass, cloud_cover: null }), []);
   assert.deepEqual(conds({ ...pass, cloud_cover: 5 })[0][0], "clear");
   assert.deepEqual(conds({ ...pass, cloud_cover: 90 })[0][0], "cloudy");
-  const daylight = conds({ ...pass, cloud_cover: null, before_sunset: true });
+  const daylight = conds({ ...pass, cloud_cover: null, sun_up: true });
   assert.deepEqual(daylight, [["warn", "sun", "Before sunset: the sky is still bright"]]);
   const train = makePass(T0 + 600, T0 + 900, { ids: [101, 102, 103, 104, 105, 106, 107], kind: "starlink", train: true, cloud: null });
   assert.equal(conds(train)[0][1], "train");

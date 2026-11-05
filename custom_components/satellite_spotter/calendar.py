@@ -15,10 +15,10 @@ from homeassistant.util import dt as dt_util
 
 from . import SatelliteSpotterConfigEntry
 from .const import DOMAIN
-from .coordinator import SatelliteData, SatellitePass, SatelliteSpotterCoordinator
-from .entity import SatelliteSpotterEntity, compass, pass_title
+from .coordinator import ListedPass, Predictions, SatelliteSpotterCoordinator
+from .entity import SatelliteSpotterEntity, compass
 from .links import info_url
-from .predict import Direction
+from .predict import Moment
 
 PARALLEL_UPDATES = 0
 
@@ -71,44 +71,49 @@ class PassText:
             text = "0.0"
         return text.replace(".", self._t("decimal_separator"))
 
-    def _look(self, angle: Direction) -> dict[str, str]:
-        return {
-            "direction": self._t(f"compass_{compass(angle.azimuth).lower()}"),
-            "elevation": f"{angle.elevation:.0f}",
-        }
+    def _when_and_where(self, key: str, moment: Moment, **more: str) -> str:
+        return self._t(
+            key,
+            time=_clock(moment.time),
+            direction=self._t(f"compass_{compass(moment.azimuth).lower()}"),
+            elevation=f"{moment.elevation:.0f}",
+            **more,
+        )
 
-    def summary(self, p: SatellitePass) -> str:
+    def summary(self, p: ListedPass) -> str:
         """Event title: the satellite, and whether the pass is bright."""
         key = "calendar_summary_bright" if p.bright else "calendar_summary"
-        return self._t(key, title=pass_title(p))
+        return self._t(key, title=p.title)
 
-    def description(self, p: SatellitePass) -> str:
-        """When and where to look, as the primary satellite crosses the sky."""
-        t = p.lead
-        sat = t.satellite
-        lines = [
-            self._t("calendar_appears", time=_clock(t.start), **self._look(t.appears)),
-            self._t(
-                "calendar_brightest",
-                time=_clock(t.peak_time),
-                magnitude=self._number(t.peak_magnitude),
-                **self._look(t.peak),
+    def description(self, p: ListedPass) -> str:
+        """Say the best moment to look, then the rest of the pass, what else to know, and the link.
+
+        The link stays last: the blueprint's notification leaves out the last line.
+        """
+        named = p.lead
+        sat = named.satellite
+        count = p.count
+        best = self._number(named.peak_magnitude)
+        lines = (
+            self._when_and_where("calendar_brightest", named.brightest, magnitude=best),
+            self._when_and_where("calendar_appears", named.appears),
+            self._when_and_where("calendar_disappears", named.vanishes),
+            (
+                None
+                if p.cloud_cover is None
+                else self._t("calendar_cloud_cover", cloud_cover=p.cloud_cover)
             ),
-            self._t("calendar_disappears", time=_clock(t.end), **self._look(t.vanishes)),
-        ]
-        if p.flyover.satellite_count > 1:
-            lines.append(self._t("calendar_together", count=p.flyover.satellite_count))
-        if p.cloud_cover is not None:
-            lines.append(self._t("calendar_cloud_cover", cloud_cover=p.cloud_cover))
-        lines.append(self._t("calendar_about", name=sat.name, url=info_url(sat.norad_id, sat.name)))
-        return "\n".join(lines)
+            self._t("calendar_together", count=count) if count > 1 else None,
+            self._t("calendar_about", name=sat.name, url=info_url(sat.norad_id, sat.name)),
+        )
+        return "\n".join(filter(None, lines))
 
 
 def _clock(t: datetime) -> str:
     return f"{dt_util.as_local(t):%H:%M:%S}"
 
 
-def event_times(p: SatellitePass) -> tuple[datetime, datetime]:
+def event_times(p: ListedPass) -> tuple[datetime, datetime]:
     """Start and end of a pass, to the second as the sensors give them."""
     start = dt_util.as_local(p.start.replace(microsecond=0))
     end = dt_util.as_local(p.end.replace(microsecond=0))
@@ -132,10 +137,10 @@ class SatellitePassCalendar(SatelliteSpotterEntity, CalendarEntity):
         super().__init__(coordinator, "passes")
         self._text = text
         # The first state is written with the passes there are now.
-        self._written_data: SatelliteData | None = coordinator.data
+        self._written_data: Predictions | None = coordinator.data
         self._written_success = coordinator.last_update_success
 
-    def _event(self, p: SatellitePass, start: datetime, end: datetime) -> CalendarEvent:
+    def _event(self, p: ListedPass, start: datetime, end: datetime) -> CalendarEvent:
         return CalendarEvent(
             start=start,
             end=end,

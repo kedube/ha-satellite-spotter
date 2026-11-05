@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
+from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.celestrak import (
     GP_URL,
     QUERIES,
@@ -75,7 +76,7 @@ def _mock_supplement(mocker: AiohttpClientMocker, **kwargs: Any) -> None:
 
 def test_only_objects_with_a_brightness_are_kept() -> None:
     catalog = build_catalog([gp_csv([_row(900, "CALSPHERE 1"), _row(901, "NOT IN THE TABLE")])])
-    assert [(sat.norad_id, sat.name, sat.magnitude, sat.model) for sat in catalog] == [
+    assert [(sat.norad_id, sat.name, sat.standard_magnitude, sat.curve) for sat in catalog] == [
         (900, "CALSPHERE 1", 3.0, None)
     ]
 
@@ -115,7 +116,7 @@ def test_the_newest_elements_win_for_a_supplemental_starlink(
 
 def test_a_starlink_only_the_supplemental_file_has_is_kept() -> None:
     (sat,) = build_catalog([gp_csv([]), gp_csv([_row(60000, "STARLINK-1", LOW)])])
-    assert (sat.norad_id, sat.model) == (60000, "starlink-raising")
+    assert (sat.norad_id, sat.curve) == (60000, "starlink-raising")
 
 
 def test_only_low_starlinks_are_kept_with_their_models() -> None:
@@ -130,12 +131,12 @@ def test_only_low_starlinks_are_kept_with_their_models() -> None:
             )
         ]
     )
-    assert {sat.name: sat.model for sat in catalog} == {
+    assert {sat.name: sat.curve for sat in catalog} == {
         "STARLINK-1": "starlink-raising",
         "STARLINK-2 [DTC]": "starlink-dtc",
     }
-    assert all(sat.magnitude is None for sat in catalog)
-    assert all(sat.perigee_km < STARLINK_MAX_PERIGEE_KM for sat in catalog)
+    assert all(sat.standard_magnitude is None for sat in catalog)
+    assert all(track.apsides_km(sat)[0] < STARLINK_MAX_PERIGEE_KM for sat in catalog)
 
 
 def test_a_bad_row_costs_only_itself() -> None:
@@ -207,6 +208,28 @@ async def test_the_catalog_can_do_without_the_supplemental_file(
     assert [sat.norad_id for sat in catalog] == [900]
     # Nothing more is asked of CelesTrak after it.
     assert aioclient_mock.call_count == len(QUERIES) + 1
+
+
+@pytest.mark.parametrize(
+    ("status", "says"),
+    [
+        (
+            403,
+            "CelesTrak allows one download every two hours, "
+            "and answered HTTP 403 for GROUP=visual.",
+        ),
+        (503, "CelesTrak answered HTTP 503 for GROUP=visual."),
+    ],
+)
+async def test_a_refusal_says_what_it_means_and_what_happens_next(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, status: int, says: str
+) -> None:
+    _mock_answers(aioclient_mock, status=status)
+    with pytest.raises(DownloadRefused) as caught:
+        await async_fetch_catalog(hass)
+    assert (
+        str(caught.value) == f"{says} The integration waits two hours, then tries again by itself."
+    )
 
 
 @pytest.mark.parametrize("error", [aiohttp.ClientError(), TimeoutError()])

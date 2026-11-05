@@ -4,6 +4,33 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.09
+
+- **Pass attributes have new names, so automations that read them need updating.**
+  `rise_direction`, `rise_azimuth` and `rise_elevation` are now `appears_direction`,
+  `appears_azimuth` and `appears_elevation`. `set_direction`, `set_azimuth` and
+  `set_elevation` are now `disappears_direction`, `disappears_azimuth` and
+  `disappears_elevation`. `before_sunset` is now `sun_up`. `appears_time` and
+  `disappears_time` are new, `satellites` is now always there, and each entry in the
+  `passes` list gains `pass_id` and `bright`. Entity ids stay the same.
+- **A pass is named after its brightest satellite**, not the first to appear, so its title,
+  magnitude, directions and calendar text all describe the same satellite. A pass that
+  read "STARLINK-37806 +7" with Tiangong's magnitude now reads "Tiangong +7". A Starlink
+  train with something brighter in it no longer shows as a train.
+- **Calendar descriptions start with the best view**, and "At 20:31:02, look toward W: 21°
+  above the horizon." now reads "First visible at 20:31:02 toward W, 21° high." The link is
+  still the last line. An automation that reads the old text needs updating.
+- **CelesTrak's download limit is clearer, and harder to run into.** Its refusal now says that
+  it allows one download every two hours and that the integration tries again by itself.
+  Removing your last location and adding it back no longer asks CelesTrak again too soon:
+  the catalogue stays until another download is allowed. If you remove the integration for
+  good during that time, `.storage/satellite_spotter.catalog` stays behind; it holds no
+  location, and you can delete it.
+- **The cloud forecast** now asks Open-Meteo for the five days that are predicted, not seven.
+- **The prediction and entity code is rewritten from published sources.** The Sun's position
+  now comes from Meeus 1998. In a test across eight cities the same passes were predicted,
+  with times at most a second apart.
+
 ## 1.06
 
 - **Calendar descriptions are worded differently**, in every language: "Appears at

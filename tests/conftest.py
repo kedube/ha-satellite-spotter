@@ -47,11 +47,11 @@ def mock_downloads(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
             return_value=catalog,
         ) as fetch_catalog,
         patch(
-            "custom_components.satellite_spotter.coordinator.fetch_cloud_cover",
+            "custom_components.satellite_spotter.coordinator.async_fetch_forecast",
             return_value=cloud_cover(),
-        ) as fetch_cloud_cover,
+        ) as fetch_forecast,
     ):
-        yield {"fetch_catalog": fetch_catalog, "fetch_cloud_cover": fetch_cloud_cover}
+        yield {"fetch_catalog": fetch_catalog, "fetch_forecast": fetch_forecast}
 
 
 @pytest.fixture

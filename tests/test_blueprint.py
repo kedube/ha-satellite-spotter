@@ -19,7 +19,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 from custom_components.satellite_spotter.calendar import async_pass_text, event_times
 from custom_components.satellite_spotter.const import DOMAIN
-from custom_components.satellite_spotter.coordinator import SatellitePass
+from custom_components.satellite_spotter.coordinator import ListedPass
 
 from .common import INTEGRATION, NOW, ROOT, advance
 
@@ -84,7 +84,7 @@ def _variables(hass: HomeAssistant, summary: str, description: str, start: datet
 async def _run(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
-    passes: list[SatellitePass],
+    passes: list[ListedPass],
     calendar: str = CALENDAR,
     **inputs: Any,
 ) -> list[Any]:
@@ -172,7 +172,7 @@ async def test_other_languages(
     assert event.data["data"]["url"] == (
         f"/satellite-spotter?entry_id={mock_config_entry.entry_id}&pass={bright.id}&view=street"
     )
-    assert event.data["message"].startswith("Um ")
+    assert event.data["message"].startswith("Beste Sicht um ")
     assert "Beste Sicht um " in event.data["message"]
     assert "Helligkeit " in event.data["message"]
 
@@ -190,11 +190,11 @@ async def test_bright_passes_in_every_language(hass: HomeAssistant, language: st
             summary = common[key].format(title=title)
             description = "\n".join(
                 [
-                    common["calendar_appears"].format(
-                        time="20:31:02", direction="X", elevation="12"
-                    ),
                     common["calendar_brightest"].format(
                         time="20:33:00", direction="Y", elevation="45", magnitude="-1,2"
+                    ),
+                    common["calendar_appears"].format(
+                        time="20:31:02", direction="X", elevation="12"
                     ),
                     common["calendar_disappears"].format(
                         time="20:35:00", direction="Z", elevation="15"
@@ -219,8 +219,8 @@ async def test_without_a_forecast(hass: HomeAssistant, freezer: FrozenDateTimeFa
     variables = _variables(
         hass,
         "🛰️ ISS (bright)",
-        "At 20:31:02, look toward W: 21° above the horizon.\n"
         "Best view at 20:32:30: NW, 40° high, magnitude -2.5.\n"
+        "First visible at 20:31:02 toward W, 21° high.\n"
         "Last visible at 20:34:55 toward NE, 10° high.\n"
         "Object: ISS — https://en.wikipedia.org/wiki/International_Space_Station",
         NOW + timedelta(minutes=10),
@@ -228,8 +228,8 @@ async def test_without_a_forecast(hass: HomeAssistant, freezer: FrozenDateTimeFa
     assert variables["cloud_cover"] is None
     assert variables["minutes"] == 10
     assert variables["details"] == (
-        "At 20:31:02, look toward W: 21° above the horizon. "
         "Best view at 20:32:30: NW, 40° high, magnitude -2.5. "
+        "First visible at 20:31:02 toward W, 21° high. "
         "Last visible at 20:34:55 toward NE, 10° high."
     )
 

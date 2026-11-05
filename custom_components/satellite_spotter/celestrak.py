@@ -24,6 +24,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from . import track
 from .const import USER_AGENT
 from .predict import Satellite
 
@@ -74,14 +75,14 @@ def _satellite(row: Mapping[str, str], table: Mapping[int, float]) -> Satellite 
     """Return the satellite a row of orbital data describes, if it is one we predict."""
     name = row["OBJECT_NAME"].upper()
     if name.startswith("STARLINK"):
-        # Direct-to-cell satellites have a brightness model of their own.
-        model = "starlink-dtc" if "[DTC]" in name else "starlink-raising"
-        satellite = Satellite.from_elements(row, None, model)
-        return satellite if satellite.perigee_km < STARLINK_MAX_PERIGEE_KM else None
+        # Direct-to-cell satellites have a brightness curve of their own.
+        curve = "starlink-dtc" if "[DTC]" in name else "starlink-raising"
+        satellite = Satellite.from_elements(row, curve=curve)
+        return satellite if track.apsides_km(satellite)[0] < STARLINK_MAX_PERIGEE_KM else None
     norad_id = int(row["NORAD_CAT_ID"])
     if (magnitude := table.get(norad_id)) is None:
         return None
-    return Satellite.from_elements(row, magnitude, None, _NAMES.get(norad_id))
+    return Satellite.from_elements(row, magnitude, name=_NAMES.get(norad_id))
 
 
 def _is_orbital_data(text: str) -> bool:
@@ -117,6 +118,17 @@ def build_catalog(responses: Iterable[str]) -> list[Satellite]:
     return satellites
 
 
+def _refusal(status: int, query: Mapping[str, str]) -> str:
+    """Say why a download stopped, and what happens next, for whoever reads it."""
+    asked = ", ".join(f"{key}={value}" for key, value in query.items())
+    why = (
+        f"CelesTrak allows one download every two hours, and answered HTTP 403 for {asked}."
+        if status == 403
+        else f"CelesTrak answered HTTP {status} for {asked}."
+    )
+    return f"{why} The integration waits two hours, then tries again by itself."
+
+
 async def _async_download(
     session: aiohttp.ClientSession, url: str, query: Mapping[str, str]
 ) -> str:
@@ -129,7 +141,7 @@ async def _async_download(
             allow_redirects=False,
         ) as response:
             if response.status != 200:
-                raise DownloadRefused(f"CelesTrak answered {response.status} for {dict(query)}")
+                raise DownloadRefused(_refusal(response.status, query))
             return await response.text(encoding="utf-8", errors="replace")
     except (aiohttp.ClientError, TimeoutError) as err:
         raise CatalogError(f"Could not reach CelesTrak: {err}") from err

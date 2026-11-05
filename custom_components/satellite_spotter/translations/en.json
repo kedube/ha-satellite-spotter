@@ -160,7 +160,7 @@
   "common": {
     "calendar_summary": "🛰️ {title}",
     "calendar_summary_bright": "🛰️ {title} (bright)",
-    "calendar_appears": "At {time}, look toward {direction}: {elevation}° above the horizon.",
+    "calendar_appears": "First visible at {time} toward {direction}, {elevation}° high.",
     "calendar_brightest": "Best view at {time}: {direction}, {elevation}° high, magnitude {magnitude}.",
     "calendar_disappears": "Last visible at {time} toward {direction}, {elevation}° high.",
     "calendar_together": "This pass includes {count} satellites.",

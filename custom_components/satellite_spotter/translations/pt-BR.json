@@ -160,7 +160,7 @@
   "common": {
     "calendar_summary": "🛰️ {title}",
     "calendar_summary_bright": "🛰️ {title} (brilhante)",
-    "calendar_appears": "Às {time}, olhe para {direction}: {elevation}° acima do horizonte.",
+    "calendar_appears": "Visível pela primeira vez às {time} na direção {direction}, a {elevation}° de altura.",
     "calendar_brightest": "Melhor vista às {time}: {direction}, a {elevation}° de altura, magnitude {magnitude}.",
     "calendar_disappears": "Visível pela última vez às {time} na direção {direction}, a {elevation}° de altura.",
     "calendar_together": "Esta passagem inclui {count} satélites.",

@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import pytest
 from sgp4 import omm
+from sgp4.propagation import gstime
 
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.catalog import validate
@@ -59,12 +60,12 @@ def test_visible_windows_match_the_predictions(
     name, observer = place
     assert sightings
     for t in sightings:
-        start, end = t.start.timestamp(), t.end.timestamp()
+        start, end = t.appears.time.timestamp(), t.vanishes.time.timestamp()
         ts, pos, sun = _samples(t.satellite, start, end)
         ph = track.photometry(t.satellite, observer, pos, sun)
         assert track.visible(ph, 3.0).all(), (name, t.satellite.name)
         assert ph.magnitude.min() == pytest.approx(t.peak_magnitude), (name, t.satellite.name)
-        assert ts[np.argmin(ph.magnitude)] == t.peak_time.timestamp()
+        assert ts[np.argmin(ph.magnitude)] == t.brightest.time.timestamp()
 
 
 def test_sighting_shapes(place: tuple[str, track.Observer], sightings: list[Any]) -> None:
@@ -73,13 +74,15 @@ def test_sighting_shapes(place: tuple[str, track.Observer], sightings: list[Any]
     for t in sightings:
         fallback = track.SkyPoint(0.0, 0.0, 0.0)
         shape = track.sighting_shape(
-            t.satellite, observer, t.start.timestamp(), t.end.timestamp(), fallback
+            t.satellite, observer, t.appears.time.timestamp(), t.vanishes.time.timestamp(), fallback
         )
-        assert t.start.timestamp() <= shape.peak.time < t.end.timestamp()
+        assert t.appears.time.timestamp() <= shape.peak.time < t.vanishes.time.timestamp()
         assert shape.peak.elevation >= max(t.appears.elevation, t.vanishes.elevation, 10) - 0.5
-        assert shape.peak.elevation >= t.peak.elevation - 0.5
+        assert shape.peak.elevation >= t.brightest.elevation - 0.5
         # The second before the pass, and the one that ends it.
-        _, pos, sun = _samples(t.satellite, t.start.timestamp() - 1, t.end.timestamp() + 1)
+        _, pos, sun = _samples(
+            t.satellite, t.appears.time.timestamp() - 1, t.vanishes.time.timestamp() + 1
+        )
         _, el, _ = track.look(observer, pos)
         lit = track.sunlit(pos, sun - pos)
         for reason, outside, horizon in (
@@ -97,7 +100,7 @@ def test_sighting_shapes(place: tuple[str, track.Observer], sightings: list[Any]
 
 def test_the_formula_is_mmts_definition_run_backwards(catalog: list[Satellite]) -> None:
     """A standard magnitude is for 1000 km and half lit, so 2.5 log10(1 + cos phase) of phase."""
-    sat = replace(catalog[0], magnitude=3.0, model=None)
+    sat = replace(catalog[0], standard_magnitude=3.0, curve=None)
     observer = track.Observer(*PLACES["denver"])
     seconds = START.timestamp() + np.arange(0.0, 86400.0, 60.0)
     places = track.propagate([sat.sgp4_record()], seconds)[0]
@@ -120,9 +123,9 @@ def test_reasons_cover_every_case(catalog: list[Satellite]) -> None:
     for lat, lon, elev in PLACES.values():
         observer = track.Observer(lat, lon, elev)
         # With a fainter cutoff, as few are bright enough to show low down.
-        for t in find_sightings(catalog, observer, start=START, max_magnitude=6.0):
+        for t in find_sightings(catalog, observer, start=START, faintest=6.0):
             shape = track.sighting_shape(
-                t.satellite, observer, t.start.timestamp(), t.end.timestamp(),
+                t.satellite, observer, t.appears.time.timestamp(), t.vanishes.time.timestamp(),
                 track.SkyPoint(0.0, 0.0, 0.0),
             )  # fmt: skip
             seen |= {("start", shape.start_reason), ("end", shape.end_reason)}
@@ -135,7 +138,7 @@ def test_pass_track_rows(catalog: list[Satellite]) -> None:
     t = next(
         t for t in find_sightings(catalog, observer, start=START) if t.satellite.norad_id == 25544
     )
-    start, end = t.start.timestamp(), t.end.timestamp()
+    start, end = t.appears.time.timestamp(), t.vanishes.time.timestamp()
     sky = track.pass_track(t.satellite, observer, start, end, 1.0, 2.25)
     assert sky is not None
     rows = sky.rows
@@ -170,7 +173,6 @@ def test_orbits(catalog: list[Satellite]) -> None:
     iss = next(s for s in catalog if s.norad_id == 25544)
     assert 92 * 60 < track.period_s(iss) < 94 * 60
     perigee, apogee = track.apsides_km(iss)
-    assert perigee == pytest.approx(iss.perigee_km)
     assert 400 < perigee <= apogee < 440
 
 
@@ -254,3 +256,68 @@ def test_unix_times() -> None:
     assert jd.tolist() == [2440587.5, 2440588.5]
     assert fr[1] == pytest.approx(0.5 / 86400)
     assert datetime(1970, 1, 1, tzinfo=UTC).timestamp() == 0
+
+
+def test_sidereal_time_is_the_one_sgp4_uses() -> None:
+    ts = NOW.timestamp() + np.arange(0, 4 * 365 * 86400, 86400 * 3.37)
+    theirs = np.array([gstime(jd + fr) for jd, fr in zip(*track.julian(ts), strict=True)])
+    # Compared round the circle: 1e-8 radians is 6 cm at the equator.
+    difference = (track._earth_turned(ts) - theirs + math.pi) % math.tau - math.pi
+    assert np.abs(difference).max() < 1e-8
+
+
+def test_turning_with_the_earth() -> None:
+    inertial = np.array([[1.0, 0.0, 5.0], [0.0, 2.0, -5.0], [np.nan, np.nan, np.nan]])
+    turned = track._earth_fixed(inertial, np.array([math.pi / 2, math.pi / 2, 1.0]))
+    # The Earth turns east, so what stands still in space moves west over the ground.
+    assert turned[0] == pytest.approx([0.0, -1.0, 5.0])
+    assert turned[1] == pytest.approx([2.0, 0.0, -5.0])
+    assert np.isnan(turned[2]).all()
+
+
+def test_the_sun_matches_the_worked_example_in_its_source() -> None:
+    """Meeus 1998, example 25.a, for 1992 October 13 at 0h: longitude 199.90988, 0.99766 AU."""
+    ts = np.array([datetime(1992, 10, 13, tzinfo=UTC).timestamp()])
+    x, y, z = track._earth_fixed(track.sun_at(ts), -track._earth_turned(ts))[0]
+    # Back onto the ecliptic, by the example's date's mean obliquity.
+    tilt = math.radians(23.4402298)
+    longitude = math.degrees(math.atan2(y * math.cos(tilt) + z * math.sin(tilt), x))
+    assert longitude % 360 == pytest.approx(199.90988 - 0.00569, abs=1e-4)
+    assert math.sqrt(x * x + y * y + z * z) / track._METRES_PER_AU == pytest.approx(
+        0.99766, abs=1e-5
+    )
+
+
+# Sunlight along +x, past a point this far behind the Earth's centre.
+BEHIND = -7_000_000.0
+SUN = np.array([[1e11, 0.0, 0.0]])
+AIR = track._SUNLIGHT_CLEARS_M
+
+
+@pytest.mark.parametrize(
+    ("position", "lit"),
+    [
+        # Past the equator and past the pole, which is nearer the centre: clear of the
+        # air that stops sunlight, or just inside it.
+        ((BEHIND, track._EQUATOR_M + AIR + 1000, 0.0), True),
+        ((BEHIND, track._EQUATOR_M + AIR - 1000, 0.0), False),
+        ((BEHIND, 0.0, track._POLE_M + AIR + 1000), True),
+        ((BEHIND, 0.0, track._POLE_M + AIR - 1000), False),
+        # Straight behind the Earth, and straight in front of it.
+        ((BEHIND, 0.0, 0.0), False),
+        ((7_000_000.0, 0.0, 0.0), True),
+        # Off to the side but sunward of the centre: the line leads away from the Earth.
+        ((1000.0, track._EQUATOR_M + AIR + 1, 0.0), True),
+        # Within the air itself, on the sunward side.
+        ((track._EQUATOR_M + AIR - 1000, 0.0, 0.0), False),
+    ],
+)
+def test_sunlight(position: tuple[float, float, float], lit: bool) -> None:
+    point = np.array([position])
+    assert track.sunlit(point, SUN - point).tolist() == [lit]
+
+
+def test_sunlight_for_many_satellites_at_many_times() -> None:
+    points = np.array([[[BEHIND, 0.0, 0.0], [7_000_000.0, 0.0, 0.0]]] * 3)
+    assert track.sunlit(points, SUN - points).shape == (3, 2)
+    assert not track.sunlit(np.array([[np.nan, 0.0, 0.0]]), SUN).any()

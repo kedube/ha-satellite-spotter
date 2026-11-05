@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.satellite_spotter.catalog import async_get_catalog
+from custom_components.satellite_spotter.catalog import async_shared_catalog
 from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import (
     CONF_GOOGLE_API_KEY,
@@ -23,7 +23,7 @@ from custom_components.satellite_spotter.const import (
     CONF_STREET_VIEW,
     DOMAIN,
 )
-from custom_components.satellite_spotter.coordinator import SatellitePass
+from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
 from custom_components.satellite_spotter.frontend import (
     build_passes_payload,
@@ -34,7 +34,7 @@ from .common import FIRST_PASS_ID, HONOLULU, NOW, advance
 
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
-    "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "before_sunset",
+    "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "sun_up",
     "limiting_magnitude", "cloud_cover", "satellite_count", "train", "peak", "transits",
 }  # fmt: skip
 TRANSIT_KEYS = {
@@ -157,7 +157,8 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert kinds["ISS"] == "iss"
     group = next(p for p in passes if p["title"] == "ISS +1")
     assert group["satellite_count"] == 2
-    assert [t["name"] for t in group["transits"]] == ["ISS", "CZ-2C R/B"]
+    # Named after the ISS though the rocket appears first.
+    assert [t["name"] for t in group["transits"]] == ["ISS", "ATLAS 5 CENTAUR R/B"]
 
 
 async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
@@ -174,8 +175,8 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
     assert transit["name"] == "BLUEWALKER-3"
     assert transit["kind"] == "satellite"
     assert transit["offset_s"] == 0
-    assert transit["visible_start"] == int(t.start.timestamp())
-    assert transit["visible_end"] == int(t.end.timestamp())
+    assert transit["visible_start"] == int(t.appears.time.timestamp())
+    assert transit["visible_end"] == int(t.vanishes.time.timestamp())
 
     rows = transit["rows"]
     assert all(len(row) == 10 for row in rows)
@@ -216,15 +217,15 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
 
 
 async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry) -> None:
-    p = next(p for p in init_integration.runtime_data.data.passes if p.flyover.satellite_count == 2)
+    p = next(p for p in init_integration.runtime_data.data.passes if p.count == 2)
     msg = await ws("pass_track", pass_id=p.id, step=5)
     result = msg["result"]
     assert result["step"] == 5
     first, second = result["transits"]
-    assert (first["name"], second["name"]) == ("ATLAS 5 CENTAUR R/B", "ISS")
+    assert (first["name"], second["name"]) == ("ISS", "ATLAS 5 CENTAUR R/B")
     assert first["offset_s"] == 0
     assert second["offset_s"] == round(
-        (p.flyover.sightings[1].peak_time - p.flyover.sightings[0].peak_time).total_seconds()
+        (p.sightings[1].brightest.time - p.sightings[0].brightest.time).total_seconds()
     )
     for transit in result["transits"]:
         assert transit["rows"]
@@ -233,22 +234,22 @@ async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry)
         } == {5}
 
 
-def _group(p: SatellitePass, names: list[str]) -> SatellitePass:
+def _group(p: ListedPass, names: list[str]) -> ListedPass:
     """Satellites following the pass's first, 15 s apart, named as given."""
     t = p.lead
     members = [
         replace(
             t,
             satellite=replace(t.satellite, name=name, norad_id=70000 + i),
-            start=t.start + timedelta(seconds=15 * i),
-            end=t.end + timedelta(seconds=15 * i),
-            peak_time=t.peak_time + timedelta(seconds=15 * i),
+            appears=t.appears._replace(time=t.appears.time + timedelta(seconds=15 * i)),
+            brightest=t.brightest._replace(time=t.brightest.time + timedelta(seconds=15 * i)),
+            vanishes=t.vanishes._replace(time=t.vanishes.time + timedelta(seconds=15 * i)),
         )
         for i, name in enumerate(names)
     ]
-    return SatellitePass(
+    return ListedPass(
         id=p.id,
-        flyover=replace(p.flyover, sightings=members),
+        sightings=members,
         cloud_cover=None,
         shapes=p.shapes * len(names),
         peak=p.peak,
@@ -380,7 +381,7 @@ async def test_positions(hass: HomeAssistant, ws: Any) -> None:
     msg = await ws("positions")
     assert msg["success"], msg
     result = msg["result"]
-    catalog = async_get_catalog(hass)
+    catalog = async_shared_catalog(hass)
     assert result["start"] == int(NOW.timestamp()) // 60 * 60
     assert (result["step"], result["count"], result["catalog_version"]) == (60, 11, 1)
     assert result["ids"] == [s.norad_id for s in catalog.satellites]
@@ -619,7 +620,7 @@ async def test_the_drawing_uses_the_same_cutoff_as_the_list(
 
     def named(name: str) -> Any:
         sighting = replace(p.lead, satellite=replace(p.lead.satellite, name=name))
-        return replace(p, flyover=replace(p.flyover, sightings=[sighting]))
+        return replace(p, sightings=[sighting])
 
     with patch(
         "custom_components.satellite_spotter.frontend.track.pass_track", return_value=None

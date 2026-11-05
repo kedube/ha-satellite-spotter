@@ -35,7 +35,7 @@ from .predict import Satellite, read_catalog, write_catalog
 
 _LOGGER = logging.getLogger(__name__)
 
-DATA_CATALOG: HassKey[CatalogManager] = HassKey(DOMAIN)
+SHARED_CATALOG: HassKey[CatalogManager] = HassKey(DOMAIN)
 
 
 def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec], list[str]]:
@@ -57,8 +57,8 @@ def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec]
             # error, but would spoil the search's sort by brightness, which then
             # skips satellites that are fine.
             numbers = [*position, *track.apsides_km(sat), track.period_s(sat)]
-            if sat.magnitude is not None:
-                numbers.append(sat.magnitude)
+            if sat.standard_magnitude is not None:
+                numbers.append(sat.standard_magnitude)
             if not all(map(math.isfinite, numbers)):
                 error = -1
         except (ArithmeticError, KeyError, TypeError, ValueError):
@@ -84,7 +84,7 @@ class CatalogManager:
         """Initialise the manager."""
         self._hass = hass
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        self._lock = asyncio.Lock()
+        self._one_at_a_time = asyncio.Lock()
         self._loaded = False
         self._retry_after: datetime | None = None
         # The back-off is CelesTrak's refusal, which nothing may cut short.
@@ -102,7 +102,7 @@ class CatalogManager:
         # Results shared by every location, for the current catalog version.
         self.cache: dict[Any, Any] = {}
 
-    async def async_get(self, *, retry_now: bool = False) -> list[Satellite]:
+    async def async_satellites(self, *, retry_now: bool = False) -> list[Satellite]:
         """Return the catalog, downloading a new one when due.
 
         After a failed download CelesTrak is left alone for a while, unless
@@ -110,9 +110,9 @@ class CatalogManager:
         Raises CatalogError when there is no catalog, cached or downloaded:
         DownloadRefused if that is because CelesTrak refused.
         """
-        async with self._lock:
+        async with self._one_at_a_time:
             if not self._loaded:
-                await self._async_load()
+                await self._async_read_store()
             now = dt_util.utcnow()
             # No back-off is longer than this: one further ahead was set while
             # the clock ran fast and has since been set back.
@@ -126,7 +126,7 @@ class CatalogManager:
                 or self._retry_after is None
                 or now >= self._retry_after
             ):
-                await self._async_refresh(now)
+                await self._async_download(now)
             if self.satellites is None:
                 error = DownloadRefused if self._refused else CatalogError
                 raise error(self.last_error or "No satellite catalog available")
@@ -139,7 +139,7 @@ class CatalogManager:
         # A download in the future means the clock was set back since.
         return age >= CATALOG_REFRESH or age < -CATALOG_CLOCK_SLACK
 
-    async def _async_load(self) -> None:
+    async def _async_read_store(self) -> None:
         self._loaded = True
         stored = await self._store.async_load()
         if not stored:
@@ -164,7 +164,7 @@ class CatalogManager:
         if not await self._async_accept(satellites, dt_util.as_utc(updated)):
             _LOGGER.warning("Ignoring the stored satellite catalog: no usable satellites")
 
-    async def _async_refresh(self, now: datetime) -> None:
+    async def _async_download(self, now: datetime) -> None:
         try:
             satellites = await async_fetch_catalog(self._hass)
             if not await self._async_accept(satellites, now):
@@ -174,7 +174,7 @@ class CatalogManager:
             self._refused = isinstance(err, DownloadRefused)
             if self._refused:
                 self._retry_after = now + CATALOG_REFUSED_RETRY
-                self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
+                self._store.async_delay_save(self._stored_form, STORAGE_SAVE_DELAY)
             else:
                 # Soon while there is nothing to predict from (or only orbit data
                 # too old to use), otherwise less eagerly.
@@ -199,7 +199,7 @@ class CatalogManager:
         self._retry_after = None
         self._refused = False
         self.last_error = None
-        self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
+        self._store.async_delay_save(self._stored_form, STORAGE_SAVE_DELAY)
 
     async def _async_accept(self, satellites: list[Satellite], updated: datetime) -> bool:
         """Make a catalog current (validated in the executor); False when none is usable."""
@@ -220,12 +220,33 @@ class CatalogManager:
             listener()
         return True
 
+    def _too_soon_to_ask(self, now: datetime) -> bool:
+        """Whether CelesTrak would refuse a download now, or already is refusing."""
+        wait = CATALOG_REFUSED_RETRY
+        if (
+            self._refused
+            and self._retry_after is not None
+            and now < self._retry_after <= now + wait
+        ):
+            return True
+        return self.updated is not None and now - wait < self.updated <= now
+
     async def async_remove(self) -> None:
-        """Delete the stored copy, and any save still to come."""
-        await self._store.async_remove()
+        """Delete the stored copy, unless adding a location back would have to ask too soon.
+
+        CelesTrak allows one download every two hours whether or not a location is
+        left, and an address that keeps asking can end up blocked. So until a new download
+        is allowed the copy stays, refusal and all, for a location added back to use.
+        """
+        if not self._loaded:
+            await self._async_read_store()
+        if self._too_soon_to_ask(dt_util.utcnow()):
+            await self._store.async_save(self._stored_form())
+        else:
+            await self._store.async_remove()
 
     @callback
-    def _data_to_save(self) -> dict[str, Any]:
+    def _stored_form(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
         if self.updated is not None:
             data["updated"] = self.updated.isoformat()
@@ -288,19 +309,18 @@ class CatalogManager:
 
 
 @callback
-def async_get_catalog(hass: HomeAssistant) -> CatalogManager:
+def async_shared_catalog(hass: HomeAssistant) -> CatalogManager:
     """Return the catalog shared by every location (and the config flow)."""
-    if (manager := hass.data.get(DATA_CATALOG)) is None:
-        manager = hass.data[DATA_CATALOG] = CatalogManager(hass)
+    if (manager := hass.data.get(SHARED_CATALOG)) is None:
+        manager = hass.data[SHARED_CATALOG] = CatalogManager(hass)
     return manager
 
 
 async def async_remove_catalog(hass: HomeAssistant) -> None:
     """Forget the shared catalog and delete its stored copy: the last location is gone.
 
-    Through the shared catalog's own store when there is one, which also
-    cancels a save it still has to make (a fresh download is saved a few
-    seconds later), so that the copy is not written back.
+    Through the shared catalog's own store when there is one, which also deals with
+    a save it still has to make. The copy stays while a new download would be refused.
     """
-    manager = hass.data.pop(DATA_CATALOG, None) or CatalogManager(hass)
+    manager = hass.data.pop(SHARED_CATALOG, None) or CatalogManager(hass)
     await manager.async_remove()

@@ -7,11 +7,13 @@ from typing import Any
 
 import numpy as np
 import pytest
+from sgp4 import omm
+from sgp4.api import Satrec
 
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.predict import (
-    Direction,
     Flyover,
+    Moment,
     Satellite,
     Sighting,
     cutoff_for,
@@ -31,15 +33,12 @@ DENVER_SKY = track.Observer(*DENVER.values())
 def _sighting(sat: Satellite, start: datetime, seconds: int = 300, **changes: Any) -> Sighting:
     fields: dict[str, Any] = {
         "satellite": sat,
-        "start": start,
-        "end": start + timedelta(seconds=seconds),
-        "appears": Direction(0.0, 10.0),
-        "peak": Direction(90.0, 45.0),
-        "vanishes": Direction(180.0, 10.0),
-        "peak_time": start + timedelta(seconds=seconds // 2),
+        "appears": Moment(start, 0.0, 10.0),
+        "brightest": Moment(start + timedelta(seconds=seconds // 2), 90.0, 45.0),
+        "vanishes": Moment(start + timedelta(seconds=seconds), 180.0, 10.0),
         "peak_magnitude": 2.0,
         "sky_limit": 4.0,
-        "before_sunset": False,
+        "sun_up": False,
     }
     return Sighting(**(fields | changes))
 
@@ -130,7 +129,7 @@ def test_sky_limit_keeps_to_the_two_departures_from_weaver() -> None:
     ],
 )
 def test_starlink_models(model: str, phase: float, at_1000km: float) -> None:
-    magnitude = track._BRIGHTNESS_MODELS[model](np.radians([phase]), np.array([1e6]))
+    magnitude = track._starlink_at_1000_km(model, np.array([phase]))
     assert magnitude[0] == pytest.approx(at_1000km, abs=1e-3)
 
 
@@ -168,7 +167,8 @@ def test_finds_what_checking_every_second_finds(norad_id: int) -> None:
     expected = _every_visible_second(sat, HONOLULU_SKY, 5)
     found = find_sightings([sat], HONOLULU_SKY, start=START)
     listed = np.concatenate(
-        [np.arange(t.start.timestamp(), t.end.timestamp()) for t in found] or [np.array([])]
+        [np.arange(t.appears.time.timestamp(), t.vanishes.time.timestamp()) for t in found]
+        or [np.array([])]
     )
     assert set(listed) <= set(expected)
     # Only what falls between the search's samples can be left out: under a minute at a time.
@@ -189,9 +189,9 @@ def test_pass_times_do_not_depend_on_when_the_search_began() -> None:
     def times(found: list[Sighting], since: datetime) -> set[tuple[int, datetime, datetime]]:
         # Those under a minute can fall between the samples of either search.
         return {
-            (s.satellite.norad_id, s.start, s.end)
+            (s.satellite.norad_id, s.appears.time, s.vanishes.time)
             for s in found
-            if s.start > since and s.end - s.start >= timedelta(minutes=1)
+            if s.appears.time > since and s.vanishes.time - s.appears.time >= timedelta(minutes=1)
         }
 
     since = START + timedelta(minutes=20)
@@ -202,7 +202,7 @@ def test_sorted_with_the_catalogs_order_breaking_ties() -> None:
     catalog = satellites()
     sightings = find_sightings(catalog, DENVER_SKY, start=START)
     order = {id(s): i for i, s in enumerate(catalog)}
-    keys = [(t.start, order[id(t.satellite)]) for t in sightings]
+    keys = [(t.appears.time, order[id(t.satellite)]) for t in sightings]
     assert sightings and keys == sorted(keys)
 
 
@@ -212,7 +212,7 @@ def test_never_brighter_than_the_bound(height_m: float) -> None:
     observer = track.Observer(DENVER_SKY.latitude, DENVER_SKY.longitude, height_m)
     for sat in satellites():
         bound = track.brightest_possible(sat, observer)
-        for t in find_sightings([sat], observer, start=START, max_magnitude=9.0):
+        for t in find_sightings([sat], observer, start=START, faintest=9.0):
             assert t.peak_magnitude >= bound
 
 
@@ -236,11 +236,14 @@ def test_a_higher_site_sees_more_and_brighter() -> None:
             h
             for h in high
             if h.satellite.norad_id == t.satellite.norad_id
-            and h.start <= t.end
-            and t.start <= h.end
+            and h.appears.time <= t.vanishes.time
+            and t.appears.time <= h.vanishes.time
         )
         assert same.peak_magnitude < t.peak_magnitude
-        assert same.end - same.start >= t.end - t.start - timedelta(seconds=5)
+        assert (
+            same.vanishes.time - same.appears.time
+            >= t.vanishes.time - t.appears.time - timedelta(seconds=5)
+        )
 
 
 def test_a_satellite_with_no_brightness_is_skipped() -> None:
@@ -251,8 +254,8 @@ def test_a_satellite_with_no_brightness_is_skipped() -> None:
 
 def test_fainter_cutoff_finds_more() -> None:
     catalog = satellites()
-    strict = find_sightings(catalog, DENVER_SKY, start=START, max_magnitude=1.0)
-    relaxed = find_sightings(catalog, DENVER_SKY, start=START, max_magnitude=4.0)
+    strict = find_sightings(catalog, DENVER_SKY, start=START, faintest=1.0)
+    relaxed = find_sightings(catalog, DENVER_SKY, start=START, faintest=4.0)
     assert len(strict) < len(relaxed)
     assert all(t.peak_magnitude < 1.0 for t in strict)
 
@@ -260,9 +263,11 @@ def test_fainter_cutoff_finds_more() -> None:
 def test_a_pass_cut_off_by_the_end_of_the_search_is_left_for_the_next_run() -> None:
     sat = next(s for s in satellites() if s.norad_id == 53807)
     first = find_sightings([sat], DENVER_SKY, start=START)[0]
-    during = (first.start + (first.end - first.start) / 2 - START).total_seconds() / 86400
+    during = (
+        first.appears.time + (first.vanishes.time - first.appears.time) / 2 - START
+    ).total_seconds() / 86400
     cut = find_sightings([sat], DENVER_SKY, start=START, days=during)
-    assert first.start not in {t.start for t in cut}
+    assert first.appears.time not in {t.appears.time for t in cut}
 
 
 def test_a_pass_under_way_begins_at_the_start_of_the_search() -> None:
@@ -270,12 +275,12 @@ def test_a_pass_under_way_begins_at_the_start_of_the_search() -> None:
     long = next(
         t
         for t in find_sightings([sat], DENVER_SKY, start=START)
-        if t.end - t.start > timedelta(minutes=3)
+        if t.vanishes.time - t.appears.time > timedelta(minutes=3)
     )
-    during = long.start.replace(second=0) + timedelta(minutes=2)
+    during = long.appears.time.replace(second=0) + timedelta(minutes=2)
     (now, *_) = find_sightings([sat], DENVER_SKY, start=during)
-    assert now.start == during
-    assert now.end == long.end
+    assert now.appears.time == during
+    assert now.vanishes.time == long.vanishes.time
 
 
 def test_elements_that_stop_working_cost_only_their_satellite() -> None:
@@ -329,13 +334,44 @@ def test_a_flyover_takes_the_extremes_of_its_sightings() -> None:
     a, b = _sat(1, "A"), _sat(2, "B")
     group = Flyover(
         [
-            _sighting(a, NOW, peak_magnitude=2.0, sky_limit=4.0, before_sunset=True),
+            _sighting(a, NOW, peak_magnitude=2.0, sky_limit=4.0, sun_up=True),
             _sighting(b, NOW, peak_magnitude=0.5, sky_limit=3.0),
         ]
     )
-    assert (group.peak_magnitude, group.sky_limit, group.before_sunset) == (0.5, 3.0, True)
-    assert group.satellite_count == 2
-    assert group.lead.satellite.name == "A"
+    assert (group.peak_magnitude, group.sky_limit, group.sun_up) == (0.5, 3.0, True)
+    assert group.count == 2
+    assert group.lead.satellite.name == "B"
+
+
+def test_a_flyover_is_named_after_its_brightest_satellite() -> None:
+    """What is reported of a flyover is true of the satellite it names."""
+    group = Flyover(
+        [
+            _sighting(_sat(1, "STARLINK-1"), NOW, peak_magnitude=2.2),
+            _sighting(_sat(2, "Tiangong"), NOW + timedelta(seconds=30), peak_magnitude=-2.1),
+            _sighting(_sat(3, "STARLINK-3"), NOW + timedelta(seconds=60), peak_magnitude=2.4),
+        ]
+    )
+    assert group.title == "Tiangong +2"
+    assert group.lead.peak_magnitude == group.peak_magnitude == -2.1
+    # The rest stay in order of appearance, and the flyover still starts with the first.
+    names = [sighting.satellite.name for sighting in group.sightings]
+    assert names == ["Tiangong", "STARLINK-1", "STARLINK-3"]
+    assert group.start == NOW
+
+
+def test_the_first_to_appear_names_a_flyover_of_equals() -> None:
+    group = Flyover(
+        [
+            _sighting(_sat(1, "A"), NOW, peak_magnitude=1.0),
+            _sighting(_sat(2, "B"), NOW + timedelta(seconds=30), peak_magnitude=1.0),
+        ]
+    )
+    assert group.title == "A +1"
+
+
+def test_a_lone_satellite_is_just_its_name() -> None:
+    assert Flyover([_sighting(_sat(1, "ISS"), NOW)]).title == "ISS"
 
 
 @pytest.mark.parametrize("name", ["Starlink 1 B", "STARLINK-1234"])
@@ -353,7 +389,7 @@ def test_stray_starlinks_are_dropped_and_a_train_is_kept(name: str) -> None:
     assert four == []
 
     train = group_sightings([_sighting(other, NOW)] + [_sighting(s, NOW) for s in starlinks])
-    assert train[0].satellite_count == 6
+    assert train[0].count == 6
 
 
 def test_dropping_starlinks_redoes_the_group() -> None:
@@ -374,7 +410,7 @@ def test_dropping_starlinks_redoes_the_group() -> None:
         ({"peak_magnitude": 0.5}, False),
         # Not 3 magnitudes clear of what the sky shows.
         ({"peak_magnitude": 0.4, "sky_limit": 3.3}, False),
-        ({"peak_magnitude": 0.4, "before_sunset": True}, False),
+        ({"peak_magnitude": 0.4, "sun_up": True}, False),
     ],
 )
 def test_bright(changes: dict[str, Any], bright: bool) -> None:
@@ -387,15 +423,21 @@ def test_bright(changes: dict[str, Any], bright: bool) -> None:
 def test_catalog_survives_storage() -> None:
     catalog = satellites()
     again = read_catalog(write_catalog(catalog))
-    assert [(s.norad_id, s.name, s.magnitude, s.model, s.epoch) for s in again] == [
-        (s.norad_id, s.name, s.magnitude, s.model, s.epoch) for s in catalog
+    assert [(s.norad_id, s.name, s.standard_magnitude, s.curve, s.epoch) for s in again] == [
+        (s.norad_id, s.name, s.standard_magnitude, s.curve, s.epoch) for s in catalog
     ]
 
 
 def test_starlink_model_without_a_magnitude_survives_storage() -> None:
-    sat = Satellite.from_elements(satellites()[0].elements, None, "starlink-raising", "STARLINK-1")
+    sat = Satellite.from_elements(
+        satellites()[0].elements, curve="starlink-raising", name="STARLINK-1"
+    )
     (again,) = read_catalog(write_catalog([sat]))
-    assert (again.magnitude, again.model, again.name) == (None, "starlink-raising", "STARLINK-1")
+    assert (again.standard_magnitude, again.curve, again.name) == (
+        None,
+        "starlink-raising",
+        "STARLINK-1",
+    )
 
 
 # --- Starlinks ----------------------------------------------------------------
@@ -409,8 +451,40 @@ def test_starlinks_are_listed_past_the_cutoff() -> None:
 def test_the_search_keeps_to_the_starlink_cutoff() -> None:
     """A Starlink's sightings at a cutoff are those of anything else at 0.75 fainter."""
     elements = next(s for s in satellites() if s.norad_id == 53807).elements
-    starlink = Satellite.from_elements(elements, None, "starlink-raising", "STARLINK-1")
-    found = find_sightings([starlink], DENVER_SKY, start=START, max_magnitude=2.25)
+    starlink = Satellite.from_elements(elements, curve="starlink-raising", name="STARLINK-1")
+    found = find_sightings([starlink], DENVER_SKY, start=START, faintest=2.25)
     assert found
     assert all(t.peak_magnitude < 3.0 for t in found)
     assert any(t.peak_magnitude >= 2.25 for t in found)
+
+
+def test_the_sgp4_record_is_the_one_its_own_reader_builds() -> None:
+    """The elements go straight to sgp4init; sgp4's reader for them must agree on every number."""
+    fields = (
+        "jdsatepoch", "jdsatepochF", "bstar", "ndot", "nddot", "ecco",
+        "argpo", "inclo", "mo", "no_kozai", "nodeo", "satnum",
+    )  # fmt: skip
+    for sat in satellites():
+        record = sat.sgp4_record()
+        theirs = Satrec()
+        omm.initialize(
+            theirs,
+            {
+                "CLASSIFICATION_TYPE": "U",
+                "OBJECT_ID": "",
+                "ELEMENT_SET_NO": "0",
+                "REV_AT_EPOCH": "0",
+                "EPHEMERIS_TYPE": "0",
+                **sat.elements,
+                "EPOCH": sat.epoch.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+            },
+        )
+        for field in fields:
+            assert getattr(record, field) == pytest.approx(
+                getattr(theirs, field), rel=1e-14, abs=1e-30
+            ), (sat.name, field)
+
+
+def test_a_temporary_number_is_left_out_of_the_record() -> None:
+    elements = {**satellites()[0].elements, "NORAD_CAT_ID": "270123456"}
+    assert Satellite.from_elements(elements, 2.0).sgp4_record().satnum == 0

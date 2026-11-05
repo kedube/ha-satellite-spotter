@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     ATTRIBUTION,
@@ -18,13 +20,14 @@ from .const import (
     MAX_GROUP_NAMES,
     VERSION,
 )
-from .coordinator import SatellitePass, SatelliteSpotterCoordinator
+from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .links import info_url
 
 if TYPE_CHECKING:
-    from .predict import Direction, Satellite
+    from .predict import Moment, Satellite
 
-_COMPASS = [
+# The sixteen winds, clockwise from north.
+_WINDS = [
     "N",
     "NNE",
     "NE",
@@ -66,21 +69,14 @@ def satellite_kind(norad_id: int, name: str) -> str:
 
 
 def compass(azimuth: float) -> str:
-    """Return the 16-point compass direction of an azimuth in degrees."""
-    sector = 360 / len(_COMPASS)
-    return _COMPASS[round((azimuth % 360) / sector) % len(_COMPASS)]
+    """Name the nearest of the sixteen winds to an azimuth in degrees; halfway goes clockwise."""
+    width = 360 / len(_WINDS)
+    return _WINDS[int((azimuth + width / 2) % 360 // width)]
 
 
 def magnitude(value: float) -> float:
     """Round a magnitude to one decimal, never -0.0."""
     return round(value, 1) or 0.0
-
-
-def pass_title(p: SatellitePass) -> str:
-    """Return the short name of a pass, for example "ISS" or "Starlink-123 +59"."""
-    name = p.lead.satellite.name
-    others = p.flyover.satellite_count - 1
-    return f"{name} +{others}" if others > 0 else name
 
 
 def confidence(when: datetime, sat: Satellite) -> str:
@@ -97,48 +93,45 @@ def confidence(when: datetime, sat: Satellite) -> str:
     return "low"
 
 
-def _look_attributes(prefix: str, angle: Direction) -> dict[str, Any]:
-    """Describe one point of a pass: which way to look, and how high."""
+def _moment(name: str, moment: Moment) -> dict[str, Any]:
+    """Describe a moment of a sighting: when it comes, which way to look, and how high."""
     return {
-        f"{prefix}_direction": compass(angle.azimuth),
-        f"{prefix}_azimuth": angle.azimuth,
-        f"{prefix}_elevation": angle.elevation,
+        f"{name}_time": moment.time.isoformat(),
+        f"{name}_direction": compass(moment.azimuth),
+        f"{name}_azimuth": moment.azimuth,
+        f"{name}_elevation": moment.elevation,
     }
 
 
-def pass_attributes(p: SatellitePass | None) -> dict[str, Any]:
-    """Return the state attributes describing a pass; none without one.
+def describe_pass(p: ListedPass | None) -> dict[str, Any]:
+    """Describe a pass for automations, which read these names; nothing without a pass.
 
-    Automations read these names, so changing one breaks them.
+    ``start``, ``end`` and ``duration`` are the whole pass's. The three moments are the
+    satellite's it is named after, which is the one worth looking for.
     """
     if p is None:
         return {}
-    first = p.lead
-    sat = first.satellite
-    flyover = p.flyover
-    attributes: dict[str, Any] = {
-        "satellite": sat.name,
-        "norad_id": sat.norad_id,
-        "start": first.start.isoformat(),
-        "end": p.end.isoformat(),
-        "duration": round((p.end - p.start).total_seconds()),
-        "magnitude": magnitude(flyover.peak_magnitude),
-        "bright": p.bright,
-        "before_sunset": flyover.before_sunset,
-        **_look_attributes("rise", first.appears),
-        "brightest_time": first.peak_time.isoformat(),
-        **_look_attributes("brightest", first.peak),
-        **_look_attributes("set", first.vanishes),
-        "cloud_cover": p.cloud_cover,
-        "satellite_count": flyover.satellite_count,
-        "info_url": info_url(sat.norad_id, sat.name),
+    named = p.lead
+    sat = named.satellite
+    return {
         # Opens the pass in the sidebar page: /satellite-spotter?pass=<id>.
         "pass_id": p.id,
+        "satellite": sat.name,
+        "norad_id": sat.norad_id,
+        "info_url": info_url(sat.norad_id, sat.name),
+        "satellite_count": p.count,
+        "satellites": [s.satellite.name for s in p.sightings[:MAX_GROUP_NAMES]],
+        "magnitude": magnitude(p.peak_magnitude),
+        "bright": p.bright,
+        "sun_up": p.sun_up,
+        "cloud_cover": p.cloud_cover,
+        "start": p.start.isoformat(),
+        "end": p.end.isoformat(),
+        "duration": p.duration,
+        **_moment("appears", named.appears),
+        **_moment("brightest", named.brightest),
+        **_moment("disappears", named.vanishes),
     }
-    if len(flyover.sightings) > 1:
-        names = [sighting.satellite.name for sighting in flyover.sightings]
-        attributes["satellites"] = names[:MAX_GROUP_NAMES]
-    return attributes
 
 
 def _location_device(coordinator: SatelliteSpotterCoordinator) -> DeviceInfo:
@@ -171,3 +164,29 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
         self._attr_translation_key = key
         self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{key}"
         self._attr_device_info = _location_device(coordinator)
+
+
+class PassEntity(SatelliteSpotterEntity):
+    """An entity that follows one pass at a time, and carries its details."""
+
+    _unrecorded_attributes = frozenset({"satellites", "info_url"})
+
+    def __init__(
+        self,
+        coordinator: SatelliteSpotterCoordinator,
+        key: str,
+        follow: Callable[[datetime], ListedPass | None],
+    ) -> None:
+        """Initialise the entity, with how to find the pass it follows at a given time."""
+        super().__init__(coordinator, key)
+        self._follow = follow
+
+    def followed(self) -> ListedPass | None:
+        """Return the pass it follows now, if there is one."""
+        return self._follow(dt_util.utcnow())
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the details of that pass, or nothing without one."""
+        return describe_pass(self.followed())

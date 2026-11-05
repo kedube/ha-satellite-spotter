@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import partial
 import logging
+from operator import attrgetter
 import re
 from typing import TYPE_CHECKING, Any, override
 
@@ -45,7 +46,7 @@ from .const import (
     UPCOMING_WINDOW,
 )
 from .predict import Flyover, Satellite, Sighting, find_sightings, group_sightings
-from .weather import CloudCover, CloudCoverError, cloud_cover_at, fetch_cloud_cover
+from .weather import CloudCoverError, CloudForecast, async_fetch_forecast
 
 if TYPE_CHECKING:
     from . import SatelliteSpotterConfigEntry
@@ -82,86 +83,83 @@ class PredictionSettings:
 
 
 @dataclass(slots=True)
-class SatellitePass:
-    """A visible pass (one satellite, or several close together) with its weather."""
+class ListedPass(Flyover):
+    """A flyover as a location lists it, with its id, its weather and how it looks."""
 
     # f"{lead NORAD id}-{start}", also the calendar event's uid.
     id: str
-    flyover: Flyover
     cloud_cover: int | None
     # One per sighting (up to MAX_SIGHTINGS), in the flyover's order.
     shapes: list[track.SightingShape]
     # The highest point any of the satellites reaches while visible.
     peak: track.SkyPoint
 
-    @property
-    def start(self) -> datetime:
-        """The moment the flyover begins."""
-        return self.flyover.start
-
-    @property
-    def end(self) -> datetime:
-        """The moment the flyover is over."""
-        return self.flyover.end
-
-    @property
-    def lead(self) -> Sighting:
-        """The sighting the pass is named after."""
-        return self.flyover.lead
-
-    @property
-    def bright(self) -> bool:
-        """Whether the pass counts as bright."""
-        return self.flyover.bright
-
 
 @dataclass(slots=True)
-class SatelliteData:
-    """Predicted passes for one location, and what they were predicted from."""
+class Predictions:
+    """The passes listed for one location, and what they were predicted from."""
 
-    passes: list[SatellitePass]
+    passes: list[ListedPass]
     computed_at: datetime
-    window_start: datetime
     catalog_version: int
     # The catalog the passes were predicted from, by NORAD id.
     satellites: dict[int, Satellite]
     # Whether a cloud cover forecast was used; None while switched off.
     cloud_cover: bool | None
-    by_id: dict[str, SatellitePass] = field(init=False)
+    by_id: dict[str, ListedPass] = field(init=False)
 
     def __post_init__(self) -> None:
         """Index the passes by id."""
         self.by_id = {p.id: p for p in self.passes}
 
-    def _remaining(self, now: datetime) -> Iterator[SatellitePass]:
+    def _not_over(self, now: datetime) -> Iterator[ListedPass]:
         """Yield the passes that are not over yet, earliest first."""
         return (p for p in self.passes if p.end > now)
 
-    def next_pass(self, now: datetime) -> SatellitePass | None:
+    def next_pass(self, now: datetime) -> ListedPass | None:
         """Return the pass under way, or else the next to come."""
-        return next(self._remaining(now), None)
+        return next(self._not_over(now), None)
 
-    def next_bright_pass(self, now: datetime) -> SatellitePass | None:
+    def next_bright_pass(self, now: datetime) -> ListedPass | None:
         """Return the bright pass under way, or else the next to come."""
-        return next((p for p in self._remaining(now) if p.bright), None)
+        return next((p for p in self._not_over(now) if p.bright), None)
 
-    def current(self, now: datetime) -> SatellitePass | None:
+    def under_way(self, now: datetime) -> ListedPass | None:
         """Return the pass under way, if there is one."""
-        return next((p for p in self._remaining(now) if p.start <= now), None)
+        return next((p for p in self._not_over(now) if p.start <= now), None)
 
-    def upcoming(self, now: datetime, window: timedelta = UPCOMING_WINDOW) -> list[SatellitePass]:
+    def upcoming(self, now: datetime, window: timedelta = UPCOMING_WINDOW) -> list[ListedPass]:
         """Return the passes under way or starting within the window."""
         horizon = now + window
-        return [p for p in self._remaining(now) if p.start < horizon]
+        return [p for p in self._not_over(now) if p.start < horizon]
 
-    def find(self, pass_id: str) -> SatellitePass | None:
-        """Return the pass with this id, or the same satellite's pass a moment from it.
+    def next_change(self, now: datetime, alert_lead: timedelta) -> datetime | None:
+        """Return the next moment an entity's state changes, if there is one.
 
-        A refresh with newer orbital elements can move a pass by a few
-        seconds, which changes its id; a page opened before still finds it.
+        A pass starting, ending, or coming within a day (passes_next_24h), or
+        within the advance notice for a bright one (bright_pass_soon).
         """
-        if (p := self.by_id.get(pass_id)) is not None:
-            return p
+        moments = [
+            moment
+            for p in self.passes
+            for moment in (
+                p.start - UPCOMING_WINDOW,
+                p.start,
+                p.end,
+                *((p.start - alert_lead,) if p.bright else ()),
+            )
+        ]
+        return min((moment for moment in moments if moment > now), default=None)
+
+    def find(self, pass_id: str) -> ListedPass | None:
+        """Return the pass with this id, or a pass a moment from it with that satellite in it.
+
+        A refresh with newer orbital elements can move a pass by a few seconds, or
+        change which of its satellites is brightest, and either changes its id; a page
+        opened before still finds it.
+        """
+        if (found := self.by_id.get(pass_id)) is not None:
+            return found
         norad_id, _, start = pass_id.rpartition("-")
         try:
             when = dt_util.utc_from_timestamp(int(start))
@@ -170,15 +168,10 @@ class SatelliteData:
         near = [
             p
             for p in self.passes
-            if str(p.lead.satellite.norad_id) == norad_id
-            and abs(p.start - when) <= PASS_ID_TOLERANCE
+            if abs(p.start - when) <= PASS_ID_TOLERANCE
+            and any(str(s.satellite.norad_id) == norad_id for s in p.sightings)
         ]
         return min(near, key=lambda p: abs(p.start - when), default=None)
-
-
-def pass_id(flyover: Flyover) -> str:
-    """Stable id of a pass: the satellite it is named after, and its start in whole seconds."""
-    return f"{flyover.lead.satellite.norad_id}-{int(flyover.start.timestamp())}"
 
 
 def predict_passes(
@@ -186,42 +179,37 @@ def predict_passes(
     observer: track.Observer,
     *,
     start: datetime,
-    max_magnitude: float,
-    forecast: CloudCover | None,
-) -> list[SatellitePass]:
-    """Predict the visible passes from start (runs in the executor)."""
-    sightings = find_sightings(
-        satellites,
-        observer,
-        start=start,
-        days=PREDICTION_DAYS,
-        max_magnitude=max_magnitude,
+    faintest: float,
+    forecast: CloudForecast | None,
+) -> list[ListedPass]:
+    """List the passes a place can see from a moment on (runs in the executor)."""
+    found = find_sightings(
+        satellites, observer, start=start, days=PREDICTION_DAYS, faintest=faintest
     )
-    passes = []
-    for flyover in group_sightings(sightings):
-        shapes = [_shape(s, observer) for s in flyover.sightings[:MAX_SIGHTINGS]]
-        passes.append(
-            SatellitePass(
-                id=pass_id(flyover),
-                flyover=flyover,
-                cloud_cover=cloud_cover_at(forecast, flyover.start),
-                shapes=shapes,
-                peak=max((s.peak for s in shapes), key=lambda p: p.elevation),
-            )
-        )
-    return passes
+    return [_listed(flyover, observer, forecast) for flyover in group_sightings(found)]
+
+
+def _listed(
+    flyover: Flyover, observer: track.Observer, forecast: CloudForecast | None
+) -> ListedPass:
+    shapes = [_shape(sighting, observer) for sighting in flyover.sightings[:MAX_SIGHTINGS]]
+    return ListedPass(
+        flyover.sightings,
+        id=f"{flyover.lead.satellite.norad_id}-{int(flyover.start.timestamp())}",
+        cloud_cover=None if forecast is None else forecast.after(flyover.start),
+        shapes=shapes,
+        peak=max((shape.peak for shape in shapes), key=attrgetter("elevation")),
+    )
 
 
 def _shape(sighting: Sighting, observer: track.Observer) -> track.SightingShape:
-    brightest = track.SkyPoint(
-        sighting.peak_time.timestamp(), sighting.peak.azimuth, sighting.peak.elevation
-    )
+    best = sighting.brightest
     return track.sighting_shape(
         sighting.satellite,
         observer,
-        sighting.start.timestamp(),
-        sighting.end.timestamp(),
-        brightest,
+        sighting.appears.time.timestamp(),
+        sighting.vanishes.time.timestamp(),
+        track.SkyPoint(best.time.timestamp(), best.azimuth, best.elevation),
     )
 
 
@@ -230,11 +218,15 @@ def scrub(err: Exception) -> str:
     return _QUERY.sub(r"\1", str(err)) or type(err).__name__
 
 
-class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
-    """Predicts the visible passes for one location.
+def _nothing_to_stop() -> None:
+    """Stand in for a timer or a subscription that is not running."""
 
-    Every two hours, and whenever a new catalog arrives. Between runs, a
-    timer wakes the entities at every moment one of them changes state.
+
+class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
+    """Keeps one location's predictions current, and its entities with them.
+
+    It predicts every two hours, and whenever a new catalog arrives. In between, a
+    timer wakes the entities at each moment one of them changes state.
     """
 
     config_entry: SatelliteSpotterConfigEntry
@@ -258,62 +250,26 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
         )
         self.settings = PredictionSettings.from_options(dict(entry.options))
         self._predicting = False
-        self._unsub_boundary: CALLBACK_TYPE | None = None
-        self._unsub_catalog = catalog.async_add_listener(self._async_catalog_changed)
+        self._stop_waiting: CALLBACK_TYPE = _nothing_to_stop
+        self._stop_following_catalog = catalog.async_add_listener(self._async_catalog_changed)
+
+    # -- predicting --------------------------------------------------------
 
     @override
-    async def _async_update_data(self) -> SatelliteData:
+    async def _async_update_data(self) -> Predictions:
         self._predicting = True
         try:
             return await self._async_predict()
         finally:
             self._predicting = False
 
-    async def _async_predict(self) -> SatelliteData:
-        try:
-            satellites = await self.catalog.async_get()
-        except CatalogError as err:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="catalog_unavailable",
-                translation_placeholders={"error": str(err)},
-            ) from err
+    async def _async_predict(self) -> Predictions:
+        satellites = await self._async_catalog_or_fail()
         version, by_id = self.catalog.version, self.catalog.by_id()
-
         now = dt_util.utcnow()
-        age = self.catalog.median_epoch_age(now)
-        if age is not None and age > CATALOG_MAX_AGE:
-            # The downloads fail, or CelesTrak's own data is just as old.
-            placeholders = {"age": str(age.days)}
-            if error := self.catalog.last_error:
-                key = ISSUE_CATALOG_STALE
-                placeholders["error"] = error
-            else:
-                key = CATALOG_STALE_UPSTREAM
-            # One issue for every location: they all share the catalog.
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                ISSUE_CATALOG_STALE,
-                is_fixable=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=key,
-                translation_placeholders=placeholders,
-            )
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key=key,
-                translation_placeholders=placeholders,
-                # When the catalog may download again (it waits only this long
-                # while its orbit data is too old to use), not two hours on. A
-                # second more, as Home Assistant rounds its loop clock down and
-                # can wake a refresh up to a second early, before the back-off
-                # ends, which would skip the download and wait five minutes more.
-                retry_after=CATALOG_UNREACHABLE_RETRY.total_seconds() + 1,
-            )
-        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CATALOG_STALE)
+        self._fail_if_orbits_are_stale(now)
 
-        forecast = await self._async_cloud_cover()
+        forecast = await self._async_forecast()
         start = now.replace(second=0, microsecond=0) - PREDICTION_LOOKBACK
         passes = await self.hass.async_add_executor_job(
             partial(
@@ -321,69 +277,77 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
                 satellites,
                 self.observer,
                 start=start,
-                max_magnitude=self.settings.max_magnitude,
+                faintest=self.settings.max_magnitude,
                 forecast=forecast,
             )
         )
-        data = SatelliteData(
+        predictions = Predictions(
             passes=passes,
             computed_at=now,
-            window_start=start,
             catalog_version=version,
             satellites=by_id,
             cloud_cover=None if not self.settings.cloud_cover else forecast is not None,
         )
-        self._schedule_boundary(data)
-        return data
+        self._wait_for_next_change(predictions)
+        return predictions
 
-    async def _async_cloud_cover(self) -> CloudCover | None:
+    async def _async_catalog_or_fail(self) -> list[Satellite]:
+        try:
+            return await self.catalog.async_satellites()
+        except CatalogError as err:
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="catalog_unavailable",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    def _fail_if_orbits_are_stale(self, now: datetime) -> None:
+        """Raise a repair issue and fail the update, or clear the issue if all is well."""
+        age = self.catalog.median_epoch_age(now)
+        if age is None or age <= CATALOG_MAX_AGE:
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CATALOG_STALE)
+            return
+        # The downloads fail, or CelesTrak's own data is just as old.
+        placeholders = {"age": str(age.days)}
+        if error := self.catalog.last_error:
+            key = ISSUE_CATALOG_STALE
+            placeholders["error"] = error
+        else:
+            key = CATALOG_STALE_UPSTREAM
+        # One issue for every location: they all share the catalog.
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            ISSUE_CATALOG_STALE,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=key,
+            translation_placeholders=placeholders,
+        )
+        raise UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key=key,
+            translation_placeholders=placeholders,
+            # When the catalog may download again (it waits only this long
+            # while its orbit data is too old to use), not two hours on. A
+            # second more, as Home Assistant rounds its loop clock down and
+            # can wake a refresh up to a second early, before the back-off
+            # ends, which would skip the download and wait five minutes more.
+            retry_after=CATALOG_UNREACHABLE_RETRY.total_seconds() + 1,
+        )
+
+    async def _async_forecast(self) -> CloudForecast | None:
+        """Return the cloud forecast if it is wanted and can be had: passes do without it."""
         if not self.settings.cloud_cover:
             return None
+        session = async_get_clientsession(self.hass)
         try:
-            return await fetch_cloud_cover(
-                async_get_clientsession(self.hass),
-                self.observer.latitude,
-                self.observer.longitude,
+            return await async_fetch_forecast(
+                session, self.observer.latitude, self.observer.longitude
             )
         except CloudCoverError as err:
-            # Passes are still predicted, just without the weather.
             _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
             return None
-
-    # -- timers ------------------------------------------------------------
-
-    @callback
-    def _schedule_boundary(self, data: SatelliteData) -> None:
-        """Wake the entities at the next moment one of them changes state.
-
-        A pass starting, ending, or coming within a day (passes_next_24h), or
-        within the advance notice for a bright one (bright_pass_soon).
-        """
-        self._cancel_boundary()
-        now = dt_util.utcnow()
-        upcoming: list[datetime] = []
-        for p in data.passes:
-            times = [p.start - UPCOMING_WINDOW, p.start, p.end]
-            if p.bright:
-                times.append(p.start - self.settings.alert_lead)
-            upcoming += [t for t in times if t > now]
-        if upcoming:
-            self._unsub_boundary = async_track_point_in_utc_time(
-                self.hass, self._async_boundary, min(upcoming) + timedelta(seconds=1)
-            )
-
-    @callback
-    def _async_boundary(self, _now: datetime) -> None:
-        self._unsub_boundary = None
-        self.async_update_listeners()
-        if self.data is not None:
-            self._schedule_boundary(self.data)
-
-    @callback
-    def _cancel_boundary(self) -> None:
-        if self._unsub_boundary is not None:
-            self._unsub_boundary()
-            self._unsub_boundary = None
 
     @callback
     def _async_catalog_changed(self) -> None:
@@ -401,32 +365,52 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
             self.hass, self.async_request_refresh(), f"{DOMAIN} predictions from a new catalog"
         )
 
+    # -- keeping the entities up to the moment -----------------------------
+
+    @callback
+    def _wait_for_next_change(self, predictions: Predictions) -> None:
+        self._stop_waiting()
+        self._stop_waiting = _nothing_to_stop
+        change = predictions.next_change(dt_util.utcnow(), self.settings.alert_lead)
+        if change is not None:
+            self._stop_waiting = async_track_point_in_utc_time(
+                self.hass, self._async_change_due, change + timedelta(seconds=1)
+            )
+
+    @callback
+    def _async_change_due(self, _now: datetime) -> None:
+        self._stop_waiting = _nothing_to_stop
+        self.async_update_listeners()
+        if self.data is not None:
+            self._wait_for_next_change(self.data)
+
     @override
     async def async_shutdown(self) -> None:
-        """Stop the timers along with the coordinator."""
-        self._cancel_boundary()
-        self._unsub_catalog()
-        self._unsub_catalog = _noop
+        """Stop the timer, and following the catalog, along with the coordinator."""
+        self._stop_waiting()
+        self._stop_waiting = _nothing_to_stop
+        self._stop_following_catalog()
+        self._stop_following_catalog = _nothing_to_stop
         await super().async_shutdown()
 
-    # -- queries used by entities and the websocket API --------------------
+    # -- what entities and the websocket API ask ---------------------------
 
-    def next_pass(self, now: datetime) -> SatellitePass | None:
-        """Return the pass in progress, or else the next one."""
+    def next_pass(self, now: datetime) -> ListedPass | None:
+        """Return the pass under way, or else the next to come."""
         return None if self.data is None else self.data.next_pass(now)
 
-    def next_bright_pass(self, now: datetime) -> SatellitePass | None:
-        """Return the bright pass in progress, or else the next one."""
+    def next_bright_pass(self, now: datetime) -> ListedPass | None:
+        """Return the bright pass under way, or else the next to come."""
         return None if self.data is None else self.data.next_bright_pass(now)
 
-    def current(self, now: datetime) -> SatellitePass | None:
-        """Return the pass in progress, if any."""
-        return None if self.data is None else self.data.current(now)
+    def pass_under_way(self, now: datetime) -> ListedPass | None:
+        """Return the pass under way, if there is one."""
+        return None if self.data is None else self.data.under_way(now)
 
-    def bright_pass_soon(self, now: datetime) -> SatellitePass | None:
+    def bright_pass_soon(self, now: datetime) -> ListedPass | None:
         """Return the next bright pass from its advance notice until it ends, else None."""
-        p = self.next_bright_pass(now)
-        return p if p is not None and p.start - self.settings.alert_lead <= now else None
+        coming = self.next_bright_pass(now)
+        return coming if coming and coming.start - self.settings.alert_lead <= now else None
 
     def paused_reason(self, now: datetime) -> str | None:
         """Why predictions are paused, or None while they can be trusted.
@@ -444,7 +428,3 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[SatelliteData]):
         """Return the catalog's median element age when beyond the limit, else None."""
         age = self.catalog.median_epoch_age(now)
         return age if age is not None and age > CATALOG_MAX_AGE else None
-
-
-def _noop() -> None:
-    """Nothing to undo."""

@@ -368,7 +368,7 @@ export function syntheticPass({ start = 1792400000, peak = 60, litFrom = 100, me
     duration: ve - vs,
     magnitude: brightest[8],
     bright: true,
-    before_sunset: false,
+    sun_up: false,
     satellite_count: members + 1,
     train,
     peak: { time: start + span / 2, azimuth: 340, elevation: peak, direction: "NNW" },

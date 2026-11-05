@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
-from .catalog import async_get_catalog, async_remove_catalog
+from .catalog import async_remove_catalog, async_shared_catalog
 from .const import DOMAIN
 from .coordinator import SatelliteSpotterCoordinator
 from .frontend import async_clear_stale_issue, async_setup_frontend, async_update_panel
@@ -43,7 +43,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEn
     # it is waiting for) even while setup retries.
     await async_update_panel(hass, adding=entry)
 
-    coordinator = SatelliteSpotterCoordinator(hass, entry, async_get_catalog(hass))
+    coordinator = SatelliteSpotterCoordinator(hass, entry, async_shared_catalog(hass))
     if not coordinator.settings.show_in_calendar:
         _async_remove_calendar(hass, entry)
     await coordinator.async_config_entry_first_refresh()

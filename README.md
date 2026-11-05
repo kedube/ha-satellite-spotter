@@ -83,6 +83,11 @@ Manual installs don't get update notifications. Repeat these steps to update.
    `custom_components/satellite_spotter` folder instead.
 4. Restart Home Assistant.
 
+If the catalogue was downloaded within the last two hours, its copy stays in
+`.storage/satellite_spotter.catalog`, so that adding a location back doesn't have to ask CelesTrak
+again. It holds public orbital data and nothing about you. If you're removing the integration for
+good, you can delete that file.
+
 ## Setup
 
 Go to **Settings → Devices & services → Add integration → Satellite Spotter**. Name the location,
@@ -131,9 +136,10 @@ names.
 | `calendar.home_satellite_passes` | Every pass for five days, with where to look |
 | `sensor.home_catalog_updated` | When the catalogue was downloaded, and how old its orbits are |
 
-The pass entities carry `satellite`, `norad_id`, `satellite_count`, `satellites`, `info_url`,
-`pass_id`, `start`, `end`, `duration`, `brightest_time`, `magnitude`, `bright`, `before_sunset` and
-`cloud_cover`, plus `_direction`, `_azimuth` and `_elevation` for `rise`, `brightest` and `set`.
+The pass entities carry `pass_id`, `satellite`, `norad_id`, `info_url`, `satellite_count`,
+`satellites`, `magnitude`, `bright`, `sun_up`, `cloud_cover`, `start`, `end` and `duration` for
+the pass. For the satellite it is named after, they carry `_time`, `_direction`, `_azimuth` and
+`_elevation` for `appears`, `brightest` and `disappears`.
 
 ## Notifications
 
@@ -144,8 +150,8 @@ bright passes only, ten minutes ahead, and skips skies more than 60% cloudy. Tap
 notification opens the pass in the street view.
 
 > **🛰️ ISS in 10 min**\
-> At 20:31:02, look toward W: 21° above the horizon. Best view at 20:32:30: NW, 40° high, magnitude
-> -2.5. Last visible at 20:34:55 toward NE, 10° high. Cloud cover near the pass: 12%.
+> Best view at 20:32:30: NW, 40° high, magnitude -2.5. First visible at 20:31:02 toward W, 21° high.
+> Last visible at 20:34:55 toward NE, 10° high. Cloud cover near the pass: 12%.
 
 For an automation of your own, use a calendar trigger, which fires for every pass:
 
@@ -194,9 +200,9 @@ Both are in the card picker, with visual editors.
    depends on your elevation. Starlinks use published models of their own.
 4. **Visibility.** A satellite counts while it is at least 10° up, lit by the Sun, brighter than
    your **Faintest magnitude**, and bright enough for the sky at that moment.
-5. **Passes.** Satellites that overlap or follow within a minute make one pass, and fewer than five
-   Starlinks together are left out. A pass is **bright** when it beats magnitude 0.5, and the sky's
-   limit by 3 magnitudes, after sunset.
+5. **Passes.** Satellites that overlap or follow within a minute make one pass, named after the
+   brightest, and fewer than five Starlinks together are left out. A pass is **bright** when it beats
+   magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
 
 Passes are predicted again every two hours. In between nothing polls: entities change at the
 moments that matter.
@@ -237,12 +243,14 @@ card or the street view is open.
 
 - **No passes.** Satellites show for a while after dusk and before dawn, when the Sun lights them but
   your sky is dark. Near midsummer, far from the equator, the sky barely darkens, so few are listed.
-  A **Faintest magnitude** below 3 also hides passes.
+  A **Faintest magnitude** below the default of 2.25 also hides passes.
 - **"Satellite predictions are paused" in Repairs.** The orbital elements are over two weeks old and
   no fresh catalogue could be downloaded. Check that Home Assistant can reach `celestrak.org`.
   Predictions resume by themselves.
-- **Setup says CelesTrak is not allowing another download yet.** CelesTrak refuses repeat downloads
-  of the same data. Wait two hours.
+- **Setup or the page says CelesTrak refused a download.** CelesTrak allows one download of the same
+  data every two hours, and anything else on your connection downloading it can use that up. Nothing
+  needs doing: the integration waits two hours, then tries again by itself. Deleting and re-adding a
+  location doesn't shorten the wait.
 - **The page or a card asks for WebGL 2.** Turn on hardware acceleration in your browser. The passes
   card needs no WebGL.
 - **The street view shows the 3D model, or only the sky.** There is no 360° photo within 200 m, a
@@ -287,6 +295,8 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
   [The Visibility of Stars Without Optical Aid](https://doi.org/10.1086/125956), PASP 59, 232. This
   code departs from its curve on purpose: -4 rather than about -3.2 in full daylight, and stopping
   at 4 rather than 6.
+- **Where the Sun is, and how the Earth turns:** Meeus 1998, *Astronomical Algorithms*, ch. 25;
+  Aoki et al. 1982 for sidereal time, in the form of Vallado et al. 2006.
 - **How much the air dims a satellite:** Green 1992,
   [Magnitude Corrections for Atmospheric Extinction](http://www.icq.eps.harvard.edu/ICQExtinct.html),
   International Comet Quarterly 14, 55.
@@ -316,7 +326,7 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 
 ### The sky and the software
 
-- **Sun, Moon and planets:** the Astronomical Almanac (Sun), Meeus 1998, *Astronomical Algorithms*
+- **Sun, Moon and planets in the drawn sky:** the Astronomical Almanac (Sun), Meeus 1998, *Astronomical Algorithms*
   (Moon), JPL's approximate planetary elements, Mallama & Hilton 2018 (planet magnitudes) and
   Neuhäuser et al. 2022 (planet colours).
 - **Drawing the sky:** Lieske et al. 1977 (precession), Sæmundsson 1986 (refraction), Kasten &

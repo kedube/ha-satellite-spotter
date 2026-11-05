@@ -141,7 +141,7 @@ export function makePass(start, end, { ids = [25544], kind = "iss", bright = tru
     duration: end - start,
     magnitude: -2.5,
     bright,
-    before_sunset: false,
+    sun_up: false,
     limiting_magnitude: 4,
     cloud_cover: cloud,
     satellite_count: ids.length,

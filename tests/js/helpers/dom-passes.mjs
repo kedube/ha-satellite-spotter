@@ -18,7 +18,7 @@ export function bostonHass({ language = "en", timeFormat = "12", timeZone = "ser
 
 /** One pass; the members after the first satellite are optional. */
 export function makePass({
-  id, title, kind = "satellite", start, duration = 120, magnitude = 1.5, bright = false, before_sunset = false,
+  id, title, kind = "satellite", start, duration = 120, magnitude = 1.5, bright = false, sun_up = false,
   elevation = 45, from = "SW", to = "NE", cloud = 20, train = false, count, members = [],
 }) {
   const end = start + duration;
@@ -34,7 +34,7 @@ export function makePass({
   };
   const transits = [primary, ...members.map((m, i) => ({ ...primary, ...m, start: start + 20 * (i + 1), end: end + 20 * (i + 1) }))];
   return {
-    id, title, kind, start, end, duration, magnitude, bright, before_sunset, limiting_magnitude: 4, cloud_cover: cloud,
+    id, title, kind, start, end, duration, magnitude, bright, sun_up, limiting_magnitude: 4, cloud_cover: cloud,
     satellite_count: count ?? transits.length, train, peak, transits,
   };
 }

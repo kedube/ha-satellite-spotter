@@ -18,8 +18,7 @@ from operator import attrgetter
 from typing import Any, NamedTuple
 
 import numpy as np
-from sgp4 import omm
-from sgp4.api import Satrec
+from sgp4.api import WGS72, Satrec
 
 from . import track
 from .const import DEFAULT_MAX_MAGNITUDE, PREDICTION_DAYS
@@ -45,13 +44,9 @@ _STARLINK_MARGIN = 0.75
 # The largest number SGP4's records can hold (Alpha-5). New launches can carry nine
 # digit temporary numbers; the number plays no part in the orbit.
 _LARGEST_RECORD_NUMBER = 339999
-
-
-class Direction(NamedTuple):
-    """Where to look: degrees clockwise from north, degrees above the horizon."""
-
-    azimuth: float
-    elevation: float
+# SGP4 counts its epoch in days from here, and its rates in minutes.
+_SGP4_DAY_ZERO = datetime(1949, 12, 31, tzinfo=UTC)
+_MINUTES_A_DAY = 1440
 
 
 @dataclass(slots=True)
@@ -60,10 +55,10 @@ class Satellite:
 
     norad_id: int
     name: str
-    # Standard magnitude at 1000 km; None when a brightness model applies instead.
-    magnitude: float | None
-    # The brightness model it follows, if any (see track.py).
-    model: str | None
+    # Its magnitude at 1000 km and half lit; None when a published curve applies instead.
+    standard_magnitude: float | None
+    # The published curve it follows, if any (see track.py).
+    curve: str | None
     # Orbital elements under their CCSDS names, as strings, as CelesTrak publishes them.
     elements: Mapping[str, str]
     epoch: datetime
@@ -72,52 +67,64 @@ class Satellite:
     def from_elements(
         cls,
         elements: Mapping[str, object],
-        magnitude: float | None,
-        model: str | None = None,
+        standard_magnitude: float | None = None,
+        *,
+        curve: str | None = None,
         name: str | None = None,
     ) -> Satellite:
         """Build a satellite from orbital elements, strings or numbers."""
         text = {field: str(value) for field, value in elements.items()}
-        epoch = datetime.fromisoformat(text["EPOCH"].removesuffix("Z")).replace(tzinfo=UTC)
         return cls(
-            int(text["NORAD_CAT_ID"]), name or text["OBJECT_NAME"], magnitude, model, text, epoch
+            int(text["NORAD_CAT_ID"]),
+            name or text["OBJECT_NAME"],
+            standard_magnitude,
+            curve,
+            text,
+            datetime.fromisoformat(text["EPOCH"]).replace(tzinfo=UTC),
         )
 
-    @property
-    def is_starlink(self) -> bool:
-        """Whether this is one of SpaceX's Starlinks."""
-        return self.name.upper().startswith("STARLINK")
-
-    @property
-    def perigee_km(self) -> float:
-        """How low the orbit comes, above a spherical Earth."""
-        return track.apsides_km(self)[0]
-
     def sgp4_record(self) -> Satrec:
-        """Return the record SGP4 propagates."""
-        number = self.norad_id if self.norad_id <= _LARGEST_RECORD_NUMBER else 0
+        """Return the record SGP4 propagates, from the elements in their published units."""
+
+        def element(field: str) -> float:
+            return float(self.elements[field])
+
         record = Satrec()
-        omm.initialize(
-            record,
-            {
-                # sgp4 reads these labels, and the orbit does not depend on them.
-                "CLASSIFICATION_TYPE": "U",
-                "OBJECT_ID": "",
-                "ELEMENT_SET_NO": "0",
-                "REV_AT_EPOCH": "0",
-                "EPHEMERIS_TYPE": "0",
-                **self.elements,
-                "NORAD_CAT_ID": str(number),
-                # The only form sgp4 reads: no zone, six decimals.
-                "EPOCH": self.epoch.strftime("%Y-%m-%dT%H:%M:%S.%f"),
-            },
+        record.sgp4init(
+            WGS72,
+            "i",
+            self.norad_id if self.norad_id <= _LARGEST_RECORD_NUMBER else 0,
+            (self.epoch - _SGP4_DAY_ZERO).total_seconds() / 86400,
+            element("BSTAR"),
+            # Revolutions a day, and its rates of change, as radians a minute.
+            element("MEAN_MOTION_DOT") * math.tau / _MINUTES_A_DAY**2,
+            element("MEAN_MOTION_DDOT") * math.tau / _MINUTES_A_DAY**3,
+            element("ECCENTRICITY"),
+            math.radians(element("ARG_OF_PERICENTER")),
+            math.radians(element("INCLINATION")),
+            math.radians(element("MEAN_ANOMALY")),
+            element("MEAN_MOTION") * math.tau / _MINUTES_A_DAY,
+            math.radians(element("RA_OF_ASC_NODE")),
         )
         return record
 
 
-def cutoff_for(sat: Satellite, max_magnitude: float) -> float:
+def _is_starlink(sat: Satellite) -> bool:
+    return sat.name[:8].casefold() == "starlink"
+
+
+def cutoff_for(sat: Satellite, faintest: float) -> float:
     """Return the faintest magnitude at which this satellite is listed."""
-    return max_magnitude + (_STARLINK_MARGIN if sat.is_starlink else 0.0)
+    return faintest + (_STARLINK_MARGIN if _is_starlink(sat) else 0.0)
+
+
+class Moment(NamedTuple):
+    """A moment of a sighting: when it is, and where to look then."""
+
+    time: datetime
+    # Degrees clockwise from north, and degrees above the horizon.
+    azimuth: float
+    elevation: float
 
 
 @dataclass(slots=True)
@@ -125,39 +132,56 @@ class Sighting:
     """One satellite, visible once."""
 
     satellite: Satellite
-    start: datetime
-    # The first second it can no longer be seen.
-    end: datetime
-    appears: Direction
-    peak: Direction
-    vanishes: Direction
-    peak_time: datetime
+    appears: Moment
+    brightest: Moment
+    # The first second it can no longer be seen, and the last place it was.
+    vanishes: Moment
     peak_magnitude: float
     # How faint a star the sky shows as it appears.
     sky_limit: float
-    before_sunset: bool
+    # Whether the Sun is still up as it appears.
+    sun_up: bool
 
 
 @dataclass(slots=True)
 class Flyover:
-    """What can be seen at about the same time, in order of appearance."""
+    """What can be seen at about the same time: the brightest, then the rest as they appear.
+
+    The brightest names it, so that what is said of a flyover (its magnitude, whether it
+    is bright) is true of the satellite named, and being first it survives a list cut short.
+    """
 
     sightings: list[Sighting]
+
+    def __post_init__(self) -> None:
+        """Put the brightest first; the first to appear of any that tie."""
+        brightest = min(self.sightings, key=attrgetter("peak_magnitude"))
+        self.sightings = [brightest, *(s for s in self.sightings if s is not brightest)]
 
     @property
     def start(self) -> datetime:
         """When the first satellite appears."""
-        return min(sighting.start for sighting in self.sightings)
+        return min(sighting.appears.time for sighting in self.sightings)
 
     @property
     def end(self) -> datetime:
         """When nothing is left to see."""
-        return max(sighting.end for sighting in self.sightings)
+        return max(sighting.vanishes.time for sighting in self.sightings)
+
+    @property
+    def duration(self) -> int:
+        """How long it lasts, in whole seconds."""
+        return round((self.end - self.start).total_seconds())
+
+    @property
+    def lead(self) -> Sighting:
+        """The brightest, which the flyover is named after."""
+        return self.sightings[0]
 
     @property
     def peak_magnitude(self) -> float:
         """The magnitude of the brightest moment of any of them."""
-        return min(sighting.peak_magnitude for sighting in self.sightings)
+        return self.lead.peak_magnitude
 
     @property
     def sky_limit(self) -> float:
@@ -165,34 +189,27 @@ class Flyover:
         return min(sighting.sky_limit for sighting in self.sightings)
 
     @property
-    def before_sunset(self) -> bool:
+    def sun_up(self) -> bool:
         """Whether any of them appears with the Sun still up."""
-        return any(sighting.before_sunset for sighting in self.sightings)
+        return any(sighting.sun_up for sighting in self.sightings)
 
     @property
-    def lead(self) -> Sighting:
-        """The first to appear, which the flyover is named after."""
-        return self.sightings[0]
+    def title(self) -> str:
+        """What to call it: "ISS", or "ISS +3" with three others to see."""
+        name = self.lead.satellite.name
+        return name if self.count == 1 else f"{name} +{self.count - 1}"
 
     @property
-    def satellite_count(self) -> int:
+    def count(self) -> int:
         """How many satellites there are to see."""
         return len(self.sightings)
 
     @property
     def bright(self) -> bool:
-        """Whether it is hard to miss."""
-        peak = self.peak_magnitude
-        return (
-            peak < _BRIGHT_MAGNITUDE
-            and self.sky_limit - peak > _BRIGHT_OVER_SKY
-            and not self.before_sunset
-        )
-
-
-def _direction(observer: track.Observer, position: np.ndarray) -> Direction:
-    azimuth, elevation, _ = track.look(observer, position)
-    return Direction(round(float(azimuth), 1), round(float(elevation), 1))
+        """Whether it is hard to miss: bright in itself, and against a dark enough sky."""
+        if self.sun_up or self.peak_magnitude >= _BRIGHT_MAGNITUDE:
+            return False
+        return self.sky_limit - self.peak_magnitude > _BRIGHT_OVER_SKY
 
 
 def _stretches(flags: np.ndarray) -> list[tuple[int, int]]:
@@ -208,34 +225,37 @@ def _exact_sightings(
     observer: track.Observer,
     since: float,
     until: float,
-    max_magnitude: float,
+    faintest: float,
 ) -> list[Sighting]:
     """Work out, second by second, what can be seen of a satellite in [since, until)."""
     seconds = np.arange(since, until, 1.0)
     places = track.propagate([record], seconds)[0]
     with np.errstate(invalid="ignore"):
         light = track.photometry(sat, observer, places, track.sun_at(seconds))
-        visible = track.visible(light, max_magnitude)
+        visible = track.visible(light, faintest)
 
-    def moment(index: int) -> datetime:
-        return datetime.fromtimestamp(seconds[index], UTC)
+    def moment(second: float, place: int) -> Moment:
+        azimuth, elevation, _ = track.look(observer, places[place])
+        return Moment(
+            datetime.fromtimestamp(second, UTC),
+            round(float(azimuth), 1),
+            round(float(elevation), 1),
+        )
 
     found = []
     for first, past in _stretches(visible):
         peak = first + int(np.argmin(light.magnitude[first:past]))
+        # When the stretch runs off the end, the next one starts there.
+        gone = seconds[past] if past < len(seconds) else until
         found.append(
             Sighting(
                 satellite=sat,
-                start=moment(first),
-                # When the stretch runs off the end, the next one starts there.
-                end=moment(past) if past < len(seconds) else datetime.fromtimestamp(until, UTC),
-                appears=_direction(observer, places[first]),
-                peak=_direction(observer, places[peak]),
-                vanishes=_direction(observer, places[past - 1]),
-                peak_time=moment(peak),
+                appears=moment(seconds[first], first),
+                brightest=moment(seconds[peak], peak),
+                vanishes=moment(gone, past - 1),
                 peak_magnitude=float(light.magnitude[peak]),
                 sky_limit=float(light.limiting[first]),
-                before_sunset=bool(light.sun_angle[first] < math.pi / 2),
+                sun_up=bool(light.sun_angle[first] < math.pi / 2),
             )
         )
     return found
@@ -247,7 +267,7 @@ def find_sightings(
     *,
     start: datetime,
     days: float = PREDICTION_DAYS,
-    max_magnitude: float = DEFAULT_MAX_MAGNITUDE,
+    faintest: float = DEFAULT_MAX_MAGNITUDE,
 ) -> list[Sighting]:
     """Find everything these satellites show a place, in order of appearance.
 
@@ -261,7 +281,7 @@ def find_sightings(
 
     # Brightest first, so that each batch can skip the minutes too light for its best.
     best = {id(sat): track.brightest_possible(sat, observer) for sat in satellites}
-    cutoff = {id(sat): cutoff_for(sat, max_magnitude) for sat in satellites}
+    cutoff = {id(sat): cutoff_for(sat, faintest) for sat in satellites}
     worth_trying = [sat for sat in satellites if best[id(sat)] < cutoff[id(sat)]]
     worth_trying.sort(key=lambda sat: best[id(sat)])
 
@@ -301,13 +321,13 @@ def find_sightings(
 
     # Those that appear together keep the catalog's order.
     position = {id(sat): index for index, sat in enumerate(satellites)}
-    found.sort(key=lambda sighting: (sighting.start, position[id(sighting.satellite)]))
+    found.sort(key=lambda sighting: (sighting.appears.time, position[id(sighting.satellite)]))
     return found
 
 
 def _worth_listing(sightings: list[Sighting]) -> list[Sighting]:
     """Drop the Starlinks of a flyover unless there are enough of them for a train."""
-    others = [sighting for sighting in sightings if not sighting.satellite.is_starlink]
+    others = [sighting for sighting in sightings if not _is_starlink(sighting.satellite)]
     starlinks = len(sightings) - len(others)
     return others if 0 < starlinks < _TRAIN_SIZE else sightings
 
@@ -316,12 +336,12 @@ def group_sightings(sightings: Iterable[Sighting]) -> list[Flyover]:
     """Join sightings that overlap or nearly do into flyovers."""
     joined: list[list[Sighting]] = []
     latest_end = datetime.min.replace(tzinfo=UTC)
-    for sighting in sorted(sightings, key=attrgetter("start")):
-        if not joined or sighting.start - latest_end > _FLYOVER_GAP:
+    for sighting in sorted(sightings, key=lambda sighting: sighting.appears.time):
+        if not joined or sighting.appears.time - latest_end > _FLYOVER_GAP:
             joined.append([])
-            latest_end = sighting.end
+            latest_end = sighting.vanishes.time
         joined[-1].append(sighting)
-        latest_end = max(latest_end, sighting.end)
+        latest_end = max(latest_end, sighting.vanishes.time)
     kept = (_worth_listing(members) for members in joined)
     return [Flyover(members) for members in kept if members]
 
@@ -332,25 +352,25 @@ def read_catalog(entries: Iterable[Mapping[str, Any]]) -> list[Satellite]:
         Satellite.from_elements(
             entry["elements"],
             None if entry.get("magnitude") is None else float(entry["magnitude"]),
-            entry.get("model"),
-            entry["name"],
+            curve=entry.get("model"),
+            name=entry["name"],
         )
         for entry in entries
     ]
 
 
 def write_catalog(satellites: Iterable[Satellite]) -> list[dict[str, Any]]:
-    """Write a catalog for storage."""
+    """Write a catalog for storage, whose field names stay so that a stored copy stays usable."""
     return [
         {
             "name": sat.name,
             "elements": dict(sat.elements),
             "magnitude": (
-                sat.magnitude
-                if sat.magnitude is not None and math.isfinite(sat.magnitude)
+                sat.standard_magnitude
+                if sat.standard_magnitude is not None and math.isfinite(sat.standard_magnitude)
                 else None
             ),
-            "model": sat.model,
+            "model": sat.curve,
         }
         for sat in satellites
     ]

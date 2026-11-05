@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, override
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -19,8 +13,8 @@ from homeassistant.util import dt as dt_util
 
 from . import SatelliteSpotterConfigEntry
 from .const import CATALOG_MAX_AGE, MAX_LISTED_PASSES
-from .coordinator import SatellitePass, SatelliteSpotterCoordinator
-from .entity import SatelliteSpotterEntity, compass, magnitude, pass_attributes, pass_title
+from .coordinator import ListedPass
+from .entity import PassEntity, SatelliteSpotterEntity, compass, magnitude
 
 PARALLEL_UPDATES = 0
 
@@ -29,93 +23,45 @@ PARALLEL_UPDATES = 0
 _LIST_ATTRIBUTES = frozenset({"passes", "satellites", "info_url"})
 
 
-@dataclass(frozen=True, kw_only=True)
-class PassSensorDescription(SensorEntityDescription):
-    """Describes a sensor that follows one pass."""
-
-    # The pass to report, or None when there is none.
-    pass_fn: Callable[[SatelliteSpotterCoordinator, datetime], SatellitePass | None]
-
-
-PASS_SENSORS: tuple[PassSensorDescription, ...] = (
-    PassSensorDescription(
-        key="next_pass",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        pass_fn=lambda c, now: c.next_pass(now),
-    ),
-    PassSensorDescription(
-        key="next_bright_pass",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        pass_fn=lambda c, now: c.next_bright_pass(now),
-    ),
-)
-PASS_COUNT_SENSOR = SensorEntityDescription(key="passes_next_24h")
-CATALOG_SENSOR = SensorEntityDescription(
-    key="catalog_updated",
-    device_class=SensorDeviceClass.TIMESTAMP,
-    entity_category=EntityCategory.DIAGNOSTIC,
-)
-SENSORS: tuple[SensorEntityDescription, ...] = (*PASS_SENSORS, PASS_COUNT_SENSOR, CATALOG_SENSOR)
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: SatelliteSpotterConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the sensors."""
-    coordinator = entry.runtime_data
+    """Set up the sensors. Their keys are their unique ids: changing one recreates the entity."""
+    location = entry.runtime_data
     async_add_entities(
         [
-            *(PassSensor(coordinator, description) for description in PASS_SENSORS),
-            PassCountSensor(coordinator, PASS_COUNT_SENSOR),
-            CatalogSensor(coordinator, CATALOG_SENSOR),
+            PassSensor(location, "next_pass", location.next_pass),
+            PassSensor(location, "next_bright_pass", location.next_bright_pass),
+            PassCountSensor(location, "passes_next_24h"),
+            CatalogSensor(location, "catalog_updated"),
         ]
     )
 
 
-class LocationSensor(SatelliteSpotterEntity, SensorEntity):
-    """A sensor of one location, set up from its description."""
-
-    def __init__(
-        self, coordinator: SatelliteSpotterCoordinator, description: SensorEntityDescription
-    ) -> None:
-        """Initialise the sensor."""
-        super().__init__(coordinator, description.key)
-        self.entity_description = description
-
-
-class PassSensor(LocationSensor):
+class PassSensor(PassEntity, SensorEntity):
     """When a pass starts, with the pass's details."""
 
-    entity_description: PassSensorDescription
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _unrecorded_attributes = _LIST_ATTRIBUTES
-
-    def _followed_pass(self) -> SatellitePass | None:
-        return self.entity_description.pass_fn(self.coordinator, dt_util.utcnow())
 
     @property
     @override
     def native_value(self) -> datetime | None:
         """Return when the pass starts."""
-        followed = self._followed_pass()
+        followed = self.followed()
         return None if followed is None else followed.start
 
-    @property
-    @override
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the details of the pass."""
-        return pass_attributes(self._followed_pass())
 
-
-class PassCountSensor(LocationSensor):
+class PassCountSensor(SatelliteSpotterEntity, SensorEntity):
     """How many passes are under way or start within a day, and which."""
 
     _unrecorded_attributes = _LIST_ATTRIBUTES
 
-    def _upcoming(self) -> list[SatellitePass]:
-        data = self.coordinator.data
-        return [] if data is None else data.upcoming(dt_util.utcnow())
+    def _upcoming(self) -> list[ListedPass]:
+        predictions = self.coordinator.data
+        return [] if predictions is None else predictions.upcoming(dt_util.utcnow())
 
     @property
     @override
@@ -127,21 +73,26 @@ class PassCountSensor(LocationSensor):
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return a short description of each pass, up to the limit."""
-        return {"passes": [_listed_pass(p) for p in self._upcoming()[:MAX_LISTED_PASSES]]}
+        return {"passes": [_summary(p) for p in self._upcoming()[:MAX_LISTED_PASSES]]}
 
 
-def _listed_pass(p: SatellitePass) -> dict[str, Any]:
+def _summary(p: ListedPass) -> dict[str, Any]:
     return {
-        "start": p.start.isoformat(),
-        "satellite": pass_title(p),
-        "magnitude": magnitude(p.flyover.peak_magnitude),
-        "direction": compass(p.lead.appears.azimuth),
+        "pass_id": p.id,
+        "satellite": p.title,
+        "magnitude": magnitude(p.peak_magnitude),
+        "bright": p.bright,
         "cloud_cover": p.cloud_cover,
+        "start": p.start.isoformat(),
+        "direction": compass(p.lead.appears.azimuth),
     }
 
 
-class CatalogSensor(LocationSensor):
+class CatalogSensor(SatelliteSpotterEntity, SensorEntity):
     """When the catalog was downloaded; its satellite count is worth a history."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     @override

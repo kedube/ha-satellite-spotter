@@ -1,53 +1,75 @@
-"""How cloudy the coming week will be, from Open-Meteo (https://open-meteo.com/en/docs)."""
+"""How cloudy the sky will be over a place, hour by hour.
+
+From Open-Meteo's forecast API: https://open-meteo.com/en/docs
+"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import UTC, datetime
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 import aiohttp
 
-from .const import USER_AGENT
+from .const import PREDICTION_DAYS, USER_AGENT
 
-OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-_TIMEOUT = aiohttp.ClientTimeout(total=30)
-
-# Whole hours in order, with the percentage of the sky covered.
-type CloudCover = Sequence[tuple[datetime, int]]
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_HOUR_S = 3600
+# As far ahead as passes are predicted, and the hour after the last of them.
+_HOURS_AHEAD = PREDICTION_DAYS * 24 + 2
+_PATIENCE = aiohttp.ClientTimeout(total=30)
 
 
 class CloudCoverError(Exception):
     """There is no forecast to be had."""
 
 
-async def fetch_cloud_cover(
+@dataclass(frozen=True, slots=True)
+class CloudForecast:
+    """The percentage of the sky covered, by the Unix time of each whole hour."""
+
+    percent_by_hour: Mapping[int, int]
+
+    def after(self, moment: datetime) -> int | None:
+        """Return the forecast for the whole hour after a moment, if there is one."""
+        return self.percent_by_hour.get((int(moment.timestamp()) // _HOUR_S + 1) * _HOUR_S)
+
+
+def _read_forecast(answer: Mapping[str, Any]) -> CloudForecast:
+    hourly = answer["hourly"]
+    percent_by_hour = {
+        int(hour): int(percent)
+        for hour, percent in zip(hourly["time"], hourly["cloud_cover"], strict=True)
+        # An hour can be blank at the far end of the forecast.
+        if percent is not None
+    }
+    return CloudForecast(percent_by_hour)
+
+
+async def async_fetch_forecast(
     session: aiohttp.ClientSession, latitude: float, longitude: float
-) -> CloudCover:
-    """Download the next seven days' cover, hour by hour, for a place."""
-    query = {
-        "latitude": f"{latitude:.4f}",
-        "longitude": f"{longitude:.4f}",
+) -> CloudForecast:
+    """Download a place's forecast, giving its position to four decimals (about 10 m)."""
+    query: dict[str, str | int | float] = {
+        "latitude": round(latitude, 4),
+        "longitude": round(longitude, 4),
         "hourly": "cloud_cover",
-        "forecast_days": "7",
+        "forecast_hours": _HOURS_AHEAD,
         "timeformat": "unixtime",
     }
-    headers = {"User-Agent": USER_AGENT}
     try:
         async with session.get(
-            OPEN_METEO_URL, params=query, headers=headers, timeout=_TIMEOUT
-        ) as answer:
-            answer.raise_for_status()
-            hourly = (await answer.json())["hourly"]
-        forecast = []
-        # A cover can be missing at the far end of the forecast.
-        for hour, cover in zip(hourly["time"], hourly["cloud_cover"], strict=False):
-            if cover is not None:
-                forecast.append((datetime.fromtimestamp(hour, UTC), int(cover)))
-    except (aiohttp.ClientError, TimeoutError, ValueError, KeyError, TypeError) as err:
+            FORECAST_URL,
+            params=query,
+            headers={"User-Agent": USER_AGENT},
+            timeout=_PATIENCE,
+        ) as response:
+            response.raise_for_status()
+            answer = await response.json()
+    except (aiohttp.ClientError, TimeoutError, ValueError) as err:
         raise CloudCoverError(f"Could not get the cloud cover: {err}") from err
-    return forecast
-
-
-def cloud_cover_at(forecast: CloudCover | None, when: datetime) -> int | None:
-    """Return the forecast for the first whole hour after a moment, if there is one."""
-    return next((cover for hour, cover in forecast or () if hour > when), None)
+    try:
+        return _read_forecast(answer)
+    except (KeyError, TypeError, ValueError) as err:
+        raise CloudCoverError(f"Could not read the cloud cover: {err}") from err

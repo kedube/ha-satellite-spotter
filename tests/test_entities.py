@@ -19,7 +19,7 @@ from custom_components.satellite_spotter.const import (
     DOMAIN,
     VERSION,
 )
-from custom_components.satellite_spotter.entity import magnitude
+from custom_components.satellite_spotter.entity import compass, magnitude
 
 from .common import DENVER, DENVER_ID, FIRST_PASS, FIRST_PASS_ID, NOW, add_location, advance
 
@@ -27,28 +27,24 @@ pytestmark = pytest.mark.usefixtures("init_integration")
 
 # The attributes of a pass, which automations and cards read.
 PASS_KEYS = {
+    "pass_id",
     "satellite",
     "norad_id",
+    "info_url",
+    "satellite_count",
+    "satellites",
+    "magnitude",
+    "bright",
+    "sun_up",
+    "cloud_cover",
     "start",
     "end",
     "duration",
-    "magnitude",
-    "bright",
-    "before_sunset",
-    "rise_direction",
-    "rise_azimuth",
-    "rise_elevation",
-    "brightest_time",
-    "brightest_direction",
-    "brightest_azimuth",
-    "brightest_elevation",
-    "set_direction",
-    "set_azimuth",
-    "set_elevation",
-    "cloud_cover",
-    "satellite_count",
-    "info_url",
-    "pass_id",
+    *(
+        f"{moment}_{part}"
+        for moment in ("appears", "brightest", "disappears")
+        for part in ("time", "direction", "azimuth", "elevation")
+    ),
 }
 ENTITIES = {
     "sensor.home_next_pass": "next_pass",
@@ -72,11 +68,13 @@ async def test_next_pass(hass: HomeAssistant) -> None:
         "start": FIRST_PASS,
         "magnitude": 0.2,
         "bright": True,
-        "before_sunset": False,
-        "rise_direction": "NW",
+        "sun_up": False,
+        "appears_time": FIRST_PASS,
+        "appears_direction": "NW",
         # The first forecast hour after the start.
         "cloud_cover": 16,
         "satellite_count": 1,
+        "satellites": ["BLUEWALKER-3"],
         "info_url": "https://en.wikipedia.org/wiki/BlueWalker_3",
         "pass_id": FIRST_PASS_ID,
         "attribution": ATTRIBUTION,
@@ -91,11 +89,13 @@ async def test_what_comes_after_the_next_pass(hass: HomeAssistant) -> None:
     assert int(passes.state) == len(passes.attributes["passes"]) == 7
     assert passes.attributes["unit_of_measurement"] == "passes"
     assert passes.attributes["passes"][0] == {
-        "start": FIRST_PASS,
+        "pass_id": FIRST_PASS_ID,
         "satellite": "BLUEWALKER-3",
         "magnitude": 0.2,
-        "direction": "NW",
+        "bright": True,
         "cloud_cover": 16,
+        "start": FIRST_PASS,
+        "direction": "NW",
     }
 
 
@@ -247,7 +247,7 @@ async def test_passes_next_24h_follow_the_window(
 
 
 async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
-    """Satellites passing together are one pass, named after the first."""
+    """Satellites passing together are one pass, named after the brightest."""
     start = datetime(2026, 11, 8, 4, 15, 34, tzinfo=UTC)
     await advance(hass, freezer, start - timedelta(seconds=30))
     passes = hass.states.get("sensor.home_passes_next_24_hours").attributes["passes"]
@@ -259,12 +259,7 @@ async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTime
     assert attrs["satellite_count"] == 2
     assert attrs["satellites"] == ["ISS", "Hubble"]
     assert attrs["pass_id"] == f"25544-{int(start.timestamp())}"
-    assert attrs.keys() == PASS_KEYS | {
-        "satellites",
-        "attribution",
-        "device_class",
-        "friendly_name",
-    }
+    assert attrs.keys() == PASS_KEYS | {"attribution", "device_class", "friendly_name"}
 
 
 @pytest.mark.parametrize("value", [-0.04, 0.0, 0.04])
@@ -284,3 +279,26 @@ async def test_pass_ids_are_stable(
     still_to_come = {i: t for i, t in before.items() if t[1] > NOW + timedelta(hours=2)}
     assert still_to_come
     assert {i: after[i] for i in still_to_come} == still_to_come
+
+
+@pytest.mark.parametrize(
+    ("azimuth", "point"),
+    [
+        (0.0, "N"),
+        (11.24, "N"),
+        # Halfway goes clockwise, as on the page (sat-geo.js).
+        (11.25, "NNE"),
+        (33.75, "NE"),
+        (56.25, "ENE"),
+        (90.0, "E"),
+        (202.5, "SSW"),
+        (348.74, "NNW"),
+        (348.75, "N"),
+        (359.99, "N"),
+        (360.0, "N"),
+        (-90.0, "W"),
+        (725.0, "N"),
+    ],
+)
+def test_compass(azimuth: float, point: str) -> None:
+    assert compass(azimuth) == point

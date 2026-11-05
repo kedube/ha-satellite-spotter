@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 
 from custom_components.satellite_spotter.const import STORAGE_KEY
 from custom_components.satellite_spotter.predict import Satellite, read_catalog, write_catalog
+from custom_components.satellite_spotter.weather import CloudForecast
 
 ROOT = Path(__file__).parents[1]
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -84,10 +85,10 @@ async def add_location(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     await hass.async_block_till_done()
 
 
-def cloud_cover() -> list[tuple[datetime, int]]:
+def cloud_cover() -> CloudForecast:
     """Hourly cloud cover from midnight on NOW's day, equal to the hour of the week."""
-    start = datetime(2026, 11, 4, tzinfo=UTC).timestamp()
-    return [(datetime.fromtimestamp(start + 3600 * i, UTC), i % 100) for i in range(168)]
+    start = int(datetime(2026, 11, 4, tzinfo=UTC).timestamp())
+    return CloudForecast({start + 3600 * i: i % 100 for i in range(168)})
 
 
 def store_catalog(

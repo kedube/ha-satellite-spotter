@@ -39,7 +39,7 @@ const PASSES = [
   }),
   makePass({ id: "53807-1792366428", title: "BlueWalker 3", start: at("2026-10-18T19:33:48-04:00"), duration: 118, magnitude: -0.1, bright: true, elevation: 85.4, from: "W", to: "ENE", cloud: 97 }),
   makePass({ id: "25544-1792400980", title: "ISS", kind: "iss", start: at("2026-10-19T05:09:40-04:00"), duration: 146, magnitude: -2.1, bright: true, elevation: 56.1, from: "NW", to: "ENE", cloud: 13 }),
-  makePass({ id: "25544-1792479451", title: "ISS", kind: "iss", start: at("2026-10-20T08:55:36-04:00"), duration: 53, magnitude: -2.7, before_sunset: true, elevation: 33, from: "WSW", to: "SSE", cloud: null }),
+  makePass({ id: "25544-1792479451", title: "ISS", kind: "iss", start: at("2026-10-20T08:55:36-04:00"), duration: 53, magnitude: -2.7, sun_up: true, elevation: 33, from: "WSW", to: "SSE", cloud: null }),
 ];
 const byId = (id) => PASSES.find((p) => p.id === id);
 
@@ -511,7 +511,7 @@ test("the Moon counts only when it is up and over 40 % lit, at night", () => {
   assert.ok(moon.waxing);
   close(moon.litSide, 90, 25, "lit on the right, towards the set Sun");
   assert.equal(passMoon(byId("25544-1792400980"), BOSTON), null, "Monday 05:09 EDT: the Moon has set");
-  assert.equal(passMoon({ ...evening, before_sunset: true }, BOSTON), null, "a daylight pass: the sky is bright anyway");
+  assert.equal(passMoon({ ...evening, sun_up: true }, BOSTON), null, "a daylight pass: the sky is bright anyway");
   assert.equal(passMoon(evening, null), null, "no place, no Moon");
   assert.equal(passMoon(evening, { latitude: "x", longitude: 1 }), null);
   // A thin crescent, up in the evening twilight (Wednesday 14 Oct, 9 % lit): no matter.

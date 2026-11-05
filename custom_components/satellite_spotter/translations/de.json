@@ -160,7 +160,7 @@
   "common": {
     "calendar_summary": "🛰️ {title}",
     "calendar_summary_bright": "🛰️ {title} (hell)",
-    "calendar_appears": "Um {time} nach {direction} schauen: {elevation}° über dem Horizont.",
+    "calendar_appears": "Zuerst sichtbar um {time} in Richtung {direction}, {elevation}° hoch.",
     "calendar_brightest": "Beste Sicht um {time}: {direction}, {elevation}° hoch, Helligkeit {magnitude}.",
     "calendar_disappears": "Zuletzt sichtbar um {time} in Richtung {direction}, {elevation}° hoch.",
     "calendar_together": "Zu diesem Überflug gehören {count} Satelliten.",

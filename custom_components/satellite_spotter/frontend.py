@@ -70,10 +70,10 @@ from .const import (
     TRACK_MAX_STEP,
     TRACK_STEP,
 )
-from .coordinator import PredictionSettings, SatellitePass, SatelliteSpotterCoordinator
-from .entity import compass, confidence, magnitude, pass_title, satellite_kind
+from .coordinator import ListedPass, PredictionSettings, SatelliteSpotterCoordinator
+from .entity import compass, confidence, magnitude, satellite_kind
 from .links import info_url
-from .predict import Direction, Satellite, Sighting, cutoff_for
+from .predict import Moment, Satellite, Sighting, cutoff_for
 from .street import street_payload
 
 if TYPE_CHECKING:
@@ -318,7 +318,7 @@ def _number(value: float | None, digits: int) -> float | None:
     return None if value is None or not math.isfinite(value) else round(value, digits) + 0.0
 
 
-def look_json(angle: Direction) -> dict[str, Any]:
+def look_json(angle: Moment) -> dict[str, Any]:
     """Where to look: azimuth, elevation and compass direction."""
     return {
         "azimuth": _number(angle.azimuth, 1),
@@ -344,61 +344,59 @@ def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
         "norad_id": sat.norad_id,
         "name": sat.name,
         "kind": satellite_kind(sat.norad_id, sat.name),
-        "start": unix(t.start),
-        "end": unix(t.end),
+        "start": unix(t.appears.time),
+        "end": unix(t.vanishes.time),
         "magnitude": magnitude(t.peak_magnitude),
-        "brightest_time": unix(t.peak_time),
+        "brightest_time": unix(t.brightest.time),
         "rise": look_json(t.appears),
-        "brightest": look_json(t.peak),
+        "brightest": look_json(t.brightest),
         "set": look_json(t.vanishes),
         "peak": peak_json(shape.peak),
         "start_reason": shape.start_reason,
         "end_reason": shape.end_reason,
-        "intrinsic_magnitude": _number(sat.magnitude, 1),
-        "model": sat.model,
+        "intrinsic_magnitude": _number(sat.standard_magnitude, 1),
+        "model": sat.curve,
         "period_s": round(track.period_s(sat)),
         "info_url": info_url(sat.norad_id, sat.name),
-        "confidence": confidence(t.start, sat),
+        "confidence": confidence(t.appears.time, sat),
     }
 
 
-def is_train(p: SatellitePass) -> bool:
-    """Whether a pass is a Starlink train: more than five satellites behind a Starlink."""
+def is_train(p: ListedPass) -> bool:
+    """Whether a pass is a Starlink train: more than five satellites, a Starlink the brightest."""
     primary = p.lead.satellite
-    return p.flyover.satellite_count > 5 and (
-        satellite_kind(primary.norad_id, primary.name) == "starlink"
-    )
+    return p.count > 5 and (satellite_kind(primary.norad_id, primary.name) == "starlink")
 
 
-def pass_json(p: SatellitePass) -> dict[str, Any]:
+def pass_json(p: ListedPass) -> dict[str, Any]:
     """Describe a pass, with its satellites (up to MAX_SIGHTINGS)."""
     primary = p.lead.satellite
     kind = satellite_kind(primary.norad_id, primary.name)
-    count = p.flyover.satellite_count
+    count = p.count
     return {
         "id": p.id,
-        "title": pass_title(p),
+        "title": p.title,
         "kind": kind,
         "start": unix(p.start),
         "end": unix(p.end),
-        "duration": round((p.end - p.start).total_seconds()),
-        "magnitude": magnitude(p.flyover.peak_magnitude),
+        "duration": p.duration,
+        "magnitude": magnitude(p.peak_magnitude),
         "bright": p.bright,
-        "before_sunset": p.flyover.before_sunset,
-        "limiting_magnitude": _number(p.flyover.sky_limit, 1),
+        "sun_up": p.sun_up,
+        "limiting_magnitude": _number(p.sky_limit, 1),
         "cloud_cover": p.cloud_cover,
         "satellite_count": count,
         "train": is_train(p),
         "peak": peak_json(p.peak),
         "transits": [
             sighting_json(t, shape)
-            for t, shape in zip(p.flyover.sightings[:MAX_SIGHTINGS], p.shapes, strict=False)
+            for t, shape in zip(p.sightings[:MAX_SIGHTINGS], p.shapes, strict=False)
         ],
     }
 
 
 def passes_payload(
-    passes: Iterable[SatellitePass] | None,
+    passes: Iterable[ListedPass] | None,
     *,
     now: datetime,
     location: dict[str, Any],
@@ -482,26 +480,27 @@ def build_passes_payload(coordinator: SatelliteSpotterCoordinator, now: datetime
 
 
 def pass_track_payload(
-    p: SatellitePass, observer: track.Observer, step: float, max_magnitude: float
+    p: ListedPass, observer: track.Observer, step: float, faintest: float
 ) -> dict[str, Any]:
     """Trace a pass's satellites across the sky, horizon to horizon, and the Sun meanwhile.
 
     Every satellite gets rows of its own, except in a Starlink train: there
-    the Starlinks after the first PASS_TRACK_MEMBERS follow the first one's
-    path, ``offset_s`` later, as trains do (runs in the executor).
+    the Starlinks after the first PASS_TRACK_MEMBERS follow the path of the one
+    listed first, ``offset_s`` later (or earlier, as it need not lead the train), as
+    trains do (runs in the executor).
     """
-    first = p.lead.peak_time.timestamp()
+    first = p.lead.brightest.time.timestamp()
     train = is_train(p)
     transits: list[dict[str, Any]] = []
-    for i, t in enumerate(p.flyover.sightings[:MAX_SIGHTINGS]):
+    for i, t in enumerate(p.sightings[:MAX_SIGHTINGS]):
         sat = t.satellite
         kind = satellite_kind(sat.norad_id, sat.name)
-        start, end = t.start.timestamp(), t.end.timestamp()
+        start, end = t.appears.time.timestamp(), t.vanishes.time.timestamp()
         item: dict[str, Any] = {
             "norad_id": sat.norad_id,
             "name": sat.name,
             "kind": kind,
-            "offset_s": round(t.peak_time.timestamp() - first),
+            "offset_s": round(t.brightest.time.timestamp() - first),
             "horizon_rise": None,
             "horizon_set": None,
             "visible_start": unix(start),
@@ -510,11 +509,11 @@ def pass_track_payload(
         }
         if train and i >= PASS_TRACK_MEMBERS and kind == "starlink" and transits[0]["rows"]:
             # Drawn as the first one's path, offset_s later: so are its horizons.
-            offset = t.peak_time.timestamp() - first
+            offset = t.brightest.time.timestamp() - first
             item["horizon_rise"] = unix(transits[0]["horizon_rise"] + offset)
             item["horizon_set"] = unix(transits[0]["horizon_set"] + offset)
         elif (
-            sky := track.pass_track(sat, observer, start, end, step, cutoff_for(sat, max_magnitude))
+            sky := track.pass_track(sat, observer, start, end, step, cutoff_for(sat, faintest))
         ) is not None:
             item.update(horizon_rise=sky.horizon_rise, horizon_set=sky.horizon_set, rows=sky.rows)
         else:
@@ -615,8 +614,8 @@ def catalog_payload(
                 "norad_id": sat.norad_id,
                 "name": sat.name,
                 "kind": satellite_kind(sat.norad_id, sat.name),
-                "magnitude": _number(sat.magnitude, 1),
-                "model": sat.model,
+                "magnitude": _number(sat.standard_magnitude, 1),
+                "model": sat.curve,
                 "epoch": unix(sat.epoch),
                 "period_s": round(track.period_s(sat)),
                 "perigee_km": round(perigee),

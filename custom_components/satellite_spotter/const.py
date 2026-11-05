@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final
 
 DOMAIN: Final = "satellite_spotter"
-# The release number lives only in manifest.json (scripts/version.py bumps it).
+# The release number lives only in manifest.json (scripts/release.py raises it).
 VERSION: Final[str] = json.loads((Path(__file__).parent / "manifest.json").read_text())["version"]
 USER_AGENT: Final = (
     f"HomeAssistant-SatelliteSpotter/{VERSION} (+https://github.com/kedube/ha-satellite-spotter)"
@@ -60,7 +60,8 @@ CATALOG_RETRY: Final = timedelta(minutes=30)
 CATALOG_UNREACHABLE_RETRY: Final = timedelta(minutes=5)
 # When CelesTrak answered with anything but orbital data. Its data changes at
 # most this often, and it can block an address that keeps asking after a refusal,
-# so nothing shortens this wait: not a restart, not someone adding a location.
+# so nothing shortens this wait: not a restart, not someone adding a location, not
+# removing the last location and adding it back.
 CATALOG_REFUSED_RETRY: Final = timedelta(hours=2)
 # A download stamped further ahead than this means the clock was set back
 # since: refresh rather than wait for the clock to catch up.

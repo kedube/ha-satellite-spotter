@@ -160,7 +160,7 @@
   "common": {
     "calendar_summary": "🛰️ {title}",
     "calendar_summary_bright": "🛰️ {title} (jasny)",
-    "calendar_appears": "O {time} spójrz w kierunku {direction}: {elevation}° nad horyzontem.",
+    "calendar_appears": "Po raz pierwszy widoczny o {time} w kierunku {direction}, wysokość {elevation}°.",
     "calendar_brightest": "Najlepszy widok o {time}: {direction}, wysokość {elevation}°, jasność {magnitude} mag.",
     "calendar_disappears": "Ostatnio widoczny o {time} w kierunku {direction}, wysokość {elevation}°.",
     "calendar_together": "Ten przelot obejmuje {count} satelitów.",

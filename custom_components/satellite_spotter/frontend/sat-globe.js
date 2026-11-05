@@ -2737,7 +2737,7 @@ export class SatelliteGlobeView extends BaseElement {
       const cloudy = this._fmt.cloud(pass.cloud_cover)?.level === "cloudy";
       pins.push({
         key: "pin-pass",
-        cls: pass.bright && !cloudy && !pass.before_sunset ? "pin" : "pin dim",
+        cls: pass.bright && !cloudy && !pass.sun_up ? "pin" : "pin dim",
         lat: r[1], lon: r[2], alt: r[3] * 1000,
         start: pass.start, end: pass.end,
         text: this._t("pass.pin", {
@@ -3063,7 +3063,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (cloud) out.push({ cls: cloud.level, icon: "cloud", text: passesModule.cloudText(pass, this._fmt) });
     const moon = passesModule.passMoon(pass, this._payload?.location);
     if (moon) out.push({ cls: "moon", glyph: passesModule.moonGlyph(moon), text: passesModule.moonText(moon, this._fmt) });
-    if (pass.before_sunset) out.push({ cls: "warn", icon: "sun", text: this._t("mission.before_sunset") });
+    if (pass.sun_up) out.push({ cls: "warn", icon: "sun", text: this._t("mission.before_sunset") });
     if (pass.train) out.push({ cls: "", icon: "train", text: this._t("mission.train_hint") });
     const notable = passesModule.notableMember?.(pass);
     if (notable) out.push({ cls: "gold", icon: kindIcon(notable.kind), text: this._t("mission.with", { name: notable.name }) });

@@ -17,7 +17,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, section
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.selector import TextSelector
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.setup import async_setup_component
 from multidict import CIMultiDict, CIMultiDictProxy
@@ -27,7 +26,11 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from yarl import URL
 
-from custom_components.satellite_spotter.catalog import DATA_CATALOG, async_get_catalog
+from custom_components.satellite_spotter.catalog import (
+    SHARED_CATALOG,
+    async_remove_catalog,
+    async_shared_catalog,
+)
 from custom_components.satellite_spotter.celestrak import (
     GP_URL,
     QUERIES,
@@ -50,12 +53,15 @@ from custom_components.satellite_spotter.const import (
     STORAGE_KEY,
     STORAGE_SAVE_DELAY,
 )
-from custom_components.satellite_spotter.coordinator import SatelliteSpotterCoordinator
+from custom_components.satellite_spotter.coordinator import (
+    SatelliteSpotterCoordinator,
+    _nothing_to_stop,
+)
 from custom_components.satellite_spotter.diagnostics import async_get_config_entry_diagnostics
 from custom_components.satellite_spotter.frontend import catalog_payload
 from custom_components.satellite_spotter.predict import Satellite, read_catalog
 from custom_components.satellite_spotter.street import GOOGLE_SESSION_URL, MAPILLARY_IMAGES_URL
-from custom_components.satellite_spotter.weather import OPEN_METEO_URL, CloudCoverError
+from custom_components.satellite_spotter.weather import FORECAST_URL, CloudCoverError
 
 from .common import (
     DENVER,
@@ -75,7 +81,6 @@ from .common import (
 # The fixture's elements are about 15.5 days old (median) by then.
 STALE = NOW + timedelta(days=15)
 # Home Assistant's own, taken before the tests' storage stands in for it.
-STORE_REMOVE = Store.async_remove
 
 
 def _stale_issue(hass: HomeAssistant) -> ir.IssueEntry | None:
@@ -91,10 +96,10 @@ async def test_setup_and_unload(hass: HomeAssistant, init_integration: MockConfi
     assert init_integration.state is ConfigEntryState.LOADED
     coordinator = init_integration.runtime_data
     assert coordinator.data.passes
-    assert coordinator._unsub_boundary is not None
+    assert coordinator._stop_waiting is not _nothing_to_stop
     assert await hass.config_entries.async_unload(init_integration.entry_id)
     assert init_integration.state is ConfigEntryState.NOT_LOADED
-    assert coordinator._unsub_boundary is None
+    assert coordinator._stop_waiting is _nothing_to_stop
 
 
 async def test_catalog_unavailable(
@@ -134,7 +139,7 @@ async def test_setup_errors_are_translatable(
         store_catalog(hass_storage, stored)
     mock_downloads["fetch_catalog"].side_effect = CatalogError("boom")
     mock_config_entry.add_to_hass(hass)
-    coordinator = SatelliteSpotterCoordinator(hass, mock_config_entry, async_get_catalog(hass))
+    coordinator = SatelliteSpotterCoordinator(hass, mock_config_entry, async_shared_catalog(hass))
     await coordinator.async_refresh()
     await coordinator.async_shutdown()
     error = coordinator.last_exception
@@ -231,7 +236,7 @@ async def test_catalog_goes_with_the_last_location(
 ) -> None:
     """The stored catalog stays while any location is left, a disabled one included."""
     freezer.move_to(NOW)
-    store_catalog(hass_storage, NOW - timedelta(hours=1))
+    store_catalog(hass_storage, NOW - timedelta(hours=3))
     other = _other_location()
     for entry in (mock_config_entry, other):
         await add_location(hass, entry)
@@ -243,26 +248,38 @@ async def test_catalog_goes_with_the_last_location(
     await hass.config_entries.async_remove(other.entry_id)
     await hass.async_block_till_done()
     assert STORAGE_KEY not in hass_storage
-    assert DATA_CATALOG not in hass.data
+    assert SHARED_CATALOG not in hass.data
 
 
-async def test_catalog_save_is_cancelled_with_the_last_location(
+async def test_a_catalog_too_new_to_replace_stays_for_a_location_added_back(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
     freezer: FrozenDateTimeFactory,
     mock_config_entry: MockConfigEntry,
     mock_downloads: dict[str, AsyncMock],
 ) -> None:
-    """A catalog downloaded moments before its location goes is not saved after all."""
+    """Within two hours of a download CelesTrak would refuse another, so none is asked for."""
     freezer.move_to(NOW)
+    fetch = mock_downloads["fetch_catalog"]
     await add_location(hass, mock_config_entry)
+    fetch.assert_awaited_once()
+    # Removed before its save was due: it is saved at once rather than lost.
     assert STORAGE_KEY not in hass_storage
-    # Home Assistant's own removal, which cancels the save still to come; the
-    # tests' stand-in for it only drops what is stored.
-    with patch.object(Store, "async_remove", STORE_REMOVE):
-        await hass.config_entries.async_remove(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
-    await advance(hass, freezer, NOW + timedelta(seconds=11))
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass_storage[STORAGE_KEY]["data"]["catalog"]
+    assert SHARED_CATALOG not in hass.data
+
+    again = _other_location()
+    await advance(hass, freezer, NOW + timedelta(hours=1, minutes=59))
+    await add_location(hass, again)
+    assert again.state is ConfigEntryState.LOADED
+    fetch.assert_awaited_once()
+
+    # Once another download is allowed it goes with the last location, as ever.
+    await advance(hass, freezer, NOW + timedelta(hours=2, seconds=1))
+    await hass.config_entries.async_remove(again.entry_id)
+    await hass.async_block_till_done()
     assert STORAGE_KEY not in hass_storage
 
 
@@ -274,9 +291,9 @@ async def test_cloud_cover_failure_is_tolerated(
 ) -> None:
     """Passes are still predicted without a cloud cover forecast."""
     assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 16
-    mock_downloads["fetch_cloud_cover"].side_effect = CloudCoverError("boom")
+    mock_downloads["fetch_forecast"].side_effect = CloudCoverError("boom")
     await advance(hass, freezer, NOW + timedelta(hours=2, seconds=1))
-    assert mock_downloads["fetch_cloud_cover"].await_count == 2
+    assert mock_downloads["fetch_forecast"].await_count == 2
     state = hass.states.get("sensor.home_next_pass")
     assert state.state not in ("unknown", "unavailable")
     assert state.attributes["cloud_cover"] is None
@@ -294,7 +311,7 @@ async def test_cloud_cover_can_be_switched_off(
     )
     await add_location(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
-    mock_downloads["fetch_cloud_cover"].assert_not_awaited()
+    mock_downloads["fetch_forecast"].assert_not_awaited()
     assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] is None
     assert entry.runtime_data.data.cloud_cover is None
 
@@ -318,7 +335,7 @@ async def test_requests_identify_the_integration(
     )
     start = int(NOW.replace(hour=0, minute=0).timestamp())
     aioclient_mock.get(
-        OPEN_METEO_URL,
+        FORECAST_URL,
         json={
             "hourly": {
                 "time": [start + 3600 * i for i in range(168)],
@@ -348,11 +365,11 @@ async def test_catalog_refreshed_twice_a_day(
 ) -> None:
     """Predictions every two hours from the cached catalog, a new download every twelve."""
     fetch = mock_downloads["fetch_catalog"]
-    manager = async_get_catalog(hass)
+    manager = async_shared_catalog(hass)
     for hours in (2, 4, 6, 8, 10):
         await advance(hass, freezer, NOW + timedelta(hours=hours, seconds=1))
     assert fetch.await_count == 1
-    assert mock_downloads["fetch_cloud_cover"].await_count == 6
+    assert mock_downloads["fetch_forecast"].await_count == 6
     assert manager.version == 1
 
     await advance(hass, freezer, NOW + timedelta(hours=12, seconds=1))
@@ -403,7 +420,7 @@ async def test_refusal_waits_two_hours(
     refused_at = NOW + timedelta(hours=12, seconds=1)
     await advance(hass, freezer, refused_at)
     assert fetch.await_count == 2
-    assert async_get_catalog(hass).last_error == "CelesTrak answered 403"
+    assert async_shared_catalog(hass).last_error == "CelesTrak answered 403"
 
     await advance(hass, freezer, refused_at + timedelta(seconds=STORAGE_SAVE_DELAY + 1))
     stored = hass_storage[STORAGE_KEY]["data"]
@@ -418,7 +435,7 @@ async def test_refusal_waits_two_hours(
     fetch.side_effect = None
     await advance(hass, freezer, refused_at + timedelta(hours=2, minutes=1))
     assert fetch.await_count == 3
-    assert async_get_catalog(hass).last_error is None
+    assert async_shared_catalog(hass).last_error is None
 
     await advance(hass, freezer, refused_at + timedelta(hours=2, minutes=1, seconds=11))
     assert "refused_until" not in hass_storage[STORAGE_KEY]["data"]
@@ -466,6 +483,101 @@ async def test_refusal_before_any_catalog_outlasts_a_restart(
     mock_downloads["fetch_catalog"].assert_not_awaited()
 
 
+async def test_refusal_outlasts_removing_the_last_location(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_config_entry: MockConfigEntry,
+    mock_downloads: dict[str, AsyncMock],
+    hass_storage: dict[str, Any],
+) -> None:
+    """Adding a location straight back must not ask CelesTrak again while it is refusing."""
+    freezer.move_to(NOW)
+    fetch = mock_downloads["fetch_catalog"]
+    fetch.side_effect = DownloadRefused("CelesTrak answered 403")
+    await add_location(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
+    fetch.assert_awaited_once()
+
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert SHARED_CATALOG not in hass.data
+    assert hass_storage[STORAGE_KEY]["data"] == {
+        "refused_until": (NOW + timedelta(hours=2)).isoformat(),
+        "last_error": "CelesTrak answered 403",
+    }
+
+    fetch.reset_mock()
+    again = _other_location()
+    await add_location(hass, again)
+    assert again.state is ConfigEntryState.SETUP_RETRY
+    assert again.reason == "No satellite catalog: CelesTrak answered 403"
+    fetch.assert_not_awaited()
+
+    # Once the two hours are up it asks again, and the refusal is gone with the download.
+    fetch.side_effect = None
+    await advance(hass, freezer, NOW + timedelta(hours=2, seconds=1))
+    await advance(hass, freezer, NOW + timedelta(hours=2, seconds=30))
+    fetch.assert_awaited_once()
+    assert again.state is ConfigEntryState.LOADED
+    await advance(hass, freezer, NOW + timedelta(hours=2, seconds=60))
+    assert "refused_until" not in hass_storage[STORAGE_KEY]["data"]
+
+
+async def test_a_catalog_and_its_refusal_stay_for_a_location_added_back(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_config_entry: MockConfigEntry,
+    mock_downloads: dict[str, AsyncMock],
+    hass_storage: dict[str, Any],
+) -> None:
+    """An old catalog still predicts while CelesTrak is refusing a newer one."""
+    freezer.move_to(NOW)
+    fetch = mock_downloads["fetch_catalog"]
+    store_catalog(hass_storage, NOW - timedelta(hours=13))
+    hass_storage[STORAGE_KEY]["data"]["refused_until"] = (NOW + timedelta(hours=1)).isoformat()
+    hass_storage[STORAGE_KEY]["data"]["last_error"] = "CelesTrak answered 403"
+    await add_location(hass, mock_config_entry)
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert {"catalog", "refused_until", "last_error"} <= set(hass_storage[STORAGE_KEY]["data"])
+
+    again = _other_location()
+    await add_location(hass, again)
+    assert again.state is ConfigEntryState.LOADED
+    fetch.assert_not_awaited()
+
+
+async def test_a_refusal_that_is_over_goes_with_the_last_location(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_config_entry: MockConfigEntry,
+    mock_downloads: dict[str, AsyncMock],
+    hass_storage: dict[str, Any],
+) -> None:
+    freezer.move_to(NOW)
+    store_catalog(hass_storage, NOW - timedelta(hours=3))
+    hass_storage[STORAGE_KEY]["data"]["refused_until"] = (NOW - timedelta(minutes=1)).isoformat()
+    hass_storage[STORAGE_KEY]["data"]["last_error"] = "CelesTrak answered 403"
+    await add_location(hass, mock_config_entry)
+    await hass.config_entries.async_remove(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert STORAGE_KEY not in hass_storage
+
+
+async def test_a_refusal_stays_when_nothing_has_read_it_yet(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """The last location was disabled, say, so that this run never loaded the catalog."""
+    freezer.move_to(NOW)
+    refusal = {
+        "refused_until": (NOW + timedelta(hours=1)).isoformat(),
+        "last_error": "CelesTrak answered 403",
+    }
+    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": refusal}
+    await async_remove_catalog(hass)
+    assert hass_storage[STORAGE_KEY]["data"] == refusal
+
+
 async def test_no_usable_satellites_waits_like_a_refusal(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
@@ -479,7 +591,7 @@ async def test_no_usable_satellites_waits_like_a_refusal(
     await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
     with pytest.raises(DownloadRefused):
-        await async_get_catalog(hass).async_get(retry_now=True)
+        await async_shared_catalog(hass).async_satellites(retry_now=True)
     assert fetch.await_count == 1
 
 
@@ -533,19 +645,19 @@ async def test_failed_refresh_keeps_the_catalog(
     assert caplog.text.count("Could not refresh the satellite catalog") == 1
 
     # Not asked again at the next prediction run, but after half an hour.
-    await async_get_catalog(hass).async_get()
+    await async_shared_catalog(hass).async_satellites()
     assert fetch.await_count == 2
     freezer.move_to(NOW + timedelta(hours=12, minutes=31))
-    await async_get_catalog(hass).async_get()
+    await async_shared_catalog(hass).async_satellites()
     assert fetch.await_count == 3
     # Quietly, the second time.
     assert caplog.text.count("Could not refresh the satellite catalog") == 1
 
     fetch.side_effect = None
     freezer.move_to(NOW + timedelta(hours=13, minutes=2))
-    await async_get_catalog(hass).async_get()
+    await async_shared_catalog(hass).async_satellites()
     assert "The satellite catalog downloaded again" in caplog.text
-    assert async_get_catalog(hass).last_error is None
+    assert async_shared_catalog(hass).last_error is None
 
 
 @pytest.mark.parametrize(
@@ -580,15 +692,15 @@ async def test_clock_set_back_ends_back_offs(
 ) -> None:
     """A back-off set while the clock ran fast does not outlast the correction."""
     fetch = mock_downloads["fetch_catalog"]
-    manager = async_get_catalog(hass)
+    manager = async_shared_catalog(hass)
     freezer.move_to(NOW + timedelta(days=30))
     fetch.side_effect = CatalogError("down")
     with pytest.raises(CatalogError):
-        await manager.async_get()
+        await manager.async_satellites()
 
     freezer.move_to(NOW)
     fetch.side_effect = None
-    assert len(await manager.async_get()) == 22
+    assert len(await manager.async_satellites()) == 22
     assert fetch.await_count == 2
 
 
@@ -626,7 +738,7 @@ async def test_unusable_satellites_are_skipped(
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert hass.states.get("sensor.home_next_pass").state == FIRST_PASS
     assert hass.states.get("sensor.home_catalog_updated").attributes["satellites"] == 22
-    manager = async_get_catalog(hass)
+    manager = async_shared_catalog(hass)
     assert set(manager.by_id()) == {s.norad_id for s in catalog}
     # The globe's description of the catalog can be built from what is left.
     payload = catalog_payload(manager.satellites, manager.updated, manager.version)
@@ -873,8 +985,8 @@ async def test_new_catalog_updates_every_location(
 
     # Half a day later another location is added, which fetches a new catalog.
     freezer.move_to(NOW + timedelta(hours=13))
-    manager = async_get_catalog(hass)
-    await manager.async_get()
+    manager = async_shared_catalog(hass)
+    await manager.async_satellites()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert manager.version == 2
     for entry, before in zip(entries, computed, strict=True):
@@ -974,9 +1086,9 @@ async def test_location_stays_out_of_logs(
     """A failed cloud cover request names its URL, coordinates included; none reach the log."""
     caplog.set_level(logging.DEBUG, logger="custom_components.satellite_spotter")
     freezer.move_to(NOW)
-    url = f"{OPEN_METEO_URL}?latitude=52.0907&longitude=5.1214&hourly=cloud_cover"
+    url = f"{FORECAST_URL}?latitude=52.0907&longitude=5.1214&hourly=cloud_cover"
     assert "52.0907" in str(_with_coordinates(url))
-    aioclient_mock.get(OPEN_METEO_URL, exc=_with_coordinates(url))
+    aioclient_mock.get(FORECAST_URL, exc=_with_coordinates(url))
     with patch(
         "custom_components.satellite_spotter.catalog.async_fetch_catalog",
         return_value=satellites(),

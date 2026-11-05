@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import itertools
 import json
@@ -28,10 +29,10 @@ from custom_components.satellite_spotter.const import (
     PREDICTION_REFRESH,
     UPCOMING_WINDOW,
 )
-from custom_components.satellite_spotter.coordinator import SatellitePass
-from custom_components.satellite_spotter.entity import compass, pass_title
+from custom_components.satellite_spotter.coordinator import ListedPass
+from custom_components.satellite_spotter.entity import compass
 from custom_components.satellite_spotter.links import info_url
-from custom_components.satellite_spotter.predict import Direction, Flyover, Satellite, Sighting
+from custom_components.satellite_spotter.predict import Moment, Satellite, Sighting
 
 from .common import HONOLULU, HONOLULU_ID, INTEGRATION, NOW, advance, aged, satellites
 
@@ -90,7 +91,7 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     for event, p in zip(events, data.passes, strict=True):
         assert dt_util.parse_datetime(event["start"]) == p.start
         assert dt_util.parse_datetime(event["end"]) == p.end
-        assert event["summary"] == f"🛰️ {pass_title(p)}" + (" (bright)" if p.bright else "")
+        assert event["summary"] == f"🛰️ {p.title}" + (" (bright)" if p.bright else "")
         assert event["description"].splitlines()[-1] == (
             f"Object: {p.lead.satellite.name} — "
             f"{info_url(p.lead.satellite.norad_id, p.lead.satellite.name)}"
@@ -100,11 +101,11 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     t = p.lead
     lines = events[0]["description"].splitlines()
     assert lines[:3] == [
-        f"At {dt_util.as_local(t.start):%H:%M:%S}, look toward {compass(t.appears.azimuth)}: "
-        f"{t.appears.elevation:.0f}° above the horizon.",
-        f"Best view at {dt_util.as_local(t.peak_time):%H:%M:%S}: "
-        f"{compass(t.peak.azimuth)}, {t.peak.elevation:.0f}° high, magnitude 0.2.",
-        f"Last visible at {dt_util.as_local(t.end):%H:%M:%S} toward "
+        f"Best view at {dt_util.as_local(t.brightest.time):%H:%M:%S}: "
+        f"{compass(t.brightest.azimuth)}, {t.brightest.elevation:.0f}° high, magnitude 0.2.",
+        f"First visible at {dt_util.as_local(t.appears.time):%H:%M:%S} toward "
+        f"{compass(t.appears.azimuth)}, {t.appears.elevation:.0f}° high.",
+        f"Last visible at {dt_util.as_local(t.vanishes.time):%H:%M:%S} toward "
         f"{compass(t.vanishes.azimuth)}, {t.vanishes.elevation:.0f}° high.",
     ]
     assert "Cloud cover near the pass: 16%" in events[0]["description"]
@@ -350,7 +351,7 @@ async def test_calendar_trigger_before_a_pass(
     assert not calls
     await advance(hass, freezer, pass_start - timedelta(minutes=15) + timedelta(seconds=1))
     assert len(calls) == 1
-    assert calls[0].data["summary"] == f"🛰️ {pass_title(p)}" + (" (bright)" if p.bright else "")
+    assert calls[0].data["summary"] == f"🛰️ {p.title}" + (" (bright)" if p.bright else "")
     assert calls[0].data["uid"] == p.id
     assert dt_util.parse_datetime(calls[0].data["start"]) == pass_start
 
@@ -362,17 +363,17 @@ async def test_calendar_trigger_before_a_pass(
 @pytest.mark.parametrize(
     ("language", "summary", "appears", "brightest"),
     [
-        ("de", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
+        ("de", "🛰️ BLUEWALKER-3 (hell)", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
          "Helligkeit 0,2"),
         # Regional variants get their language's text, as on the globe.
-        ("de-CH", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
+        ("de-CH", "🛰️ BLUEWALKER-3 (hell)", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
          "Helligkeit 0,2"),
         ("pt", "🛰️ BLUEWALKER-3 (brilhante)",
-         "Às {}, olhe para NO: 29° acima do horizonte.", "magnitude 0,2"),
+         "Visível pela primeira vez às {} na direção NO, a 29° de altura.", "magnitude 0,2"),
         ("fr", "🛰️ BLUEWALKER-3 (brillant)",
-         "À {}, regardez vers NO : 29° au-dessus de l'horizon.", "magnitude 0,2"),
+         "Première visibilité à {} vers NO, à 29° de hauteur.", "magnitude 0,2"),
         # Languages without a translation get English.
-        ("ja", "🛰️ BLUEWALKER-3 (bright)", "At {}, look toward NW: 29° above the horizon.",
+        ("ja", "🛰️ BLUEWALKER-3 (bright)", "First visible at {} toward NW, 29° high.",
          "magnitude 0.2"),
     ],
 )  # fmt: skip
@@ -388,8 +389,8 @@ async def test_events_follow_the_home_assistant_language(
     p = entry.runtime_data.data.passes[0]
     assert events[0]["summary"] == summary
     lines = events[0]["description"].splitlines()
-    assert lines[0] == appears.format(f"{dt_util.as_local(p.lead.start):%H:%M:%S}")
-    assert lines[1].endswith(f"{brightest}.")
+    assert lines[0].endswith(f"{brightest}.")
+    assert lines[1] == appears.format(f"{dt_util.as_local(p.lead.appears.time):%H:%M:%S}")
 
 
 def test_resolve_language() -> None:
@@ -405,15 +406,13 @@ def test_resolve_language() -> None:
     assert resolve_language("zh-Hans", available) == "en"
 
 
-def _pass(
-    start: datetime, magnitude: float, count: int = 1, cloud: int | None = 37
-) -> SatellitePass:
+def _pass(start: datetime, magnitude: float, count: int = 1, cloud: int | None = 37) -> ListedPass:
     """A pass made up for the text: NW to SE over the NE, 67 degrees up."""
     sat = Satellite(
         norad_id=25544,
         name="ISS",
-        magnitude=-1.8,
-        model=None,
+        standard_magnitude=-1.8,
+        curve=None,
         elements={},
         epoch=start - timedelta(days=1),
     )
@@ -421,33 +420,51 @@ def _pass(
     sightings = [
         Sighting(
             satellite=sat,
-            start=start + timedelta(seconds=10 * i),
-            end=end,
+            appears=Moment(start + timedelta(seconds=10 * i), 315.0, 10.2),
+            brightest=Moment(start + timedelta(minutes=3), 45.0, 67.4),
+            vanishes=Moment(end, 135.0, 24.6),
             peak_magnitude=magnitude,
-            before_sunset=False,
+            sun_up=False,
             sky_limit=4.0,
-            appears=Direction(315.0, 10.2),
-            peak=Direction(45.0, 67.4),
-            peak_time=start + timedelta(minutes=3),
-            vanishes=Direction(135.0, 24.6),
         )
         for i in range(count)
     ]
     peak = track.SkyPoint(start.timestamp() + 180, 45.0, 67.4)
     shape = track.SightingShape(peak, "rise", "shadow")
-    return SatellitePass(
+    return ListedPass(
         id=f"25544-{int(start.timestamp())}",
-        flyover=Flyover(sightings),
+        sightings=sightings,
         cloud_cover=cloud,
         shapes=[shape] * count,
         peak=peak,
     )
 
 
+def test_the_text_describes_the_brightest_satellite_of_a_pass() -> None:
+    """A Starlink appears first, but the title, the magnitude and the link are Tiangong's."""
+    start = datetime(2026, 11, 8, 4, 38, tzinfo=UTC)
+    train = _pass(start, 2.2, count=2)
+    starlink, other = train.sightings
+    tiangong = replace(
+        other,
+        satellite=replace(other.satellite, norad_id=48274, name="Tiangong"),
+        peak_magnitude=-2.1,
+    )
+    p = replace(train, sightings=[starlink, tiangong])
+    text = PassText(_common("en"))
+
+    assert text.summary(p) == "🛰️ Tiangong +1 (bright)"
+    description = text.description(p)
+    assert "-2.1" in description
+    assert "2.2" not in description
+    assert "Tiangong" in description.splitlines()[-1]
+
+
 def test_every_pass_lasts_at_least_a_second() -> None:
     noon = datetime(2026, 11, 6, 12, 0, tzinfo=UTC)
     p = _pass(noon, -1.0)
-    p.flyover.sightings[0].end = noon
+    sighting = p.sightings[0]
+    sighting.vanishes = sighting.vanishes._replace(time=noon)
     start, end = event_times(p)
     assert (start, end - start) == (noon, timedelta(seconds=1))
     assert start.tzinfo is not None
@@ -476,7 +493,7 @@ def test_every_language_describes_a_pass(language: str) -> None:
         p = _pass(when, magnitude, count, cloud)
         summary = text.summary(p)
         description = text.description(p)
-        assert pass_title(p) in summary
+        assert p.title in summary
         assert summary.startswith("🛰️ ")
         assert summary.endswith(")") is p.bright
         lines = description.splitlines()
@@ -485,16 +502,16 @@ def test_every_language_describes_a_pass(language: str) -> None:
         assert "}" not in description
         sep = local["decimal_separator"]
         number = {-3.44: f"-3{sep}4", -0.04: f"0{sep}0", 2.46: f"2{sep}5"}[magnitude]
-        assert number in lines[1]
-        assert "-0" not in lines[1]
-        assert local["compass_nw"] in lines[0]
-        assert local["compass_ne"] in lines[1]
+        assert number in lines[0]
+        assert "-0" not in lines[0]
+        assert local["compass_ne"] in lines[0]
+        assert local["compass_nw"] in lines[1]
         assert local["compass_se"] in lines[2]
         for line in lines[:3]:
             assert "°" in line
             assert dt_util.as_local(when).strftime("%H:") in line
-        if count > 1:
-            assert "2" in lines[3]
         if cloud is not None:
-            assert f"{cloud}" in lines[-2]
+            assert f"{cloud}" in lines[3]
+        if count > 1:
+            assert "2" in lines[-2]
         assert lines[-1].endswith("https://en.wikipedia.org/wiki/International_Space_Station")

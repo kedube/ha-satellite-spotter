@@ -104,9 +104,8 @@ export function notableMember(pass) {
 }
 
 /**
- * The satellite of a pass that gets brightest (the pass's magnitude is its):
- * the first satellite unless another outshines it, such as the ISS riding
- * along in another satellite's group.
+ * The satellite of a pass that gets brightest (the pass's magnitude is its).
+ * The integration lists it first, and this holds whatever the order.
  */
 export function brightestMember(pass) {
   let best = null;
@@ -149,7 +148,7 @@ const moonCache = new Map();
  */
 export function passMoon(pass, observer) {
   const t = pass?.peak?.time ?? (pass?.start + pass?.end) / 2;
-  if (!pass || pass.before_sunset || !Number.isFinite(t)) return null;
+  if (!pass || pass.sun_up || !Number.isFinite(t)) return null;
   if (!Number.isFinite(observer?.latitude) || !Number.isFinite(observer?.longitude)) return null;
   const key = `${t}|${observer.latitude}|${observer.longitude}|${observer.elevation ?? 0}`;
   if (moonCache.has(key)) return moonCache.get(key);
@@ -233,7 +232,7 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
 
   const badges = [
     pass.bright ? `<span class="badge star" title="${esc(fmt.t("passes.bright"))}">${theme.svgIcon("star")}</span>` : "",
-    pass.before_sunset
+    pass.sun_up
       ? `<span class="badge day" title="${esc(fmt.t("passes.daylight_hint"))}">${esc(fmt.t("passes.daylight"))}</span>`
       : "",
     member ? `<span class="badge with">${esc(fmt.t("passes.with", { name: member.name }))}</span>` : "",
@@ -269,7 +268,7 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
     fmt.time(pass.start),
     title,
     pass.bright ? fmt.t("passes.bright") : "",
-    pass.before_sunset ? fmt.t("passes.daylight") : "",
+    pass.sun_up ? fmt.t("passes.daylight") : "",
     member ? fmt.t("passes.with", { name: member.name }) : "",
     `${word}, ${fmt.t("passes.magnitude", { magnitude })}`,
     elevation ? fmt.t("passes.up_to", { elevation }) : "",

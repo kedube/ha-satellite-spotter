@@ -19,43 +19,60 @@ are no Home Assistant imports: everything here runs in executor jobs.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 import math
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
+from numpy.polynomial.polynomial import polyval
 from sgp4.api import Satrec, SatrecArray
 
 if TYPE_CHECKING:
     from .predict import Satellite
 
-# WGS84.
-_A = 6378137.0
-_B = 6356752.3142451793
-_E2 = 1.0 - (_B * _B) / (_A * _A)
-_AU_M = 149597870700.0
+# WGS84, which its equatorial radius and flattening define.
+_EQUATOR_M = 6378137.0
+_FLATTENING = 1 / 298.257223563
+_POLE_M = _EQUATOR_M * (1 - _FLATTENING)
+_ECCENTRICITY_SQUARED = _FLATTENING * (2 - _FLATTENING)
+_METRES_PER_AU = 149_597_870_700.0
 _EARTH_MU_KM = 398600.4418
 _EARTH_RADIUS_KM = 6378.137
 _UNIX_EPOCH_JD = 2440587.5
-_J2000_JD = 2451545.0
 _DAY_S = 86400.0
+# The epoch J2000 (2000 January 1, 12:00) in Unix seconds, and a Julian century.
+_J2000_S = 946_728_000.0
+_CENTURY_S = 36525 * _DAY_S
 
 # Below this a satellite counts as hidden, and a ray of sunlight that grazes the
 # Earth lower than this (through the troposphere) counts as blocked.
 MIN_ELEVATION = 10.0
-MIN_GRAZING_HEIGHT_M = 15000.0
+_SUNLIGHT_CLEARS_M = 15000.0
 _MIN_ELEVATION_RAD = math.radians(MIN_ELEVATION)
 _SIN_MIN_ELEVATION = math.sin(_MIN_ELEVATION_RAD)
 # A satellite must be this much brighter than the faintest star the sky shows.
 _SKY_MARGIN = 0.3
 
-# The faintest magnitude the sky shows, by the Sun's angle from the zenith: points
-# read from Weaver 1947, PASP 59, 232, fig. 2. Two departures from the curve: full
+# The faintest magnitude the sky shows, by the Sun's angle from the zenith in degrees:
+# points read from Weaver 1947, PASP 59, 232, fig. 2. Two departures from the curve: full
 # daylight at -4 where it shows about -3.2, and stopping at 4 where it goes on to 6
 # by 106 degrees, as a satellite is harder to find than a star.
-_LIMITING_MAGNITUDES = np.array([-4, -3.5, -2.5, -1, 0, 1, 2, 3, 4], dtype=float)
-_SUN_ANGLES = np.radians([0, 50, 82, 90, 93.2, 95.2, 96.4, 97.5, 100])
+_WEAVER_SKY = np.array(
+    [
+        [0, -4],
+        [50, -3.5],
+        [82, -2.5],
+        [90, -1],
+        [93.2, 0],
+        [95.2, 1],
+        [96.4, 2],
+        [97.5, 3],
+        [100, 4],
+    ]
+)
+_SKY_SUN_ANGLES = np.radians(_WEAVER_SKY[:, 0])
+_SKY_MAGNITUDES = _WEAVER_SKY[:, 1]
 # How much the air dims it, in magnitudes: Green 1992, ICQ 14, 55-59, table Ic ("summer").
 # http://www.icq.eps.harvard.edu/ICQExtinct.html
 # Each row is a zenith distance in degrees (the table's row for 1 degree stands for the
@@ -101,8 +118,8 @@ _GREEN_TABLE_IC = np.array(
 )  # fmt: skip
 _EXTINCTION_ELEVATIONS = np.radians(90 - _GREEN_TABLE_IC[:, 0])
 _EXTINCTIONS = _GREEN_TABLE_IC[:, 1:]
-# The ellipsoid grown by the grazing height; a ray to the Sun that misses it is lit.
-_GRAZING_RADII = np.array([_A, _A, _B]) + MIN_GRAZING_HEIGHT_M
+# The Earth with the air that stops sunlight, as an ellipsoid's three radii.
+_SHADOW_RADII = np.array([_EQUATOR_M, _EQUATOR_M, _POLE_M]) + _SUNLIGHT_CLEARS_M
 
 # Horizon search around a visible window: this far either side, this coarse.
 _SCAN_S = 1800.0
@@ -114,33 +131,20 @@ def _distance_dimming(distance_m: np.ndarray) -> np.ndarray:
     return 5 * np.log10(distance_m / 1e6)
 
 
-def _starlink_curve(
-    constant: float, linear: float, quadratic: float, cubic: float
-) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
-    """Return a published fit: the magnitude at 1000 km, cubic in the phase angle in degrees."""
-
-    def model(phase: np.ndarray, distance_m: np.ndarray) -> np.ndarray:
-        degrees = np.clip(np.degrees(phase), 15, 155)
-        at_1000_km = np.polyval([cubic, quadratic, linear, constant], degrees)
-        magnitude: np.ndarray = at_1000_km + _distance_dimming(distance_m)
-        return magnitude
-
-    return model
-
-
-# How much brighter than half lit a satellite is fully lit, by the formula in photometry().
+# How much brighter than half lit a satellite is fully lit, by the formula in _unobscured().
 _FULLY_LIT_GAIN = 2.5 * math.log10(2)
 
-# Starlinks, by the catalog's MODEL field. Direct-to-cell satellites: the phase
-# function in Mallama et al. 2025, arXiv:2502.03651, table 1. Those still raising
-# their orbits, before brightness mitigation starts at 357 km: the same curve, moved
-# by the difference between its mean of 6.47 and their mean of 4.58 at 1000 km
-# (Mallama et al. 2024, arXiv:2405.12007).
-_BRIGHTNESS_MODELS: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
-    "starlink-dtc": _starlink_curve(3.365, 0.06376, -1.716e-4, -1.139e-6),
-    "starlink-raising": _starlink_curve(3.365 - (6.47 - 4.58), 0.06376, -1.716e-4, -1.139e-6),
+# Starlinks, by the curve they follow: the magnitude at 1000 km as a cubic in the phase
+# angle in degrees, constant term first. Direct-to-cell satellites: the phase function in
+# Mallama et al. 2025, arXiv:2502.03651, table 1. Those still raising their orbits, before
+# brightness mitigation starts at 357 km: the same curve, moved by the difference between
+# its mean of 6.47 and their mean of 4.58 at 1000 km (Mallama et al. 2024, arXiv:2405.12007).
+_STARLINK_CUBICS = {
+    "starlink-dtc": (3.365, 0.06376, -1.716e-4, -1.139e-6),
+    "starlink-raising": (3.365 - (6.47 - 4.58), 0.06376, -1.716e-4, -1.139e-6),
 }
-_PHASE_GRID = np.radians(np.arange(0.0, 181.0))
+# The phase angles those were fitted to, in degrees; beyond them they hold the nearest.
+_STARLINK_PHASES = (15.0, 155.0)
 _MIN_PERIGEE_M = 100_000.0
 
 
@@ -159,23 +163,20 @@ class Observer:
     )
 
     def __init__(self, latitude: float, longitude: float, elevation_m: float = 0.0) -> None:
-        """Place the observer on the WGS84 ellipsoid."""
+        """Place the observer above the WGS84 ellipsoid."""
         self.latitude = latitude
         self.longitude = longitude
         self.elevation_m = elevation_m
-        lat, lon = math.radians(latitude), math.radians(longitude)
-        sl, cl, so, co = math.sin(lat), math.cos(lat), math.sin(lon), math.cos(lon)
-        n = _A / math.sqrt(1 - _E2 * sl * sl)
-        self.position = np.array(
-            [
-                (n + elevation_m) * cl * co,
-                (n + elevation_m) * cl * so,
-                (n * (1 - _E2) + elevation_m) * sl,
-            ]
+        phi, lam = math.radians(latitude), math.radians(longitude)
+        self.normal = np.array(
+            [math.cos(phi) * math.cos(lam), math.cos(phi) * math.sin(lam), math.sin(phi)]
         )
-        self.normal = np.array([cl * co, cl * so, sl])
-        self.east = np.array([-so, co, 0.0])
-        self.north = np.array([-sl * co, -sl * so, cl])
+        self.east = np.array([-math.sin(lam), math.cos(lam), 0.0])
+        self.north = np.cross(self.normal, self.east)
+        # Up from the ellipsoid does not pass through the Earth's centre, but this far from it.
+        curvature = _EQUATOR_M / math.sqrt(1 - _ECCENTRICITY_SQUARED * math.sin(phi) ** 2)
+        off_centre = curvature * _ECCENTRICITY_SQUARED * math.sin(phi)
+        self.position = (curvature + elevation_m) * self.normal - np.array([0.0, 0.0, off_centre])
         # The air's dimming from this height, between the table's columns. Above its
         # 3 km this keeps to that column, and below sea level to that one.
         self.extinctions = np.array(
@@ -229,44 +230,65 @@ def julian(ts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return _UNIX_EPOCH_JD + whole, days - whole
 
 
-def gmst(jd: np.ndarray) -> np.ndarray:
-    """Greenwich mean sidereal time in radians (IAU-82, as SGP4's TEME frame uses)."""
-    t = (jd - _J2000_JD) / 36525.0
-    seconds = (
-        -6.2e-6 * t**3 + 0.093104 * t**2 + (876600.0 * 3600 + 8640184.812866) * t + 67310.54841
+def _centuries(ts: np.ndarray) -> np.ndarray:
+    """Julian centuries since J2000 at Unix times."""
+    centuries: np.ndarray = (np.asarray(ts, dtype=float) - _J2000_S) / _CENTURY_S
+    return centuries
+
+
+def _earth_turned(ts: np.ndarray) -> np.ndarray:
+    """How far the Earth has turned at Unix times, in radians: Greenwich mean sidereal time.
+
+    Aoki et al. 1982 (IAU 1982), which SGP4's TEME frame is defined by, as seconds of
+    sidereal time for any time of day (Vallado et al. 2006, AIAA 2006-6753). UTC stands
+    in for UT1, as it does for the elements.
+    """
+    seconds = polyval(
+        _centuries(ts), (67310.54841, 876600.0 * 3600 + 8640184.812866, 0.093104, -6.2e-6)
     )
-    return np.radians((seconds % _DAY_S) / 240.0)
+    turned: np.ndarray = np.mod(seconds, _DAY_S) * (math.tau / _DAY_S)
+    return turned
 
 
-def _rotate_z(vec: np.ndarray, angle: np.ndarray) -> np.ndarray:
-    """Rotate inertial vectors (..., 3) into the Earth-fixed frame."""
-    c, s = np.cos(angle), np.sin(angle)
-    out = np.empty_like(vec)
-    out[..., 0] = vec[..., 0] * c + vec[..., 1] * s
-    out[..., 1] = -vec[..., 0] * s + vec[..., 1] * c
-    out[..., 2] = vec[..., 2]
-    return out
+def _earth_fixed(inertial: np.ndarray, turned: np.ndarray) -> np.ndarray:
+    """Turn inertial positions (..., 3) with the Earth, each by its angle in radians.
 
-
-def sun_ecef(jd: np.ndarray) -> np.ndarray:
-    """Return the Sun's Earth-fixed position in metres (Astronomical Almanac, ~0.01 degree)."""
-    n = jd - _J2000_JD
-    mean_lon = np.radians(280.460 + 0.9856474 * n)
-    g = np.radians(357.528 + 0.9856003 * n)
-    lam = mean_lon + np.radians(1.915 * np.sin(g) + 0.020 * np.sin(2 * g))
-    eps = np.radians(23.439 - 0.0000004 * n)
-    dist = (1.00014 - 0.01671 * np.cos(g) - 0.00014 * np.cos(2 * g)) * _AU_M
-    eci = np.stack(
-        [dist * np.cos(lam), dist * np.cos(eps) * np.sin(lam), dist * np.sin(eps) * np.sin(lam)],
-        axis=-1,
-    )
-    return _rotate_z(eci, gmst(jd))
+    Only the equatorial plane turns, which as complex numbers is one multiplication.
+    """
+    equatorial = (inertial[..., 0] + 1j * inertial[..., 1]) * np.exp(-1j * turned)
+    return np.stack((equatorial.real, equatorial.imag, inertial[..., 2]), axis=-1)
 
 
 def sun_at(ts: np.ndarray) -> np.ndarray:
-    """Return the Sun's Earth-fixed position (metres) at Unix times."""
-    jd, fr = julian(ts)
-    return sun_ecef(jd + fr)
+    """Return the Sun's Earth-fixed position (metres) at Unix times.
+
+    Meeus 1998, Astronomical Algorithms, chapter 25, "Solar coordinates: low accuracy",
+    good to 0.01 degree, with chapter 22's mean obliquity. It leaves out nutation, as
+    mean sidereal time does. UTC stands in for dynamical time: the minute between them
+    moves the Sun by under 0.001 degree.
+    """
+    t = _centuries(ts)
+    # Coefficients as the book prints them, constant term first; angles in degrees.
+    anomaly = np.radians(polyval(t, (357.52911, 35999.05029, -0.0001537)))
+    eccentricity = polyval(t, (0.016708634, -0.000042037, -0.0000001267))
+    centre = np.radians(
+        polyval(t, (1.914602, -0.004817, -0.000014)) * np.sin(anomaly)
+        + polyval(t, (0.019993, -0.000101)) * np.sin(2 * anomaly)
+        + 0.000289 * np.sin(3 * anomaly)
+    )
+    aberration = np.radians(0.00569)
+    longitude = np.radians(polyval(t, (280.46646, 36000.76983, 0.0003032))) + centre - aberration
+    tilt = np.radians(
+        polyval(
+            t, (23 + 26 / 60 + 21.448 / 3600, -46.8150 / 3600, -0.00059 / 3600, 0.001813 / 3600)
+        )
+    )
+    au = 1.000001018 * (1 - eccentricity**2) / (1 + eccentricity * np.cos(anomaly + centre))
+    direction = np.stack(
+        (np.cos(longitude), np.cos(tilt) * np.sin(longitude), np.sin(tilt) * np.sin(longitude)),
+        axis=-1,
+    )
+    return _earth_fixed(direction * (au * _METRES_PER_AU)[..., None], _earth_turned(ts))
 
 
 def propagate(satrecs: Sequence[Satrec], ts: np.ndarray) -> np.ndarray:
@@ -278,47 +300,89 @@ def propagate(satrecs: Sequence[Satrec], ts: np.ndarray) -> np.ndarray:
     jd, fr = julian(ts)
     failed, km, _ = SatrecArray(list(satrecs)).sgp4(jd, fr)
     metres = np.where(failed[..., None] != 0, np.nan, km * 1000.0)
-    return _rotate_z(metres, gmst(jd + fr)[None, :])
+    return _earth_fixed(metres, _earth_turned(ts))
 
 
 def geodetic(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Latitude and longitude in degrees and height in km of Earth-fixed positions."""
     x, y, z = pos[..., 0], pos[..., 1], pos[..., 2]
     p = np.hypot(x, y)
-    lat = np.arctan2(z, p * (1 - _E2))
+    lat = np.arctan2(z, p * (1 - _ECCENTRICITY_SQUARED))
     for _ in range(4):
         s = np.sin(lat)
-        lat = np.arctan2(z + _E2 * (_A / np.sqrt(1 - _E2 * s * s)) * s, p)
+        curvature = _EQUATOR_M / np.sqrt(1 - _ECCENTRICITY_SQUARED * s * s)
+        lat = np.arctan2(z + _ECCENTRICITY_SQUARED * curvature * s, p)
     s = np.sin(lat)
-    height = p * np.cos(lat) + z * s - _A * np.sqrt(1 - _E2 * s * s)
+    height = p * np.cos(lat) + z * s - _EQUATOR_M * np.sqrt(1 - _ECCENTRICITY_SQUARED * s * s)
     return np.degrees(lat), np.degrees(np.arctan2(y, x)), height / 1000.0
+
+
+def _altitude(observer: Observer, towards: np.ndarray, distance: np.ndarray) -> np.ndarray:
+    """Radians above the observer's horizon of a line of sight of this length."""
+    altitude: np.ndarray = np.arcsin(np.clip(towards @ observer.normal / distance, -1, 1))
+    return altitude
+
+
+def _sun_from_zenith(observer: Observer, sun: np.ndarray) -> np.ndarray:
+    """Radians between straight up and the Sun at positions (..., 3)."""
+    angle: np.ndarray = np.arccos(
+        np.clip(sun @ observer.normal / np.linalg.norm(sun, axis=-1), -1, 1)
+    )
+    return angle
 
 
 def look(observer: Observer, pos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Azimuth and elevation in degrees and range in metres of positions (..., 3)."""
-    d = pos - observer.position
-    distance = np.linalg.norm(d, axis=-1)
-    elevation = np.pi / 2 - np.arccos(np.clip(d @ observer.normal / distance, -1, 1))
-    azimuth = np.degrees(np.arctan2(d @ observer.east, d @ observer.north)) % 360
-    return azimuth, np.degrees(elevation), distance
+    towards = pos - observer.position
+    distance = np.linalg.norm(towards, axis=-1)
+    azimuth = np.degrees(np.arctan2(towards @ observer.east, towards @ observer.north)) % 360
+    return azimuth, np.degrees(_altitude(observer, towards, distance)), distance
 
 
 def sunlit(origin: np.ndarray, direction: np.ndarray) -> np.ndarray:
-    """Whether rays from positions towards the Sun clear the grazing ellipsoid.
+    """Whether sunlight reaches positions (..., 3), given the direction (..., 3) of the Sun.
 
-    The ray must miss the ellipsoid grown by the grazing height, a quadratic
-    in the space where that ellipsoid is the unit sphere.
+    Stretch space until the Earth and the air that stops sunlight (_SHADOW_RADII) make a
+    unit sphere. A point is then lit if it lies outside the sphere, and the straight line
+    to the Sun either leads away from the sphere or passes it by.
     """
-    so, sd = origin / _GRAZING_RADII, direction / _GRAZING_RADII
-    a = np.einsum("ij,ij->i", sd, sd)
-    b = np.einsum("ij,ij->i", so, sd)
-    c = np.einsum("ij,ij->i", so, so) - 1.0
-    # In shadow if inside, or heading inwards and meeting it.
-    lit: np.ndarray = (c >= 0) & ((b >= 0) | (b * b - a * c <= 0))
+    point = origin / _SHADOW_RADII
+    towards_sun = direction / _SHADOW_RADII
+    towards_sun = towards_sun / np.linalg.norm(towards_sun, axis=-1, keepdims=True)
+    from_centre_sq = np.sum(point * point, axis=-1)
+    outward = np.sum(point * towards_sun, axis=-1)
+    closest_sq = from_centre_sq - outward * outward
+    lit: np.ndarray = (from_centre_sq >= 1) & ((outward >= 0) | (closest_sq >= 1))
     return lit
 
 
 # --- Brightness --------------------------------------------------------------
+
+
+def _starlink_at_1000_km(model: str, phase_degrees: np.ndarray) -> np.ndarray:
+    """Return a Starlink's magnitude 1000 km away, by its published fit."""
+    magnitude: np.ndarray = polyval(
+        np.clip(phase_degrees, *_STARLINK_PHASES), _STARLINK_CUBICS[model]
+    )
+    return magnitude
+
+
+def _unobscured(sat: Satellite, cos_phase: np.ndarray, distance: np.ndarray) -> np.ndarray:
+    """How bright it looks at this distance and phase, before the air; NaN when unknown."""
+    if sat.curve in _STARLINK_CUBICS:
+        phase = np.degrees(np.arccos(np.clip(cos_phase, -1, 1)))
+        fitted: np.ndarray = _starlink_at_1000_km(sat.curve, phase) + _distance_dimming(distance)
+        return fitted
+    if sat.standard_magnitude is None:
+        return np.full_like(distance, np.nan)
+    # Mini-MegaTORTORA's standard magnitude run backwards (Karpov et al. 2016): it is for
+    # 1000 km and half lit, so range and the lit fraction, which is (1 + cos phase) / 2 of
+    # the disc. See scripts/make_brightness_table.py.
+    lit = 1 + np.clip(cos_phase, -1, 1)
+    magnitude: np.ndarray = (
+        sat.standard_magnitude + _distance_dimming(distance) - 2.5 * np.log10(lit)
+    )
+    return magnitude
 
 
 def photometry(sat: Satellite, observer: Observer, pos: np.ndarray, sun: np.ndarray) -> Photometry:
@@ -327,37 +391,30 @@ def photometry(sat: Satellite, observer: Observer, pos: np.ndarray, sun: np.ndar
     The magnitude is kept even where the satellite is too low, too faint or in
     shadow; ``visible`` applies the cutoffs.
     """
-    user_to_sat = pos - observer.position
-    distance = np.linalg.norm(user_to_sat, axis=-1)
+    towards = pos - observer.position
+    to_sun = sun - pos
+    distance = np.linalg.norm(towards, axis=-1)
     with np.errstate(invalid="ignore", divide="ignore"):
-        elevation = np.pi / 2 - np.arccos(np.clip(user_to_sat @ observer.normal / distance, -1, 1))
-        sun_angle = np.arccos(np.clip(sun @ observer.normal / np.linalg.norm(sun, axis=-1), -1, 1))
-        sat_to_sun = sun - pos
-        cos_phase = np.einsum("ij,ij->i", -user_to_sat, sat_to_sun) / (
-            distance * np.linalg.norm(sat_to_sun, axis=-1)
+        elevation = _altitude(observer, towards, distance)
+        sun_angle = _sun_from_zenith(observer, sun)
+        # The angle at the satellite, from the Sun round to the observer.
+        cos_phase = -np.sum(towards * to_sun, axis=-1) / (
+            distance * np.linalg.norm(to_sun, axis=-1)
         )
-        phase = np.arccos(np.clip(cos_phase, -1, 1))
-        extinction = np.interp(elevation, _EXTINCTION_ELEVATIONS, observer.extinctions)
-        model = _BRIGHTNESS_MODELS.get(sat.model or "")
-        if model is not None:
-            magnitude = model(phase, distance) + extinction
-        elif sat.magnitude is not None:
-            # Mini-MegaTORTORA's standard magnitude run backwards (Karpov et al. 2016): it is
-            # for 1000 km and half lit, so range, extinction and the lit fraction, which is
-            # (1 + cos phase) / 2 of the disc. See scripts/make_brightness_table.py.
-            lit = 1 + np.clip(cos_phase, -1, 1)
-            magnitude = (
-                sat.magnitude + _distance_dimming(distance) + extinction - 2.5 * np.log10(lit)
-            )
-        else:
-            magnitude = np.full(len(pos), np.nan)
-    magnitude = np.where(np.isfinite(magnitude), magnitude, np.nan)
-    limiting = np.interp(sun_angle, _SUN_ANGLES, _LIMITING_MAGNITUDES, left=-100.0)
-    return Photometry(elevation, distance, sun_angle, sunlit(pos, sat_to_sun), magnitude, limiting)
+        air = np.interp(elevation, _EXTINCTION_ELEVATIONS, observer.extinctions)
+        apparent = _unobscured(sat, cos_phase, distance) + air
+    return Photometry(
+        elevation,
+        distance,
+        sun_angle,
+        sunlit(pos, to_sun),
+        np.where(np.isfinite(apparent), apparent, np.nan),
+        limiting_magnitude(sun_angle),
+    )
 
 
-def visible(ph: Photometry, max_magnitude: float | None = None) -> np.ndarray:
-    """Where the satellite counts as visible (and below max_magnitude)."""
+def visible(ph: Photometry, faintest: float | None = None) -> np.ndarray:
+    """Where the satellite counts as visible (and brighter than the faintest asked for)."""
     with np.errstate(invalid="ignore"):
         result: np.ndarray = (
             (ph.elevation >= _MIN_ELEVATION_RAD)
@@ -365,21 +422,20 @@ def visible(ph: Photometry, max_magnitude: float | None = None) -> np.ndarray:
             & ph.lit
             & (ph.magnitude <= ph.limiting - _SKY_MARGIN)
         )
-        if max_magnitude is not None:
-            result &= ph.magnitude < max_magnitude
+        if faintest is not None:
+            result &= ph.magnitude < faintest
     return result
 
 
 def limiting_magnitude(sun_angle: np.ndarray) -> np.ndarray:
     """Return the faintest magnitude the sky shows, by the Sun's angle from the zenith."""
-    limit: np.ndarray = np.interp(sun_angle, _SUN_ANGLES, _LIMITING_MAGNITUDES, left=-100.0)
+    limit: np.ndarray = np.interp(sun_angle, _SKY_SUN_ANGLES, _SKY_MAGNITUDES)
     return limit
 
 
 def sky_limit(observer: Observer, sun: np.ndarray) -> np.ndarray:
     """Return how bright a satellite must be to count as visible, with the Sun at sun (n, 3)."""
-    sun_angle = np.arccos(np.clip(sun @ observer.normal / np.linalg.norm(sun, axis=-1), -1, 1))
-    return limiting_magnitude(sun_angle) - _SKY_MARGIN
+    return limiting_magnitude(_sun_from_zenith(observer, sun)) - _SKY_MARGIN
 
 
 def above_horizon(observer: Observer, pos: np.ndarray) -> np.ndarray:
@@ -391,15 +447,15 @@ def above_horizon(observer: Observer, pos: np.ndarray) -> np.ndarray:
 
 def brightest_possible(sat: Satellite, observer: Observer) -> float:
     """Return a magnitude it can never beat from here: overhead, at perigee, fully lit."""
-    distance = max(apsides_km(sat)[0] * 1000.0, _MIN_PERIGEE_M)
-    model = _BRIGHTNESS_MODELS.get(sat.model or "")
-    if model is not None:
-        best = float(model(_PHASE_GRID, np.full_like(_PHASE_GRID, distance)).min())
-    elif sat.magnitude is None:
+    if sat.curve in _STARLINK_CUBICS:
+        low, high = _STARLINK_PHASES
+        at_1000_km = float(_starlink_at_1000_km(sat.curve, np.arange(low, high + 1)).min())
+    elif sat.standard_magnitude is None:
         return math.inf
     else:
-        best = sat.magnitude + 5 * math.log10(distance * 1e-6) - _FULLY_LIT_GAIN
-    return best + float(observer.extinctions.min())
+        at_1000_km = sat.standard_magnitude - _FULLY_LIT_GAIN
+    closest = max(apsides_km(sat)[0] * 1000.0, _MIN_PERIGEE_M)
+    return at_1000_km + 5 * math.log10(closest / 1e6) + float(observer.extinctions.min())
 
 
 # --- Passes ------------------------------------------------------------------
@@ -465,7 +521,7 @@ def pass_track(
     start: float,
     end: float,
     step: float,
-    max_magnitude: float,
+    faintest: float,
 ) -> PassTrack | None:
     """Rows from just below the horizon before a visible window to just below it after.
 
@@ -487,7 +543,7 @@ def pass_track(
     with np.errstate(invalid="ignore"):
         azimuth, elevation, distance = look(observer, pos)
         ph = photometry(sat, observer, pos, sun_at(ts))
-        shown = visible(ph, max_magnitude)
+        shown = visible(ph, faintest)
     # The run above the horizon that holds the visible window, and one sample
     # either side (below the horizon) so the crossing can be interpolated.
     above = elevation > 0
@@ -593,12 +649,9 @@ class Positions(NamedTuple):
 def positions(satrecs: Sequence[Satrec], ts: np.ndarray) -> Positions:
     """Where every satellite is at the given times, and whether it is sunlit."""
     pos = propagate(satrecs, ts)
-    count, times = pos.shape[:2]
     with np.errstate(invalid="ignore"):
         lat, lon, alt = geodetic(pos)
-        flat = pos.reshape(-1, 3)
-        to_sun = (sun_at(ts)[None, :, :] - pos).reshape(-1, 3)
-        lit = sunlit(flat, to_sun).reshape(count, times)
+        lit = sunlit(pos, sun_at(ts) - pos)
     return Positions(np.isfinite(pos).all(axis=(1, 2)), lat, lon, alt, lit)
 
 

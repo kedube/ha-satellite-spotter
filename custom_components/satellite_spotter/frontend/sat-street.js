@@ -2152,7 +2152,7 @@ export class SatelliteStreetView extends BaseElement {
     setText(els.when, pass ? `${f.dateTime(pass.start)} · ${f.duration?.(pass.duration ?? pass.end - pass.start) ?? ""}` : "");
     const chips = [];
     if (pass?.bright) chips.push(`<span class="chip gold">★ ${escapeHtml(this._t("street.bright"))}</span>`);
-    if (pass?.before_sunset) chips.push(`<span class="chip warn">${escapeHtml(this._t("street.daylight"))}</span>`);
+    if (pass?.sun_up) chips.push(`<span class="chip warn">${escapeHtml(this._t("street.daylight"))}</span>`);
     els.chips.innerHTML = chips.join("");
     this._measureHud();
   }

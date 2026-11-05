@@ -11,14 +11,12 @@ from typing import Any
 import homeassistant
 import pytest
 
-from custom_components.satellite_spotter.binary_sensor import BINARY_SENSORS
 from custom_components.satellite_spotter.const import (
     CATALOG_STALE_UPSTREAM,
     ISSUE_CATALOG_STALE,
     STREET_SOURCES,
     UNITS,
 )
-from custom_components.satellite_spotter.sensor import SENSORS
 
 from .common import INTEGRATION, ROOT
 
@@ -77,8 +75,8 @@ def test_entities_have_names_and_icons() -> None:
     strings = _load(INTEGRATION / "strings.json")["entity"]
     icons = _load(INTEGRATION / "icons.json")["entity"]
     keys = {
-        "sensor": {d.key for d in SENSORS},
-        "binary_sensor": {d.key for d in BINARY_SENSORS},
+        "sensor": {"next_pass", "next_bright_pass", "passes_next_24h", "catalog_updated"},
+        "binary_sensor": {"pass_in_progress", "bright_pass_soon"},
         "calendar": {"passes"},
     }
     assert {platform: set(names) for platform, names in strings.items()} == keys
