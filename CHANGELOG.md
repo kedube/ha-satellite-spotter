@@ -4,6 +4,40 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.12
+
+- **The integration's Python code is rewritten.** Its prediction, catalogue, entity and setup modules were
+  written anew from a written specification and the tests, by an author that did not see the earlier
+  code. In a test across ten cities the same passes were predicted, 2 of 434 starting a second earlier.
+
+## 1.11
+
+- **If you imported the notification blueprint, import it again.** An imported copy does not update
+  itself, and the old one cannot recognise bright passes under the new event titles, so by default
+  it would stop notifying.
+- **Pass attributes have new names, so automations that read them need updating.** Entity ids stay the
+  same.
+  - `satellite` is now `object_name`, `norad_id` is `catalog_number`, `info_url` is `about_url`.
+  - `satellite_count` is now `object_count`, and `satellites` is `objects`.
+  - `magnitude` is now `peak_magnitude`, `bright` is `is_bright`, `cloud_cover` is `cloud_percent`.
+  - `start` is now `begins`, `end` is `ends`, `duration` is `length_seconds`.
+  - `brightest_time`, `_direction`, `_azimuth` and `_elevation` are now `best_view_time` and so on.
+  - In the `passes` list, `satellite` is now `title`, and `direction` is `appears_direction`. The other
+    fields there follow the names above.
+  - On the catalogue sensor, `satellites` is now `catalog_size`.
+- **Calendar event titles are new**, the same in every language: `🌟 ISS` for a bright pass and `🔭 ISS`
+  for any other, in place of `🛰️ ISS (bright)`. An automation that reads the old title needs updating.
+  Notification titles no longer start with a satellite symbol.
+- **A pass's id is now the moment it starts**, as in `1793855312`. A link to a pass from before updating
+  no longer opens it.
+- **"About" links** go to Wikipedia for the ISS, Tiangong and Hubble, and to the satellite's page on N2YO
+  for everything else.
+- **Hide Starlink keeps bright passes.** A bright rocket stage flying among Starlinks stays in the list.
+- **"Starlink train" counts only the Starlinks**, not what flies with them.
+- **The street view moves less in big groups.** It stays with a satellite while it is up, then takes the
+  one that will stay longest, and with none up it waits where the next will appear.
+- `LICENSE.wildekek` is gone.
+
 ## 1.10
 
 - **Starlink trains are trains again.** 1.09 stopped showing one as a train when something

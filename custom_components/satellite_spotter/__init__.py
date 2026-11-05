@@ -1,4 +1,4 @@
-"""Satellite Spotter: when satellites are visible from home, on a 3D globe and at street level."""
+"""Satellite Spotter: when satellites can be seen from a place."""
 
 from __future__ import annotations
 
@@ -10,88 +10,73 @@ from homeassistant.helpers.typing import ConfigType
 
 from .catalog import async_remove_catalog, async_shared_catalog
 from .const import DOMAIN
-from .coordinator import SatelliteSpotterCoordinator
+from .coordinator import PredictionSettings, SatelliteSpotterCoordinator
 from .frontend import async_clear_stale_issue, async_setup_frontend, async_update_panel
-
-PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
-
-type SatelliteSpotterConfigEntry = ConfigEntry[SatelliteSpotterCoordinator]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+type SatelliteSpotterConfigEntry = ConfigEntry[SatelliteSpotterCoordinator]
+
+
+def _platforms(settings: PredictionSettings) -> list[Platform]:
+    platforms = [Platform.BINARY_SENSOR, Platform.SENSOR]
+    if settings.show_in_calendar:
+        platforms.append(Platform.CALENDAR)
+    return platforms
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the dashboard cards and the sidebar panel."""
+    """Serve the frontend."""
     await async_setup_frontend(hass)
     return True
 
 
-def _platforms(coordinator: SatelliteSpotterCoordinator) -> list[Platform]:
-    """Return the platforms of a location: the calendar only while it is switched on.
+@callback
+def _async_remove_calendar(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
+    """Take away a calendar that is switched off, rather than leave it behind unavailable."""
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.domain == Platform.CALENDAR:
+            registry.async_remove(entity.entity_id)
 
-    The settings are the ones the location was set up with, so a reload after
-    an options change unloads the platforms that were loaded.
-    """
-    if coordinator.settings.show_in_calendar:
-        return [*PLATFORMS, Platform.CALENDAR]
-    return PLATFORMS
+
+@callback
+def _async_keep_refreshing() -> None:
+    """Do nothing: as a listener, it keeps predictions refreshing with every entity disabled."""
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> bool:
-    """Set up a location from a config entry."""
-    # The panel follows the enabled locations, so it is there (and says what
-    # it is waiting for) even while setup retries.
+    """Set up a location."""
+    # First, so that the page is there to say why while setup retries.
     await async_update_panel(hass, adding=entry)
-
     coordinator = SatelliteSpotterCoordinator(hass, entry, async_shared_catalog(hass))
     if not coordinator.settings.show_in_calendar:
         _async_remove_calendar(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-    # The coordinator refreshes only while something listens, and the panel
-    # and the cards read it without an entity: keep the predictions (and the
-    # shared catalog) up to date even with every entity disabled.
-    entry.async_on_unload(coordinator.async_add_listener(lambda: None))
-
-    await hass.config_entries.async_forward_entry_setups(entry, _platforms(coordinator))
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    entry.async_on_unload(coordinator.async_add_listener(_async_keep_refreshing))
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms(coordinator.settings))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload a location, by the options it was set up with: they may have changed since."""
     unloaded = await hass.config_entries.async_unload_platforms(
-        entry, _platforms(entry.runtime_data)
+        entry, _platforms(entry.runtime_data.settings)
     )
     if unloaded:
-        # A reload keeps the panel (the entry is still enabled); disabling the
-        # entry, which happens before the unload, removes it. A reload also
-        # keeps the repair issue, and the user's "Ignore" with it.
         await async_update_panel(hass)
     return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
-    """Remove the panel and the repair issue with the last enabled location.
-
-    The stored catalog goes once no location is left, disabled ones counted
-    (Home Assistant has already dropped this one from its entries).
-    """
+    """Clean up after a location; the catalog goes with the last one, disabled ones counting."""
     await async_update_panel(hass, removing=entry)
     async_clear_stale_issue(hass)
-    if not hass.config_entries.async_entries(DOMAIN):
+    if all(other is entry for other in hass.config_entries.async_entries(DOMAIN)):
         await async_remove_catalog(hass)
-
-
-async def _async_update_listener(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
-    """Reload when the options or the location change."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-@callback
-def _async_remove_calendar(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
-    """Drop the calendar once it is switched off, rather than leave it behind unavailable."""
-    ent_reg = er.async_get(hass)
-    for entity in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-        if entity.domain == Platform.CALENDAR:
-            ent_reg.async_remove(entity.entity_id)

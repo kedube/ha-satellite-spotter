@@ -1,10 +1,10 @@
-"""Shared entity code, and how a pass is described in attributes and payloads."""
+"""What the entities have in common, and the words they describe a pass in."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, override
+from datetime import datetime, timedelta
+from typing import Any, override
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -18,83 +18,53 @@ from .const import (
     DEFAULT_SHOW_PANEL,
     DOMAIN,
     MAX_GROUP_NAMES,
+    PANEL_URL_PATH,
     VERSION,
 )
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .links import about_url
+from .predict import Moment, Satellite
 
-if TYPE_CHECKING:
-    from .predict import Moment, Satellite
-
-# The sixteen winds, clockwise from north.
-_WINDS = [
-    "N",
-    "NNE",
-    "NE",
-    "ENE",
-    "E",
-    "ESE",
-    "SE",
-    "SSE",
-    "S",
-    "SSW",
-    "SW",
-    "WSW",
-    "W",
-    "WNW",
-    "NW",
-    "NNW",
-]
-# Satellites with a look of their own on the globe, by NORAD id.
-_KINDS = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
+_KIND_BY_ID = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
+_ROCKET_WORDS = ("R/B", "PKM", "AKM")
+_WINDS = (
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+)  # fmt: skip
+_WIND_DEGREES = 360.0 / len(_WINDS)
 
 
 def satellite_kind(norad_id: int, name: str) -> str:
-    """Return what a satellite is, for its icon.
-
-    One of iss, tiangong, hubble, starlink, rocket, debris and satellite.
-
-    The frontend's satelliteKind() follows the same rules.
-    """
-    if norad_id in _KINDS:
-        return _KINDS[norad_id]
+    """Say what sort of thing a satellite is, as the page's satelliteKind does."""
+    if (kind := _KIND_BY_ID.get(norad_id)) is not None:
+        return kind
     upper = name.upper()
     if "STARLINK" in upper:
         return "starlink"
-    if any(token in upper for token in ("R/B", "PKM", "AKM")):
+    if any(word in upper for word in _ROCKET_WORDS):
         return "rocket"
-    if "DEB" in upper:
-        return "debris"
-    return "satellite"
+    return "debris" if "DEB" in upper else "satellite"
 
 
 def compass(azimuth: float) -> str:
-    """Name the nearest of the sixteen winds to an azimuth in degrees; halfway goes clockwise."""
-    width = 360 / len(_WINDS)
-    return _WINDS[int((azimuth + width / 2) % 360 // width)]
+    """Return the nearest of the 16 winds; exactly halfway goes clockwise."""
+    return _WINDS[int((azimuth % 360.0 + _WIND_DEGREES / 2) // _WIND_DEGREES) % len(_WINDS)]
 
 
 def magnitude(value: float) -> float:
-    """Round a magnitude to one decimal, never -0.0."""
-    return round(value, 1) or 0.0
+    """Round a magnitude to one decimal, never to -0.0."""
+    return round(value, 1) + 0.0
 
 
 def confidence(when: datetime, sat: Satellite) -> str:
-    """How far the timing of a prediction can be trusted (rule of thumb).
-
-    By how far the pass is from the epoch of the satellite's orbital
-    elements.
-    """
-    days = abs((when - sat.epoch).total_seconds()) / 86400
+    """Say how far a time so far from the elements' epoch can be trusted: a rule of thumb."""
+    days = abs(when - sat.epoch) / timedelta(days=1)
     if days <= CONFIDENCE_HIGH_DAYS:
         return "high"
-    if days <= CONFIDENCE_MEDIUM_DAYS:
-        return "medium"
-    return "low"
+    return "medium" if days <= CONFIDENCE_MEDIUM_DAYS else "low"
 
 
-def _moment(name: str, moment: Moment) -> dict[str, Any]:
-    """Describe a moment of a sighting: when it comes, which way to look, and how high."""
+def _describe_moment(name: str, moment: Moment) -> dict[str, Any]:
     return {
         f"{name}_time": moment.time.isoformat(),
         f"{name}_direction": compass(moment.azimuth),
@@ -104,23 +74,17 @@ def _moment(name: str, moment: Moment) -> dict[str, Any]:
 
 
 def describe_pass(p: ListedPass | None) -> dict[str, Any]:
-    """Describe a pass for automations, which read these names; nothing without a pass.
-
-    ``begins``, ``ends`` and ``length_seconds`` are the whole pass's. The three moments are the
-    satellite's it is named after, which is the one worth looking for.
-    """
+    """Return a pass's attributes, which automations and cards read; none without a pass."""
     if p is None:
         return {}
-    named = p.lead
-    sat = named.satellite
+    lead = p.lead
     return {
-        # Opens the pass in the sidebar page: /satellite-spotter?pass=<id>.
         "pass_id": p.id,
-        "object_name": sat.name,
-        "catalog_number": sat.norad_id,
-        "about_url": about_url(sat.norad_id),
+        "object_name": lead.satellite.name,
+        "catalog_number": lead.satellite.norad_id,
+        "about_url": about_url(lead.satellite.norad_id),
         "object_count": p.count,
-        "objects": [s.satellite.name for s in p.sightings[:MAX_GROUP_NAMES]],
+        "objects": [sighting.satellite.name for sighting in p.sightings[:MAX_GROUP_NAMES]],
         "peak_magnitude": magnitude(p.peak_magnitude),
         "is_bright": p.bright,
         "sun_up": p.sun_up,
@@ -128,46 +92,41 @@ def describe_pass(p: ListedPass | None) -> dict[str, Any]:
         "begins": p.start.isoformat(),
         "ends": p.end.isoformat(),
         "length_seconds": p.duration,
-        **_moment("appears", named.appears),
-        **_moment("best_view", named.brightest),
-        **_moment("disappears", named.vanishes),
+        **_describe_moment("appears", lead.appears),
+        **_describe_moment("best_view", lead.brightest),
+        **_describe_moment("disappears", lead.vanishes),
     }
 
 
-def _location_device(coordinator: SatelliteSpotterCoordinator) -> DeviceInfo:
-    """Return the device a location's entities share; its link opens the location's page."""
-    entry = coordinator.config_entry
-    entry_id = entry.entry_id
-    page = f"homeassistant://satellite-spotter?entry_id={entry_id}"
-    return DeviceInfo(
-        identifiers={(DOMAIN, entry_id)},
-        name=entry.title,
-        manufacturer="Satellite Spotter",
-        model="Pass predictions",
-        sw_version=VERSION,
-        entry_type=DeviceEntryType.SERVICE,
-        # Without the sidebar page there is nothing for the link to open.
-        configuration_url=page if entry.options.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL) else None,
-    )
-
-
 class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
-    """An entity of one location, named by its translation key."""
+    """An entity of a location, on that location's device."""
 
     _attr_has_entity_name = True
-
     _attr_attribution = ATTRIBUTION
 
     def __init__(self, coordinator: SatelliteSpotterCoordinator, key: str) -> None:
-        """Initialise the entity."""
+        """Name the entity after its key: the keys are unique ids, and must not change."""
         super().__init__(coordinator)
+        entry = coordinator.config_entry
         self._attr_translation_key = key
-        self._attr_unique_id = f"{coordinator.config_entry.entry_id}_{key}"
-        self._attr_device_info = _location_device(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_{key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Satellite Spotter",
+            model="Pass predictions",
+            sw_version=VERSION,
+            entry_type=DeviceEntryType.SERVICE,
+            configuration_url=(
+                f"homeassistant://{PANEL_URL_PATH}?entry_id={entry.entry_id}"
+                if entry.options.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL)
+                else None
+            ),
+        )
 
 
 class PassEntity(SatelliteSpotterEntity):
-    """An entity that follows one pass at a time, and carries its details."""
+    """An entity following one pass, and describing it."""
 
     _unrecorded_attributes = frozenset({"objects", "about_url"})
 
@@ -177,16 +136,16 @@ class PassEntity(SatelliteSpotterEntity):
         key: str,
         follow: Callable[[datetime], ListedPass | None],
     ) -> None:
-        """Initialise the entity, with how to find the pass it follows at a given time."""
+        """Follow the pass that ``follow(now)`` finds."""
         super().__init__(coordinator, key)
         self._follow = follow
 
     def followed(self) -> ListedPass | None:
-        """Return the pass it follows now, if there is one."""
+        """Return the pass followed just now."""
         return self._follow(dt_util.utcnow())
 
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the details of that pass, or nothing without one."""
+        """Describe the pass followed."""
         return describe_pass(self.followed())

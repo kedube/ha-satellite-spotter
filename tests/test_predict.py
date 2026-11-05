@@ -165,7 +165,7 @@ def test_finds_what_checking_every_second_finds(norad_id: int) -> None:
     """The once-a-minute search misses nothing worth listing, and the passes are exact."""
     sat = next(s for s in satellites() if s.norad_id == norad_id)
     expected = _every_visible_second(sat, HONOLULU_SKY, 5)
-    found = find_sightings([sat], HONOLULU_SKY, start=START)
+    found = find_sightings([sat], HONOLULU_SKY, start=START, faintest=3.0)
     listed = np.concatenate(
         [np.arange(t.appears.time.timestamp(), t.vanishes.time.timestamp()) for t in found]
         or [np.array([])]

@@ -1,125 +1,105 @@
-"""Calendar of visible passes, with translated viewing directions and brightness."""
+"""A calendar of a location's passes, with when and where to look in Home Assistant's language."""
 
 from __future__ import annotations
 
 from collections.abc import Collection
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
 
-from . import SatelliteSpotterConfigEntry
-from .const import DOMAIN
-from .coordinator import ListedPass, Predictions, SatelliteSpotterCoordinator
-from .entity import SatelliteSpotterEntity, compass
+from .coordinator import ListedPass, SatelliteSpotterCoordinator
+from .entity import SatelliteSpotterEntity, compass, magnitude
 from .links import about_url
 from .predict import Moment
 
+if TYPE_CHECKING:
+    from . import SatelliteSpotterConfigEntry
+
 PARALLEL_UPDATES = 0
 
-TRANSLATIONS_DIR = Path(__file__).parent / "translations"
-_PREFIX = f"component.{DOMAIN}.common."
-# The blueprint tells bright passes by this mark.
-_BRIGHT_MARK = "🌟"
-_PASS_MARK = "🔭"
-# Event times are whole seconds, like the sensors'; every event lasts at least one.
-_MIN_EVENT = timedelta(seconds=1)
+_TRANSLATIONS = Path(__file__).parent / "translations"
+_DEFAULT_LANGUAGE = "en"
 
 
 def resolve_language(language: str, available: Collection[str]) -> str:
-    """Pick the translation for a Home Assistant language, as the frontend does.
-
-    "de-CH" gets German and "pt" Brazilian Portuguese; a language without a
-    translation gets English.
-    """
+    """Return an exact match, else the first with the same base language, else English."""
+    language = language.replace("_", "-")
     if language in available:
         return language
-    base = language.replace("_", "-").split("-")[0].lower()
-    return next((code for code in sorted(available) if code.split("-")[0] == base), "en")
+    base = language.partition("-")[0].lower()
+    for candidate in sorted(available):
+        if candidate.partition("-")[0].lower() == base:
+            return candidate
+    return _DEFAULT_LANGUAGE
 
 
-def _languages() -> set[str]:
-    return {path.stem for path in TRANSLATIONS_DIR.glob("*.json")}
+def _load_common(language: str) -> dict[str, str]:
+    available = [path.stem for path in _TRANSLATIONS.glob("*.json")]
+    path = _TRANSLATIONS / f"{resolve_language(language, available)}.json"
+    common: dict[str, str] = json.loads(path.read_text(encoding="utf-8"))["common"]
+    return common
 
 
 async def async_pass_text(hass: HomeAssistant) -> PassText:
-    """Load the words for the events, in Home Assistant's language.
-
-    Home Assistant fills in English for any string a translation lacks.
-    """
-    language = resolve_language(hass.config.language, await hass.async_add_executor_job(_languages))
-    strings = await async_get_translations(hass, language, "common", [DOMAIN])
-    return PassText({key.removeprefix(_PREFIX): value for key, value in strings.items()})
+    """Load the calendar's words in Home Assistant's language."""
+    return PassText(await hass.async_add_executor_job(_load_common, hass.config.language))
 
 
 class PassText:
-    """Words for the passes, in one language."""
+    """Describes passes in the words of one language."""
 
     def __init__(self, strings: dict[str, str]) -> None:
-        """Initialise with the integration's common strings, keyed without their prefix."""
+        """Take the translation's common strings."""
         self._strings = strings
 
-    def _t(self, key: str, **values: Any) -> str:
-        return self._strings[key].format(**values)
+    def summary(self, p: ListedPass) -> str:
+        """Return an event's title. The blueprint recognises the star."""
+        return f"{'🌟' if p.bright else '🔭'} {p.title}"
 
-    def _number(self, value: float) -> str:
-        text = f"{value:.1f}"
-        # "-0.0" reads oddly; the sensors say 0.0 too.
-        if text == "-0.0":
-            text = "0.0"
-        return text.replace(".", self._t("decimal_separator"))
-
-    def _when_and_where(self, key: str, moment: Moment, **more: str) -> str:
-        return self._t(
-            key,
-            time=_clock(moment.time),
-            direction=self._t(f"compass_{compass(moment.azimuth).lower()}"),
+    def _sight(self, key: str, moment: Moment, **more: Any) -> str:
+        return self._strings[key].format(
+            time=f"{dt_util.as_local(moment.time):%H:%M:%S}",
+            direction=self._strings[f"compass_{compass(moment.azimuth).lower()}"],
             elevation=f"{moment.elevation:.0f}",
             **more,
         )
 
-    def summary(self, p: ListedPass) -> str:
-        """Event title: what is passing, marked in a way that needs no translating."""
-        return f"{_BRIGHT_MARK if p.bright else _PASS_MARK} {p.title}"
+    def _magnitude(self, value: float) -> str:
+        return f"{magnitude(value):.1f}".replace(".", self._strings["decimal_separator"])
 
     def description(self, p: ListedPass) -> str:
-        """Say the best moment to look, then the rest of the pass, what else to know, and the link.
-
-        The link stays last: the blueprint's notification leaves out the last line.
-        """
-        named = p.lead
-        sat = named.satellite
-        count = p.count
-        best = self._number(named.peak_magnitude)
-        lines = (
-            self._when_and_where("calendar_brightest", named.brightest, magnitude=best),
-            self._when_and_where("calendar_appears", named.appears),
-            self._when_and_where("calendar_disappears", named.vanishes),
-            (
-                None
-                if p.cloud_cover is None
-                else self._t("calendar_cloud_cover", cloud_cover=p.cloud_cover)
+        """Return an event's lines, about the pass's brightest satellite. The link comes last."""
+        lead = p.lead
+        lines = [
+            self._sight(
+                "calendar_brightest", lead.brightest, magnitude=self._magnitude(p.peak_magnitude)
             ),
-            self._t("calendar_together", count=count) if count > 1 else None,
-            self._t("calendar_about", name=sat.name, url=about_url(sat.norad_id)),
+            self._sight("calendar_appears", lead.appears),
+            self._sight("calendar_disappears", lead.vanishes),
+        ]
+        if p.cloud_cover is not None:
+            lines.append(self._strings["calendar_cloud_cover"].format(cloud_cover=p.cloud_cover))
+        if p.count > 1:
+            lines.append(self._strings["calendar_together"].format(count=p.count))
+        lines.append(
+            self._strings["calendar_about"].format(
+                name=lead.satellite.name, url=about_url(lead.satellite.norad_id)
+            )
         )
-        return "\n".join(filter(None, lines))
-
-
-def _clock(t: datetime) -> str:
-    return f"{dt_util.as_local(t):%H:%M:%S}"
+        return "\n".join(lines)
 
 
 def event_times(p: ListedPass) -> tuple[datetime, datetime]:
-    """Start and end of a pass, to the second as the sensors give them."""
-    start = dt_util.as_local(p.start.replace(microsecond=0))
-    end = dt_util.as_local(p.end.replace(microsecond=0))
-    return start, max(end, start + _MIN_EVENT)
+    """Return a pass's start and end in local time, to the second, at least a second apart."""
+    start = dt_util.as_local(p.start).replace(microsecond=0)
+    end = dt_util.as_local(p.end).replace(microsecond=0)
+    return start, max(end, start + timedelta(seconds=1))
 
 
 async def async_setup_entry(
@@ -127,22 +107,37 @@ async def async_setup_entry(
     entry: SatelliteSpotterConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the calendar (only forwarded while the option is on)."""
+    """Add a location's calendar."""
     async_add_entities([SatellitePassCalendar(entry.runtime_data, await async_pass_text(hass))])
 
 
 class SatellitePassCalendar(SatelliteSpotterEntity, CalendarEntity):
-    """Every predicted pass of the next five days, the ones the sensors report."""
+    """The passes of the days predicted; empty while predictions are paused."""
 
     def __init__(self, coordinator: SatelliteSpotterCoordinator, text: PassText) -> None:
-        """Initialise the calendar."""
+        """Remember what has been written, to tell a new prediction run from a wake-up."""
         super().__init__(coordinator, "passes")
         self._text = text
-        # The first state is written with the passes there are now.
-        self._written_data: Predictions | None = coordinator.data
-        self._written_success = coordinator.last_update_success
+        self._written = self._what_to_write()
 
-    def _event(self, p: ListedPass, start: datetime, end: datetime) -> CalendarEvent:
+    def _what_to_write(self) -> tuple[object, bool]:
+        return self.coordinator.data, self.coordinator.last_update_success
+
+    @callback
+    @override
+    def _handle_coordinator_update(self) -> None:
+        """Write the state only for new predictions: every write makes open calendars fetch."""
+        data, success = self._what_to_write()
+        if data is not self._written[0] or success != self._written[1]:
+            self._written = data, success
+            self.async_write_ha_state()
+
+    def _passes(self) -> list[ListedPass]:
+        data = self.coordinator.predictions
+        return [] if data is None or not self.available else data.passes
+
+    def _event(self, p: ListedPass) -> CalendarEvent:
+        start, end = event_times(p)
         return CalendarEvent(
             start=start,
             end=end,
@@ -154,51 +149,18 @@ class SatellitePassCalendar(SatelliteSpotterEntity, CalendarEntity):
     @property
     @override
     def event(self) -> CalendarEvent | None:
-        """The pass under way, or else the next one.
-
-        Judged by the event's own times, so that at the end of an event, when
-        the calendar's timer writes the state, it moves on to the next pass.
-        """
-        data = self.coordinator.data
-        if not self.available or data is None:
-            return None
-        now = dt_util.now()
-        for p in data.passes:
-            start, end = event_times(p)
-            if end > now:
-                return self._event(p, start, end)
-        return None
+        """Return the first pass not over by its own event times."""
+        now = dt_util.utcnow()
+        return next((self._event(p) for p in self._passes() if event_times(p)[1] > now), None)
 
     @override
     async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
-        """Return the passes that overlap the requested range.
-
-        Nothing while predictions are paused: the sensors are unavailable then,
-        and passes predicted from orbital elements that old would mislead.
-        """
-        data = self.coordinator.data
-        if not self.available or data is None:
-            return []
+        """Return the passes overlapping the range."""
         events = []
-        for p in data.passes:
+        for p in self._passes():
             start, end = event_times(p)
-            if end > start_date and start < end_date:
-                events.append(self._event(p, start, end))
+            if start < end_date and end > start_date:
+                events.append(self._event(p))
         return events
-
-    @callback
-    @override
-    def _handle_coordinator_update(self) -> None:
-        """Write the state when the passes change, not at every pass boundary.
-
-        The coordinator wakes its entities as passes start and end; the
-        calendar's own timers follow its events, and every write makes open
-        calendars fetch the events again.
-        """
-        data, success = self.coordinator.data, self.coordinator.last_update_success
-        if data is self._written_data and success == self._written_success:
-            return
-        self._written_data, self._written_success = data, success
-        super()._handle_coordinator_update()

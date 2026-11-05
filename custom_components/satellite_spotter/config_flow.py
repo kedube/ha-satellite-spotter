@@ -1,12 +1,14 @@
-"""Config flow for Satellite Spotter."""
+"""Adding and moving a location, and its options."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 import math
 from typing import Any, override
 
 from homeassistant.config_entries import (
+    ConfigEntry,
     ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
@@ -40,7 +42,6 @@ from homeassistant.helpers.selector import (
 )
 import voluptuous as vol
 
-from . import SatelliteSpotterConfigEntry
 from .catalog import async_shared_catalog
 from .celestrak import CatalogError, DownloadRefused
 from .const import (
@@ -73,95 +74,106 @@ from .street import (
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_NAME = "Home"
+_DEFAULT_NAME = "Home"
+_COORDINATE_DIGITS = 5
+_MAX_LATITUDE = 90.0
+_MAX_LONGITUDE = 180.0
 
-# What the location selector checked until Home Assistant 2026.11.
-_LOCATION_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_LATITUDE): vol.Coerce(float),
-        vol.Required(CONF_LONGITUDE): vol.Coerce(float),
-        vol.Optional(CONF_RADIUS): vol.Coerce(float),
-    }
+_ELEVATION_SELECTOR = NumberSelector(
+    NumberSelectorConfig(
+        min=-500,
+        max=9000,
+        step=1,
+        mode=NumberSelectorMode.BOX,
+        unit_of_measurement=UnitOfLength.METERS,
+    )
 )
+_PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 
-class _LocationSelector(LocationSelector):
-    """The location selector, with the range checks left to the flow.
+class _AnyLocationSelector(LocationSelector):
+    """The location picker, leaving range checks to the flow, which wraps or explains them.
 
-    Since Home Assistant 2026.11 the selector itself refuses a latitude beyond
-    ±90 and a longitude beyond ±180, before the flow can bring a 0-360
-    longitude into range or say what is wrong with a latitude in its own words.
+    From Home Assistant 2026.11 the selector itself refuses out-of-range values.
     """
+
+    DATA_SCHEMA = vol.Schema(
+        {
+            vol.Required(CONF_LATITUDE): vol.Coerce(float),
+            vol.Required(CONF_LONGITUDE): vol.Coerce(float),
+            vol.Optional(CONF_RADIUS): vol.Coerce(float),
+        }
+    )
 
     @override
     def __call__(self, data: Any) -> dict[str, float]:
-        """Coerce the coordinates to numbers, as the selector did until 2026.11."""
-        location: dict[str, float] = _LOCATION_SCHEMA(data)
+        """Coerce the numbers to floats, and nothing else."""
+        location: dict[str, float] = self.DATA_SCHEMA(data)
         return location
 
 
-def _number(
-    minimum: float,
-    maximum: float,
-    step: float,
-    unit: str | None = None,
-    mode: NumberSelectorMode = NumberSelectorMode.BOX,
-) -> NumberSelector:
-    config = NumberSelectorConfig(min=minimum, max=maximum, step=step, mode=mode)
-    if unit is not None:
-        config["unit_of_measurement"] = unit
-    return NumberSelector(config)
+_LOCATION_SELECTOR = _AnyLocationSelector(LocationSelectorConfig(radius=False))
 
 
-def _coordinates(location: dict[str, Any]) -> tuple[float, float] | None:
-    """Latitude and longitude from the location selector, or None when out of range.
-
-    The selector accepts any number. Longitudes written 0-360 (or wrapped
-    further) are brought into -180..180 so that the same place is recognised
-    as a duplicate whichever way it was typed.
-    """
-    latitude = round(float(location[CONF_LATITUDE]), 5)
-    longitude = round(float(location[CONF_LONGITUDE]), 5)
-    if abs(longitude) > 180:
-        longitude = round((longitude + 180) % 360 - 180, 5)
-    # Written so that NaN fails too.
-    if not (math.isfinite(longitude) and -90 <= latitude <= 90):
+def _checked_place(location: Mapping[str, float]) -> tuple[float, float] | None:
+    """Return latitude and longitude, rounded and wrapped, or None if they make no sense."""
+    latitude, longitude = location[CONF_LATITUDE], location[CONF_LONGITUDE]
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
         return None
-    return latitude, longitude
+    if abs(longitude) > _MAX_LONGITUDE:
+        longitude = (longitude + _MAX_LONGITUDE) % (2 * _MAX_LONGITUDE) - _MAX_LONGITUDE
+    latitude = round(latitude, _COORDINATE_DIGITS)
+    longitude = round(longitude, _COORDINATE_DIGITS)
+    return None if abs(latitude) > _MAX_LATITUDE else (latitude, longitude)
 
 
 def _unique_id(latitude: float, longitude: float) -> str:
-    # About 10 m: one location per place.
-    return f"{latitude:.4f}_{longitude:.4f}"
-
-
-def _elevation_selector() -> NumberSelector:
-    return _number(-500, 9000, 1, UnitOfLength.METERS)
-
-
-def _location_selector() -> LocationSelector:
-    return _LocationSelector(LocationSelectorConfig(radius=False))
+    """Return what makes a place the same place: to about 10 m, and never -0.0000."""
+    return f"{round(latitude, 4) + 0.0:.4f}_{round(longitude, 4) + 0.0:.4f}"
 
 
 class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Add an observing location."""
+    """Adds a location, or moves one."""
 
     VERSION = 1
     MINOR_VERSION = 1
 
+    @staticmethod
+    @callback
+    @override
+    def async_get_options_flow(config_entry: ConfigEntry) -> SatelliteSpotterOptionsFlow:
+        """Return the options flow."""
+        return SatelliteSpotterOptionsFlow()
+
+    def _user_schema(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=_DEFAULT_NAME): TextSelector(),
+                vol.Required(
+                    CONF_LOCATION,
+                    default={
+                        CONF_LATITUDE: self.hass.config.latitude,
+                        CONF_LONGITUDE: self.hass.config.longitude,
+                    },
+                ): _LOCATION_SELECTOR,
+                vol.Required(CONF_ELEVATION, default=self.hass.config.elevation): (
+                    _ELEVATION_SELECTOR
+                ),
+            }
+        )
+
     @override
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Pick the location to predict passes for."""
+        """Ask where the location is, and make sure the catalog can be had."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            if (coordinates := _coordinates(user_input[CONF_LOCATION])) is None:
+            place = _checked_place(user_input[CONF_LOCATION])
+            if place is None:
                 errors[CONF_LOCATION] = "invalid_location"
             else:
-                latitude, longitude = coordinates
-                await self.async_set_unique_id(_unique_id(latitude, longitude))
+                await self.async_set_unique_id(_unique_id(*place))
                 self._abort_if_unique_id_configured()
                 try:
-                    # Shared with every location, so it is downloaded once.
                     await async_shared_catalog(self.hass).async_satellites(retry_now=True)
                 except DownloadRefused:
                     errors["base"] = "download_limited"
@@ -174,193 +186,183 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
                     return self.async_create_entry(
                         title=user_input[CONF_NAME],
                         data={
-                            CONF_LATITUDE: latitude,
-                            CONF_LONGITUDE: longitude,
-                            CONF_ELEVATION: float(user_input[CONF_ELEVATION]),
+                            CONF_LATITUDE: place[0],
+                            CONF_LONGITUDE: place[1],
+                            CONF_ELEVATION: user_input[CONF_ELEVATION],
                         },
                     )
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_NAME, default=DEFAULT_NAME): str,
-                vol.Required(
-                    CONF_LOCATION,
-                    default={
-                        CONF_LATITUDE: self.hass.config.latitude,
-                        CONF_LONGITUDE: self.hass.config.longitude,
-                    },
-                ): _location_selector(),
-                vol.Required(CONF_ELEVATION, default=self.hass.config.elevation): (
-                    _elevation_selector()
-                ),
-            }
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(self._user_schema(), user_input),
+            errors=errors,
         )
-        if user_input is not None:
-            # Keep what was typed, so only what was wrong needs correcting.
-            schema = self.add_suggested_values_to_schema(schema, user_input)
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Move a location in place, so the dashboard cards that show it keep working."""
+        """Move a location in place, so that what shows it keeps working."""
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            if (coordinates := _coordinates(user_input[CONF_LOCATION])) is None:
+            place = _checked_place(user_input[CONF_LOCATION])
+            if place is None:
                 errors[CONF_LOCATION] = "invalid_location"
             else:
-                latitude, longitude = coordinates
-                unique_id = _unique_id(latitude, longitude)
+                unique_id = _unique_id(*place)
                 if unique_id != entry.unique_id:
-                    await self.async_set_unique_id(unique_id, raise_on_progress=False)
+                    await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
                 changed = self.hass.config_entries.async_update_entry(
                     entry,
                     unique_id=unique_id,
                     data={
-                        **entry.data,
-                        CONF_LATITUDE: latitude,
-                        CONF_LONGITUDE: longitude,
-                        CONF_ELEVATION: float(user_input[CONF_ELEVATION]),
+                        CONF_LATITUDE: place[0],
+                        CONF_LONGITUDE: place[1],
+                        CONF_ELEVATION: user_input[CONF_ELEVATION],
                     },
                 )
-                # A loaded entry reloads through its update listener; one that
-                # is not loaded (still retrying setup, say) is retried now.
+                # Once loaded, the update listener reloads it.
                 if changed and entry.state is not ConfigEntryState.LOADED:
                     self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self.async_abort(reason="reconfigure_successful")
-
         schema = vol.Schema(
             {
-                vol.Required(CONF_LOCATION): _location_selector(),
-                vol.Required(CONF_ELEVATION): _elevation_selector(),
+                vol.Required(
+                    CONF_LOCATION,
+                    default={
+                        CONF_LATITUDE: entry.data.get(CONF_LATITUDE, self.hass.config.latitude),
+                        CONF_LONGITUDE: entry.data.get(CONF_LONGITUDE, self.hass.config.longitude),
+                    },
+                ): _LOCATION_SELECTOR,
+                vol.Required(
+                    CONF_ELEVATION,
+                    default=entry.data.get(CONF_ELEVATION, self.hass.config.elevation),
+                ): _ELEVATION_SELECTOR,
             }
         )
-        current = {
-            CONF_LOCATION: {
-                CONF_LATITUDE: entry.data[CONF_LATITUDE],
-                CONF_LONGITUDE: entry.data[CONF_LONGITUDE],
-            },
-            CONF_ELEVATION: entry.data.get(CONF_ELEVATION, 0.0),
-        }
-        schema = self.add_suggested_values_to_schema(schema, user_input or current)
-        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
-
-    @staticmethod
-    @callback
-    @override
-    def async_get_options_flow(config_entry: SatelliteSpotterConfigEntry) -> OptionsFlow:
-        """Return the options flow."""
-        return SatelliteSpotterOptionsFlow()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            errors=errors,
+        )
 
 
-def _street_schema(street: dict[str, Any]) -> vol.Schema:
-    """Return the street view section: where its photos come from, and the services' keys."""
-    password = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+def _options_schema(options: Mapping[str, Any]) -> vol.Schema:
+    """Return the options form, offering what is set now."""
     return vol.Schema(
         {
-            vol.Required(CONF_STREET_SOURCE, default=street[CONF_STREET_SOURCE]): SelectSelector(
-                SelectSelectorConfig(
-                    options=list(STREET_SOURCES),
-                    translation_key=CONF_STREET_SOURCE,
-                    mode=SelectSelectorMode.DROPDOWN,
+            vol.Required(
+                CONF_MAX_MAGNITUDE,
+                default=options.get(CONF_MAX_MAGNITUDE, DEFAULT_MAX_MAGNITUDE),
+            ): NumberSelector(
+                NumberSelectorConfig(min=-2, max=4, step=0.25, mode=NumberSelectorMode.SLIDER)
+            ),
+            vol.Required(
+                CONF_CLOUD_COVER, default=options.get(CONF_CLOUD_COVER, DEFAULT_CLOUD_COVER)
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_ALERT_LEAD_MINUTES,
+                default=options.get(CONF_ALERT_LEAD_MINUTES, DEFAULT_ALERT_LEAD_MINUTES),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=1,
+                    max=240,
+                    step=1,
+                    mode=NumberSelectorMode.BOX,
+                    unit_of_measurement=UnitOfTime.MINUTES,
                 )
             ),
-            # Optional, and offered as suggestions: a key emptied in the form is removed.
-            vol.Optional(CONF_MAPILLARY_TOKEN): password,
-            vol.Optional(CONF_GOOGLE_API_KEY): password,
+            vol.Required(
+                CONF_SHOW_PANEL, default=options.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL)
+            ): BooleanSelector(),
+            vol.Required(
+                CONF_SHOW_CALENDAR, default=options.get(CONF_SHOW_CALENDAR, DEFAULT_SHOW_CALENDAR)
+            ): BooleanSelector(),
+            vol.Required(CONF_UNITS, default=options.get(CONF_UNITS, DEFAULT_UNITS)): (
+                SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(UNITS),
+                        mode=SelectSelectorMode.DROPDOWN,
+                        translation_key=CONF_UNITS,
+                    )
+                )
+            ),
+            vol.Required(CONF_STREET_VIEW): section(
+                vol.Schema(
+                    {
+                        vol.Required(
+                            CONF_STREET_SOURCE,
+                            default=street_options(options)[CONF_STREET_SOURCE],
+                        ): SelectSelector(
+                            SelectSelectorConfig(
+                                options=list(STREET_SOURCES),
+                                mode=SelectSelectorMode.DROPDOWN,
+                                translation_key=CONF_STREET_SOURCE,
+                            )
+                        ),
+                        vol.Optional(CONF_MAPILLARY_TOKEN): _PASSWORD_SELECTOR,
+                        vol.Optional(CONF_GOOGLE_API_KEY): _PASSWORD_SELECTOR,
+                    }
+                ),
+                {"collapsed": True},
+            ),
         }
     )
 
 
 class SatelliteSpotterOptionsFlow(OptionsFlow):
-    """Tune which passes are reported and how they are shown."""
+    """Which passes are reported, how, and where the street view's photos come from."""
 
-    async def _street_errors(
-        self, street: dict[str, Any], errors: dict[str, str], placeholders: dict[str, str]
-    ) -> None:
-        """Refuse a source without its key, and a new key its service refuses."""
-        source = street[CONF_STREET_SOURCE]
-        if source == "google" and CONF_GOOGLE_API_KEY not in street:
-            errors["base"] = "google_key_needed"
-            return
-        if source == "mapillary" and CONF_MAPILLARY_TOKEN not in street:
-            errors["base"] = "mapillary_token_needed"
-            return
-        token = street.get(CONF_MAPILLARY_TOKEN)
-        if token and not MAPILLARY_TOKEN_FORMAT.fullmatch(token):
-            errors["base"] = "mapillary_token_format"
-            return
-        # A key that is already saved worked then: only new ones are tried.
+    async def _async_street_error(
+        self, street: Mapping[str, Any], errors: dict[str, str]
+    ) -> dict[str, str]:
+        """Note the first thing wrong with the street view's settings; return its placeholders.
+
+        Keys already saved are not tried again.
+        """
         saved = street_options(self.config_entry.options)
-        key = street.get(CONF_GOOGLE_API_KEY)
-        if (
+        source = street[CONF_STREET_SOURCE]
+        key, token = street.get(CONF_GOOGLE_API_KEY), street.get(CONF_MAPILLARY_TOKEN)
+        if source == "google" and not key:
+            errors["base"] = "google_key_needed"
+        elif source == "mapillary" and not token:
+            errors["base"] = "mapillary_token_needed"
+        elif token and not MAPILLARY_TOKEN_FORMAT.fullmatch(token):
+            errors["base"] = "mapillary_token_format"
+        elif (
             key
             and key != saved.get(CONF_GOOGLE_API_KEY)
-            and (reason := await async_check_google_key(self.hass, key)) is not None
+            and (why := await async_check_google_key(self.hass, key)) is not None
         ):
             errors["base"] = "google_refused"
-            placeholders["error"] = reason
-            return
-        if (
+            return {"error": why}
+        elif (
             token
             and token != saved.get(CONF_MAPILLARY_TOKEN)
-            and (reason := await async_check_mapillary_token(self.hass, token)) is not None
+            and (why := await async_check_mapillary_token(self.hass, token)) is not None
         ):
             errors["base"] = "mapillary_refused"
-            placeholders["error"] = reason
+            return {"error": why}
+        return {}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manage the options (the location reloads with them)."""
+        """Show the options, and keep them once the street view's keys check out."""
         errors: dict[str, str] = {}
-        placeholders = {"error": ""}
+        placeholders: dict[str, str] = {}
         if user_input is not None:
             street = street_options(user_input)
-            await self._street_errors(street, errors, placeholders)
+            placeholders = await self._async_street_error(street, errors)
             if not errors:
                 return self.async_create_entry(data={**user_input, CONF_STREET_VIEW: street})
-
-        current = self.config_entry.options
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_MAX_MAGNITUDE,
-                    default=current.get(CONF_MAX_MAGNITUDE, DEFAULT_MAX_MAGNITUDE),
-                ): _number(-2, 4, 0.25, mode=NumberSelectorMode.SLIDER),
-                vol.Required(
-                    CONF_CLOUD_COVER,
-                    default=current.get(CONF_CLOUD_COVER, DEFAULT_CLOUD_COVER),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_ALERT_LEAD_MINUTES,
-                    default=current.get(CONF_ALERT_LEAD_MINUTES, DEFAULT_ALERT_LEAD_MINUTES),
-                ): _number(1, 240, 1, UnitOfTime.MINUTES),
-                vol.Required(
-                    CONF_SHOW_PANEL,
-                    default=current.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_SHOW_CALENDAR,
-                    default=current.get(CONF_SHOW_CALENDAR, DEFAULT_SHOW_CALENDAR),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_UNITS,
-                    default=current.get(CONF_UNITS, DEFAULT_UNITS),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=list(UNITS),
-                        translation_key=CONF_UNITS,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(CONF_STREET_VIEW): section(_street_schema(street_options(current))),
-            }
-        )
-        # The keys saved (or, after an error, everything as typed) fill the form.
-        schema = self.add_suggested_values_to_schema(
-            schema, user_input or {CONF_STREET_VIEW: street_options(current)}
+        options = self.config_entry.options
+        typed = (
+            user_input
+            if user_input is not None
+            else {**options, CONF_STREET_VIEW: street_options(options)}
         )
         return self.async_show_form(
-            step_id="init", data_schema=schema, errors=errors, description_placeholders=placeholders
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(_options_schema(options), typed),
+            errors=errors,
+            description_placeholders=placeholders,
         )

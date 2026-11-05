@@ -1,9 +1,10 @@
-"""The satellite catalog: downloaded once, shared by every location, kept across restarts."""
+"""The catalog every location shares: downloading it, keeping it, and leaving CelesTrak alone."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections import OrderedDict
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from datetime import datetime, timedelta
 import logging
 import math
@@ -11,6 +12,7 @@ import statistics
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
@@ -35,305 +37,297 @@ from .predict import Satellite, read_catalog, write_catalog
 
 _LOGGER = logging.getLogger(__name__)
 
-SHARED_CATALOG: HassKey[CatalogManager] = HassKey(DOMAIN)
+SHARED_CATALOG: HassKey[CatalogManager] = HassKey(f"{DOMAIN}_catalog")
+
+_NO_USABLE_SATELLITES = "The satellite catalog has no usable satellites"
+_IGNORING = "Ignoring the stored satellite catalog: %s"
+_LONGEST_RETRY = max(CATALOG_RETRY, CATALOG_UNREACHABLE_RETRY)
 
 
-def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec], list[str]]:
-    """Keep the satellites the predictions can use: them, their propagators, and the rest's ids.
+def _usable_record(sat: Satellite) -> Satrec | None:
+    """Return a satellite's SGP4 record, if SGP4 and the orbit's formulas make sense of it."""
+    try:
+        record = sat.sgp4_record()
+        error, position, _ = record.sgp4_tsince(0.0)
+        numbers = [*position, *track.apsides_km(sat), track.period_s(sat)]
+    except (ArithmeticError, KeyError, TypeError, ValueError):
+        return None
+    if sat.standard_magnitude is not None:
+        numbers.append(sat.standard_magnitude)
+    return None if error or not all(map(math.isfinite, numbers)) else record
 
-    Predictions build the propagators of a whole batch of satellites at once,
-    so one malformed or decayed entry would otherwise break every prediction.
-    Runs in the executor, before the propagators are shared.
-    """
+
+def validate(satellites: Iterable[Satellite]) -> tuple[list[Satellite], list[Satrec], list[str]]:
+    """Return the satellites worth keeping, their records and the ids of the rest, as strings."""
     kept: list[Satellite] = []
-    satrecs: list[Satrec] = []
+    records: list[Satrec] = []
     dropped: list[str] = []
     for sat in satellites:
-        try:
-            satrec = sat.sgp4_record()
-            error, position, _ = satrec.sgp4(satrec.jdsatepoch, satrec.jdsatepochF)
-            # The brightness bound and the payloads use these. A value that is
-            # not finite ("NaN" in the orbital data) gets this far without an
-            # error, but would spoil the search's sort by brightness, which then
-            # skips satellites that are fine.
-            numbers = [*position, *track.apsides_km(sat), track.period_s(sat)]
-            if sat.standard_magnitude is not None:
-                numbers.append(sat.standard_magnitude)
-            if not all(map(math.isfinite, numbers)):
-                error = -1
-        except (ArithmeticError, KeyError, TypeError, ValueError):
-            error = -1
-        if error:
+        if (record := _usable_record(sat)) is None:
             dropped.append(str(sat.norad_id))
-            continue
-        kept.append(sat)
-        satrecs.append(satrec)
-    return kept, satrecs, dropped
+        else:
+            kept.append(sat)
+            records.append(record)
+    return kept, records, dropped
 
 
-def _from_before_1_08(catalog: Any) -> bool:
-    """Whether a stored catalog is from another source, whose magnitudes are on another scale."""
+def _read_stored(entries: Any) -> tuple[list[Satellite], list[Satrec], list[str]]:
+    """Read and check a stored catalog (in the executor)."""
+    return validate(read_catalog(entries))
+
+
+def _from_before_1_08(entries: Any) -> bool:
+    """Whether a stored catalog is from another source, on another brightness scale."""
     return (
-        isinstance(catalog, list)
-        and bool(catalog)
-        and isinstance(catalog[0], dict)
-        and "OBJECT_NAME" in catalog[0]
+        isinstance(entries, list)
+        and bool(entries)
+        and isinstance(entries[0], dict)
+        and "OBJECT_NAME" in entries[0]
     )
 
 
-class CatalogManager:
-    """Downloads the catalog from CelesTrak and keeps it, for every location.
+def _stored_time(value: Any) -> datetime | None:
+    parsed = dt_util.parse_datetime(value) if isinstance(value, str) else None
+    return None if parsed is None else dt_util.as_utc(parsed)
 
-    CelesTrak is a non-profit, so the catalog is downloaded once for all
-    locations, at most twice a day, and kept in Home Assistant's storage, so
-    a restart does not download it again and predictions keep working
-    offline. Every new catalog gets a new ``version``.
-    """
+
+class CatalogManager:
+    """The one catalog, for every location: downloads when due, and keeps a copy in storage."""
 
     def __init__(self, hass: HomeAssistant) -> None:
-        """Initialise the manager."""
-        self._hass = hass
-        self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
-        self._one_at_a_time = asyncio.Lock()
-        self._loaded = False
-        self._retry_after: datetime | None = None
-        # The back-off is CelesTrak's refusal, which nothing may cut short.
-        self._refused = False
-        self._failing = False
-        self._listeners: list[Callable[[], None]] = []
-        self._satrecs: list[Satrec] = []
-        self._by_id: dict[int, Satellite] = {}
-        self._epochs: list[float] = []
-        self._median_epoch: float | None = None
+        """Start with nothing: storage is read on first use."""
+        self.hass = hass
         self.satellites: list[Satellite] | None = None
         self.updated: datetime | None = None
         self.last_error: str | None = None
         self.version = 0
-        # Results shared by every location, for the current catalog version.
-        self.cache: dict[Any, Any] = {}
+        self.cache: OrderedDict[Hashable, bytes] = OrderedDict()
+        self._store: Store[Any] = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._lock = asyncio.Lock()
+        self._store_read = False
+        self._refused_until: datetime | None = None
+        self._retry_at: datetime | None = None
+        self._failing = False
+        self._satrecs: list[Satrec] = []
+        self._by_id: dict[int, Satellite] = {}
+        self._median_epoch: datetime | None = None
+        self._listeners: list[CALLBACK_TYPE] = []
 
     async def async_satellites(self, *, retry_now: bool = False) -> list[Satellite]:
-        """Return the catalog, downloading a new one when due.
+        """Return the catalog, reading storage on first use and downloading when due.
 
-        After a failed download CelesTrak is left alone for a while, unless
-        ``retry_now`` (someone asked, in the config flow) and it never refused.
-        Raises CatalogError when there is no catalog, cached or downloaded:
-        DownloadRefused if that is because CelesTrak refused.
+        ``retry_now`` cuts short the wait after a failed download, but never after a refusal.
+        Raises CatalogError when there is no catalog, or DownloadRefused if that is because
+        CelesTrak refused.
         """
-        async with self._one_at_a_time:
-            if not self._loaded:
-                await self._async_read_store()
+        async with self._lock:
+            await self._async_read_store()
             now = dt_util.utcnow()
-            # No back-off is longer than this: one further ahead was set while
-            # the clock ran fast and has since been set back.
-            longest = CATALOG_REFUSED_RETRY if self._refused else CATALOG_RETRY
-            if self._retry_after is not None and self._retry_after - now > longest:
-                self._retry_after = None
-            if self._retry_after is None or now >= self._retry_after:
-                self._refused = False
-            if self._due(now) and (
-                (retry_now and not self._refused)
-                or self._retry_after is None
-                or now >= self._retry_after
-            ):
-                await self._async_download(now)
-            if self.satellites is None:
-                error = DownloadRefused if self._refused else CatalogError
-                raise error(self.last_error or "No satellite catalog available")
-            return self.satellites
+            if self._due(now) and self._may_ask(now, retry_now):
+                await self._async_download()
+            if self.satellites is not None:
+                return self.satellites
+            error = self.last_error or "CelesTrak did not send a catalog"
+            if self._refused_until is not None:
+                raise DownloadRefused(error)
+            raise CatalogError(error)
 
     def _due(self, now: datetime) -> bool:
         if self.satellites is None or self.updated is None:
             return True
         age = now - self.updated
-        # A download in the future means the clock was set back since.
-        return age >= CATALOG_REFRESH or age < -CATALOG_CLOCK_SLACK
+        return age >= CATALOG_REFRESH or -age > CATALOG_CLOCK_SLACK
 
-    async def _async_read_store(self) -> None:
-        self._loaded = True
-        stored = await self._store.async_load()
-        if not stored:
-            return
-        # A restart must not ask CelesTrak again while it is refusing.
-        if (until := dt_util.parse_datetime(stored.get("refused_until") or "")) is not None:
-            self._retry_after = dt_util.as_utc(until)
-            self._refused = True
-            self.last_error = stored.get("last_error")
-        # Only the refusal was stored: it came before any catalog.
-        if "catalog" not in stored:
-            return
-        if _from_before_1_08(stored["catalog"]):
-            _LOGGER.debug("The stored satellite catalog is from an older version: not using it")
-            return
-        try:
-            satellites = read_catalog(stored["catalog"])
-            updated = dt_util.parse_datetime(stored["updated"])
-            if updated is None:
-                raise ValueError(f"invalid time {stored['updated']!r}")
-        except (AttributeError, KeyError, TypeError, ValueError) as err:
-            # Download a fresh catalog rather than fail every update.
-            _LOGGER.warning("Ignoring the stored satellite catalog: %s", err)
-            return
-        if not await self._async_accept(satellites, dt_util.as_utc(updated)):
-            _LOGGER.warning("Ignoring the stored satellite catalog: no usable satellites")
+    def _may_ask(self, now: datetime, retry_now: bool) -> bool:
+        """Whether a download may go ahead. A wait further ahead than its maximum is dropped."""
+        if self._refused_until is not None:
+            if timedelta(0) < self._refused_until - now <= CATALOG_REFUSED_RETRY:
+                return False
+            self._refused_until = None
+        if self._retry_at is not None and not retry_now:
+            if timedelta(0) < self._retry_at - now <= _LONGEST_RETRY:
+                return False
+            self._retry_at = None
+        return True
 
-    async def _async_download(self, now: datetime) -> None:
+    async def _async_download(self) -> None:
         try:
-            satellites = await async_fetch_catalog(self._hass)
-            if not await self._async_accept(satellites, now):
-                raise DownloadRefused("The satellite catalog has no usable satellites")
+            downloaded = await async_fetch_catalog(self.hass)
+            kept, records, dropped = await self.hass.async_add_executor_job(validate, downloaded)
+            if not kept:
+                raise DownloadRefused(_NO_USABLE_SATELLITES)
         except CatalogError as err:
-            self.last_error = str(err)
-            self._refused = isinstance(err, DownloadRefused)
-            if self._refused:
-                self._retry_after = now + CATALOG_REFUSED_RETRY
-                self._store.async_delay_save(self._stored_form, STORAGE_SAVE_DELAY)
-            else:
-                # Soon while there is nothing to predict from (or only orbit data
-                # too old to use), otherwise less eagerly.
-                age = self.median_epoch_age(now)
-                usable = age is not None and age <= CATALOG_MAX_AGE
-                self._retry_after = now + (CATALOG_RETRY if usable else CATALOG_UNREACHABLE_RETRY)
-            # Loudly once per outage, then quietly until a download succeeds.
-            log = _LOGGER.debug if self._failing else _LOGGER.warning
-            self._failing = True
-            if self.satellites is None:
-                log("Could not download the satellite catalog: %s", err)
-            else:
-                log(
-                    "Could not refresh the satellite catalog, using the one from %s: %s",
-                    self.updated,
-                    err,
-                )
+            self._note_failure(err)
             return
+        if dropped:
+            _LOGGER.debug("Left out unusable satellites: %s", ", ".join(dropped))
         if self._failing:
             _LOGGER.info("The satellite catalog downloaded again")
         self._failing = False
-        self._retry_after = None
-        self._refused = False
         self.last_error = None
-        self._store.async_delay_save(self._stored_form, STORAGE_SAVE_DELAY)
+        self._refused_until = self._retry_at = None
+        self._adopt(kept, records, dt_util.utcnow())
+        self._store.async_delay_save(self._stored, STORAGE_SAVE_DELAY)
 
-    async def _async_accept(self, satellites: list[Satellite], updated: datetime) -> bool:
-        """Make a catalog current (validated in the executor); False when none is usable."""
-        kept, satrecs, dropped = await self._hass.async_add_executor_job(validate, satellites)
-        if not kept:
-            return False
-        if dropped:
-            _LOGGER.debug("Skipping %d unusable satellites: %s", len(dropped), dropped)
+    def _note_failure(self, err: CatalogError) -> None:
+        """Keep the old catalog, and work out when to try again."""
+        self.last_error = str(err) or type(err).__name__
+        log = _LOGGER.debug if self._failing else _LOGGER.warning
+        log("Could not refresh the satellite catalog: %s", self.last_error)
+        self._failing = True
+        now = dt_util.utcnow()
+        if isinstance(err, DownloadRefused):
+            self._refused_until, self._retry_at = now + CATALOG_REFUSED_RETRY, None
+            self._store.async_delay_save(self._stored, STORAGE_SAVE_DELAY)
+        else:
+            age = self.median_epoch_age(now)
+            soon = age is None or age > CATALOG_MAX_AGE
+            self._refused_until = None
+            self._retry_at = now + (CATALOG_UNREACHABLE_RETRY if soon else CATALOG_RETRY)
+
+    def _adopt(self, kept: list[Satellite], records: list[Satrec], updated: datetime) -> None:
+        """Make this the catalog, and tell whoever is listening."""
         self.satellites = kept
         self.updated = updated
-        self._satrecs = satrecs
-        self._by_id = {s.norad_id: s for s in kept}
-        self._epochs = sorted(s.epoch.timestamp() for s in kept)
-        self._median_epoch = statistics.median(self._epochs)
         self.version += 1
-        self.cache = {}
+        self.cache.clear()
+        self._satrecs = records
+        self._by_id = {sat.norad_id: sat for sat in kept}
+        self._median_epoch = dt_util.utc_from_timestamp(
+            statistics.median(sat.epoch.timestamp() for sat in kept)
+        )
         for listener in list(self._listeners):
             listener()
-        return True
 
-    def _too_soon_to_ask(self, now: datetime) -> bool:
-        """Whether CelesTrak would refuse a download now, or already is refusing."""
-        wait = CATALOG_REFUSED_RETRY
-        if (
-            self._refused
-            and self._retry_after is not None
-            and now < self._retry_after <= now + wait
-        ):
-            return True
-        return self.updated is not None and now - wait < self.updated <= now
+    async def _async_read_store(self) -> None:
+        if self._store_read:
+            return
+        self._store_read = True
+        try:
+            stored = await self._store.async_load()
+        except HomeAssistantError as err:
+            _LOGGER.warning(_IGNORING, err)
+            return
+        if not stored:
+            return
+        if not isinstance(stored, dict):
+            _LOGGER.warning(_IGNORING, "it is not a catalog")
+            return
+        self._restore_refusal(stored)
+        if (entries := stored.get("catalog")) is not None:
+            await self._async_restore_catalog(entries, stored.get("updated"))
 
-    async def async_remove(self) -> None:
-        """Delete the stored copy, unless adding a location back would have to ask too soon.
+    def _restore_refusal(self, stored: dict[str, Any]) -> None:
+        until = _stored_time(stored.get("refused_until"))
+        if until is None or not timedelta(0) < until - dt_util.utcnow() <= CATALOG_REFUSED_RETRY:
+            return
+        self._refused_until = until
+        self.last_error = stored.get("last_error")
 
-        CelesTrak allows one download every two hours whether or not a location is
-        left, and an address that keeps asking can end up blocked. So until a new download
-        is allowed the copy stays, refusal and all, for a location added back to use.
-        """
-        if not self._loaded:
-            await self._async_read_store()
-        if self._too_soon_to_ask(dt_util.utcnow()):
-            await self._store.async_save(self._stored_form())
-        else:
-            await self._store.async_remove()
+    async def _async_restore_catalog(self, entries: Any, stamp: Any) -> None:
+        if _from_before_1_08(entries):
+            _LOGGER.debug("Replacing the stored satellite catalog from before version 1.08")
+            return
+        if (updated := _stored_time(stamp)) is None:
+            _LOGGER.warning(_IGNORING, "it has no date")
+            return
+        try:
+            kept, records, dropped = await self.hass.async_add_executor_job(_read_stored, entries)
+        except (AttributeError, KeyError, TypeError, ValueError) as err:
+            _LOGGER.warning(_IGNORING, repr(err))
+            return
+        if not kept:
+            _LOGGER.warning(_IGNORING, "it has no usable satellites")
+            return
+        if dropped:
+            _LOGGER.debug("Left out unusable satellites: %s", ", ".join(dropped))
+        self._adopt(kept, records, updated)
 
-    @callback
-    def _stored_form(self) -> dict[str, Any]:
+    def _stored(self) -> dict[str, Any]:
+        """Return what goes to storage: a store can hold a refusal and no catalog."""
         data: dict[str, Any] = {}
-        if self.updated is not None:
+        if self.satellites is not None and self.updated is not None:
             data["updated"] = self.updated.isoformat()
-            data["catalog"] = write_catalog(self.satellites or ())
-        if self._refused and self._retry_after is not None:
-            data["refused_until"] = self._retry_after.isoformat()
+            data["catalog"] = write_catalog(self.satellites)
+        if self._refused_until is not None:
+            data["refused_until"] = self._refused_until.isoformat()
             data["last_error"] = self.last_error
         return data
 
+    def _would_be_refused(self, now: datetime) -> bool:
+        """Whether CelesTrak would refuse another download now."""
+        if self._refused_until is not None and self._refused_until > now:
+            return True
+        if self.updated is None:
+            return False
+        return -CATALOG_CLOCK_SLACK <= now - self.updated < CATALOG_REFUSED_RETRY
+
     @callback
-    def async_add_listener(self, listener: Callable[[], None]) -> CALLBACK_TYPE:
-        """Call listener whenever a new catalog becomes current; returns the remover."""
+    def async_add_listener(self, listener: CALLBACK_TYPE) -> Callable[[], None]:
+        """Call ``listener`` with every new catalog, until the function returned is called."""
         self._listeners.append(listener)
 
-        @callback
         def remove() -> None:
-            self._listeners.remove(listener)
+            if listener in self._listeners:
+                self._listeners.remove(listener)
 
         return remove
 
-    def satrecs(self) -> list[Satrec]:
-        """SGP4 propagators of the current catalog, in catalog order.
-
-        Shared: propagate them only through SatrecArray (which copies them),
-        never with Satrec.sgp4, so any thread may use them.
-        """
+    def satrecs(self) -> Sequence[Satrec]:
+        """Return the catalog's SGP4 records, in its order."""
         return self._satrecs
 
     def by_id(self) -> dict[int, Satellite]:
-        """Return the current catalog by NORAD catalog number."""
+        """Return the catalog by NORAD id."""
         return self._by_id
 
     def median_epoch_age(self, now: datetime) -> timedelta | None:
-        """Return how old the orbital elements typically are; None without a catalog."""
-        if self._median_epoch is None:
-            return None
-        return timedelta(seconds=now.timestamp() - self._median_epoch)
+        """Return how old the middle satellite's elements are; None without a catalog."""
+        return None if self._median_epoch is None else now - self._median_epoch
 
     def epoch_range(self) -> tuple[datetime, datetime] | None:
-        """Return the oldest and newest element epochs of the catalog."""
-        if not self._epochs:
+        """Return the oldest and newest elements' dates; None without a catalog."""
+        if not self.satellites:
             return None
-        return dt_util.utc_from_timestamp(self._epochs[0]), dt_util.utc_from_timestamp(
-            self._epochs[-1]
-        )
+        epochs = [sat.epoch for sat in self.satellites]
+        return min(epochs), max(epochs)
 
-    def cached(self, key: Any) -> Any:
-        """Return a result computed for the current catalog version, or None."""
+    def cached(self, key: Hashable) -> bytes | None:
+        """Return what was remembered under a key for this catalog, if it is still kept."""
         value = self.cache.get(key)
         if value is not None:
-            # Most recently used last, for the eviction below.
-            self.cache[key] = self.cache.pop(key)
+            self.cache.move_to_end(key)
         return value
 
-    def remember(self, key: Any, value: Any) -> None:
-        """Keep a result for the current catalog version (a few at most)."""
+    def remember(self, key: Hashable, value: bytes) -> None:
+        """Keep a result for this catalog, with the most recently used others."""
         self.cache[key] = value
+        self.cache.move_to_end(key)
         while len(self.cache) > POSITIONS_CACHE_SIZE:
-            self.cache.pop(next(iter(self.cache)))
+            self.cache.popitem(last=False)
+
+    async def async_remove(self) -> None:
+        """Delete the stored copy, unless CelesTrak would refuse another download now.
+
+        Then it is saved at once instead, so that a location added back needs no download.
+        """
+        async with self._lock:
+            await self._async_read_store()
+            if self._would_be_refused(dt_util.utcnow()):
+                await self._store.async_save(self._stored())
+            else:
+                await self._store.async_remove()
 
 
 @callback
 def async_shared_catalog(hass: HomeAssistant) -> CatalogManager:
-    """Return the catalog shared by every location (and the config flow)."""
+    """Return the one catalog manager, creating it if need be."""
     if (manager := hass.data.get(SHARED_CATALOG)) is None:
         manager = hass.data[SHARED_CATALOG] = CatalogManager(hass)
     return manager
 
 
 async def async_remove_catalog(hass: HomeAssistant) -> None:
-    """Forget the shared catalog and delete its stored copy: the last location is gone.
-
-    Through the shared catalog's own store when there is one, which also deals with
-    a save it still has to make. The copy stays while a new download would be refused.
-    """
+    """Remove the manager, and with it the stored catalog (even one nothing has read)."""
     manager = hass.data.pop(SHARED_CATALOG, None) or CatalogManager(hass)
     await manager.async_remove()
