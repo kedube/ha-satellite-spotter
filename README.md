@@ -1,7 +1,10 @@
 # Satellite Spotter for Home Assistant
 
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
 [![GitHub release](https://img.shields.io/github/v/release/kedube/ha-satellite-spotter)](https://github.com/kedube/ha-satellite-spotter/releases)
+[![CI](https://github.com/kedube/ha-satellite-spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-satellite-spotter/actions/workflows/ci.yml)
 ![Home Assistant 2026.2+](https://img.shields.io/badge/Home%20Assistant-2026.2%2B-41BDF5.svg)
+[![License](https://img.shields.io/github/license/kedube/ha-satellite-spotter)](LICENSE)
 
 ![The Satellite Spotter page: a bright pass of the ISS simulated over the night side of the Earth, with where to look and the passes of the next five days](docs/images/hero.jpg)
 
@@ -39,25 +42,55 @@ under the same licence.
 Only interested in the space station? [ISS Tracker](https://github.com/kedube/ha-iss-tracker) shows
 its live position and its passes up to 30 days ahead, and can run alongside this.
 
-## Install
+## Installation
 
 You need Home Assistant 2026.2 or newer.
 
-[![Open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-satellite-spotter&category=integration)
+### HACS (recommended)
 
-1. Select the button above. Or, under **HACS → ⋮ → Custom repositories**, add
-   `https://github.com/kedube/ha-satellite-spotter` with the type **Integration**.
-2. Download **Satellite Spotter** and restart Home Assistant.
-3. Go to **Settings → Devices & services → Add integration → Satellite Spotter**.
-4. Name the location, check it on the map and give its elevation; a rough value is fine. The name
-   starts its entity ids: **Home** gives `sensor.home_next_pass`.
+1. Add `https://github.com/kedube/ha-satellite-spotter` as a custom repository. From Home Assistant
+   2026.11, HACS is built in as the Marketplace: go to **Settings → Marketplace → Add from link**,
+   which asks you to connect GitHub the first time. Before 2026.11, open **HACS → ⋮ → Custom
+   repositories** and choose the type **Integration**.
+2. Open **Satellite Spotter** and select **Install**, or **Download** in HACS.
+3. In HACS, restart Home Assistant. In the Marketplace, setup starts straight away.
+4. [Set up the integration](#setup).
+
+Or use this button to open Satellite Spotter on your Home Assistant, in the Marketplace or in HACS:
+
+[![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-satellite-spotter&category=integration)
+
+### Updating
+
+HACS and the Marketplace offer each new release as an update and show its release notes. Install the
+update, restart Home Assistant, and reload any dashboards you have open.
+
+### Manual installation
+
+1. Download `satellite_spotter.zip` from the
+   [latest release](https://github.com/kedube/ha-satellite-spotter/releases/latest).
+2. Unzip it into a `satellite_spotter` folder inside the `custom_components` folder of your Home
+   Assistant configuration directory, creating the folders if needed.
+3. Restart Home Assistant.
+
+Manual installs don't get update notifications. Repeat these steps to update.
+
+### Removing
+
+1. Go to **Settings → Devices & services → Satellite Spotter** and delete each location.
+2. Take the cards off your dashboards.
+3. Remove **Satellite Spotter** in HACS or the Marketplace. If you installed it manually, delete its
+   `custom_components/satellite_spotter` folder instead.
+4. Restart Home Assistant.
+
+## Setup
+
+Go to **Settings → Devices & services → Add integration → Satellite Spotter**. Name the location,
+check it on the map and give its elevation; a rough value is fine. The name starts its entity ids:
+**Home** gives `sensor.home_next_pass`.
 
 Use **Add location** for more places, such as a cabin; they share one catalogue download.
 **Reconfigure** moves a location and keeps its entities.
-
-To install without HACS, copy `custom_components/satellite_spotter` from the
-[latest release](https://github.com/kedube/ha-satellite-spotter/releases/latest) into your
-configuration's `custom_components` folder and restart. You won't get update notifications.
 
 ## Options
 
