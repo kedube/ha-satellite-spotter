@@ -1736,7 +1736,7 @@ export class SatelliteStreetView extends BaseElement {
     let el = target?.elevation;
     if (target == null && track) {
       // Not up yet (or gone): where it appears.
-      const i = track.data.t.findIndex((t) => t + track.offset >= track.visibleStart);
+      const i = track.data.t.findIndex((t) => t >= track.visibleStart);
       if (i >= 0) [az, el] = [track.data.az[i], track.data.el[i]];
     }
     if (!Number.isFinite(az)) return;
@@ -2271,7 +2271,7 @@ export function deviceView(alpha, beta, gamma) {
 function sampleStart(track) {
   const d = track.data;
   let i = 0;
-  while (i < d.n - 1 && d.t[i] + track.offset < track.visibleStart) i++;
+  while (i < d.n - 1 && d.t[i] < track.visibleStart) i++;
   return { azimuth: d.az[i], elevation: d.el[i] };
 }
 

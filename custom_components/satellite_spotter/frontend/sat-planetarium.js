@@ -330,9 +330,8 @@ export function trackFromRows(rows) {
 }
 
 /**
- * Each satellite of a pass, from its pass_track payload: the primary first,
- * the rest in order. A train's members without rows follow the primary's
- * path, offset_s later.
+ * Each satellite of a pass that has a path, from its pass_track payload: the
+ * primary first, the rest in order.
  */
 export function buildTracks(pass, detail) {
   const transits = detail?.transits ?? [];
@@ -343,21 +342,20 @@ export function buildTracks(pass, detail) {
   const primaryData = transits[primaryIndex].rows ? trackFromRows(transits[primaryIndex].rows) : null;
   if (!primaryData) return [];
   const used = new Set();
-  const tracks = transits.map((tr, i) => {
+  const tracks = transits.flatMap((tr, i) => {
+    if (!tr.rows) return [];
     // The pass's own record of this satellite (reasons, brightest time), by id, else by position.
     let info = pass?.transits?.findIndex((p, k) => !used.has(k) && p.norad_id === tr.norad_id) ?? -1;
     if (info < 0 && pass?.transits?.[i] && !used.has(i)) info = i;
     if (info >= 0) used.add(info);
     const own = info >= 0 ? pass.transits[info] : null;
     const primary = i === primaryIndex;
-    return {
+    return [{
       id: tr.norad_id,
       name: tr.name,
       kind: tr.kind,
       primary,
-      offset: tr.rows || primary ? 0 : tr.offset_s || 0,
-      shifted: !tr.rows && !primary,
-      data: primary ? primaryData : tr.rows ? trackFromRows(tr.rows) : primaryData,
+      data: primary ? primaryData : trackFromRows(tr.rows),
       visibleStart: tr.visible_start,
       visibleEnd: tr.visible_end,
       rise: tr.horizon_rise,
@@ -366,10 +364,10 @@ export function buildTracks(pass, detail) {
       endReason: own?.end_reason ?? null,
       brightestTime: own?.brightest_time ?? null,
       magnitude: own?.magnitude ?? null,
-    };
+    }];
   });
   // Primary first.
-  tracks.unshift(...tracks.splice(primaryIndex, 1));
+  tracks.unshift(...tracks.splice(tracks.findIndex((track) => track.primary), 1));
   return tracks;
 }
 
@@ -390,15 +388,14 @@ function indexAt(times, t) {
 /**
  * Where a satellite is at time t (unix s), interpolated between samples:
  * {t, azimuth, elevation, x, y, z (horizon frame), lit, visible, magnitude}, or
- * null outside its path. `offset` shifts a train member along the primary's path.
+ * null outside its path.
  */
-export function sampleAt(data, t, offset = 0) {
+export function sampleAt(data, t) {
   if (!data?.n) return null;
-  const s = t - offset;
-  const i = indexAt(data.t, s);
-  if (i < 0 || (i === data.n - 1 && s > data.t[i])) return null;
+  const i = indexAt(data.t, t);
+  if (i < 0 || (i === data.n - 1 && t > data.t[i])) return null;
   const j = Math.min(i + 1, data.n - 1);
-  const f = j === i ? 0 : (s - data.t[i]) / (data.t[j] - data.t[i]);
+  const f = j === i ? 0 : (t - data.t[i]) / (data.t[j] - data.t[i]);
   let x = data.x[i] + (data.x[j] - data.x[i]) * f;
   let y = data.y[i] + (data.y[j] - data.y[i]) * f;
   let z = data.z[i] + (data.z[j] - data.z[i]) * f;
@@ -535,12 +532,12 @@ export function edgeArrow(P, azimuth, elevation, { insets = {}, margin = 30 } = 
  * above the horizon), searching its path in steps of `step`; 0 when it is
  * already, null when it will not be with this view.
  */
-export function timeToEntry(P, data, t, { offset = 0, insets = {}, step = 2, horizon = 120 * 60 } = {}) {
+export function timeToEntry(P, data, t, { insets = {}, step = 2, horizon = 120 * 60 } = {}) {
   const { top = 0, right = 0, bottom = 0, left = 0 } = insets;
   for (let dt = 0; dt <= horizon; dt += step) {
-    const s = sampleAt(data, t + dt, offset);
+    const s = sampleAt(data, t + dt);
     if (!s) {
-      if (t + dt - offset > data.t[data.n - 1]) return null;
+      if (t + dt > data.t[data.n - 1]) return null;
       continue;
     }
     if (s.elevation <= 0) continue;
@@ -805,19 +802,20 @@ export class Planetarium {
   // -- state -----------------------------------------------------------------
 
   /**
-   * The satellite to look for now: the primary while its own window has not
-   * ended; then, for a group or a train, the brightest member still in its
-   * window (a train goes on after its first satellite has gone).
+   * The satellite to look for now: the primary during its own window; otherwise,
+   * for a group or a train, the brightest member in its window (a big group can
+   * start long before the primary appears, and go on after it has gone).
    */
   focusAt(tS) {
     const primary = this.primary;
     if (!primary) return null;
     const ps = sampleAt(primary.data, tS);
-    if (tS <= primary.visibleEnd || this.tracks.length === 1) return { track: primary, s: ps };
+    const inWindow = tS >= primary.visibleStart && tS <= primary.visibleEnd;
+    if (inWindow || this.tracks.length === 1) return { track: primary, s: ps };
     let best = null;
     for (const track of this.tracks) {
       if (track === primary || tS < track.visibleStart || tS > track.visibleEnd) continue;
-      const s = sampleAt(track.data, tS, track.offset);
+      const s = sampleAt(track.data, tS);
       if (!s || s.elevation <= 0) continue;
       const m = Number.isFinite(s.magnitude) ? s.magnitude : 9;
       if (!best || (s.visible && !best.s.visible) || (s.visible === best.s.visible && m < best.m)) best = { track, s, m };
@@ -831,20 +829,19 @@ export class Planetarium {
     if (!primary) return state;
     const { track, s } = this.focusAt(tS);
     const d = track.data;
-    const offset = track.offset;
     state.focus = track;
-    state.phase = tS - offset < d.t[0] ? "before" : tS - offset > d.t[d.n - 1] ? "after" : "up";
+    state.phase = tS < d.t[0] ? "before" : tS > d.t[d.n - 1] ? "after" : "up";
     if (s) {
       const q = s.elevation > -1 ? projectEnu(P, s.x, s.y, s.z) : null;
       const onScreen = !!q && q[0] >= 0 && q[1] >= 0 && q[0] <= P.width && q[1] <= P.height;
       state.current = { ...s, x: q?.[0], y: q?.[1], onScreen, hidden: track === primary && this._hiddenAt(tS) };
     }
     // The arrow points at the satellite while it is up, else at where it appears.
-    const target = s && s.elevation > 0 ? s : tS < track.visibleStart ? sampleAt(d, track.visibleStart, offset) : null;
+    const target = s && s.elevation > 0 ? s : tS < track.visibleStart ? sampleAt(d, track.visibleStart) : null;
     if (target && tS <= track.visibleEnd + 30) {
       const arrow = edgeArrow(P, target.azimuth, target.elevation, { insets });
       if (arrow) {
-        const wait = timeToEntry(P, d, tS, { insets, offset });
+        const wait = timeToEntry(P, d, tS, { insets });
         state.entry = { ...arrow, in: wait, visible: !!s?.visible, before: !(s && s.elevation > 0) };
       }
     }
@@ -1270,7 +1267,7 @@ export class Planetarium {
     // A train's members run along nearly the same path, and the paths of a big
     // group would be a web of lines: only their dots are drawn. A pair or a
     // small group shows each path, faintly.
-    if (!track.primary && (track.shifted || this.pass?.train || this.tracks.length > 4)) return;
+    if (!track.primary && (this.pass?.train || this.tracks.length > 4)) return;
     const d = track.data;
     const pts = new Array(d.n);
     for (let i = 0; i < d.n; i++) pts[i] = d.el[i] > -1.5 ? projectEnu(P, d.x[i], d.y[i], d.z[i]) : null;
@@ -1392,7 +1389,7 @@ export class Planetarium {
   _paintDots(ctx, P, tS, state) {
     let lowest = -Infinity;
     for (const track of this.tracks) {
-      const s = sampleAt(track.data, tS, track.offset);
+      const s = sampleAt(track.data, tS);
       if (!s || s.elevation < -0.5) continue;
       const q = projectEnu(P, s.x, s.y, s.z);
       if (!q || q[0] < -40 || q[1] < -40 || q[0] > P.width + 40 || q[1] > P.height + 40) continue;
@@ -1411,7 +1408,7 @@ export class Planetarium {
     ctx.save();
     ctx.lineCap = "round";
     for (let k = steps; k >= 0; k--) {
-      const p = sampleAt(track.data, tS - k * 0.8, track.offset);
+      const p = sampleAt(track.data, tS - k * 0.8);
       const q = p && p.elevation > -0.5 ? projectEnu(P, p.x, p.y, p.z) : null;
       if (q && prev) {
         const width = Math.max(1, dotRadius(s.magnitude) * 0.9 * (1 - k / steps));
@@ -1671,7 +1668,7 @@ export class Planetarium {
       const names = [];
       for (const other of this.tracks) {
         if (other === state.focus) continue;
-        const s = sampleAt(other.data, state.t, other.offset);
+        const s = sampleAt(other.data, state.t);
         if (!s || s.elevation < 1 || !s.lit) continue;
         const q = projectEnu(P, s.x, s.y, s.z);
         if (!q || q[0] < 0 || q[1] < 0 || q[0] > P.width || q[1] > P.height) continue;

@@ -146,6 +146,8 @@ def test_the_package_is_what_hacs_installs(tmp_path: Path) -> None:
         manifest = json.loads(zf.read("manifest.json"))
         assert manifest["domain"] == "satellite_spotter"
         assert manifest["version"] == release.manifest_version()
+        # The code began as Willem Vooijs's, so the MIT notice goes wherever it goes.
+        assert "Willem Vooijs" in zf.read("LICENSE.wildekek").decode()
         needed = (
             "__init__.py",
             "brand/icon.png",

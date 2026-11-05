@@ -201,8 +201,8 @@ Both are in the card picker, with visual editors.
 4. **Visibility.** A satellite counts while it is at least 10° up, lit by the Sun, brighter than
    your **Faintest magnitude**, and bright enough for the sky at that moment.
 5. **Passes.** Satellites that overlap or follow within a minute make one pass, named after the
-   brightest, and fewer than five Starlinks together are left out. A pass is **bright** when it beats
-   magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
+   brightest, and fewer than five Starlinks together are left out. More than five show as a train. A
+   pass is **bright** when it beats magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
 
 Passes are predicted again every two hours. In between nothing polls: entities change at the
 moments that matter.
@@ -283,7 +283,10 @@ To add a language, copy a JSON file in both `translations/` folders, translate t
 
 ## Credits and references
 
-Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
+Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`. It began as a fork of Willem
+Vooijs's [see-a-satellite](https://github.com/wildekek/see-a-satellite), under the MIT licence. Its
+code has been reworked since, not written independently, so that notice stays with it, in
+[`LICENSE.wildekek`](custom_components/satellite_spotter/LICENSE.wildekek).
 
 ### The predictions
 

@@ -350,12 +350,11 @@ export function syntheticPass({ start = 1792400000, peak = 60, litFrom = 100, me
     norad_id: 25544 + i,
     name: i ? `MEMBER ${i}` : "ISS",
     kind: i ? "starlink" : "iss",
-    offset_s: i * 20,
     horizon_rise: start + i * 20,
     horizon_set: start + span + i * 20,
     visible_start: vs + i * 20,
     visible_end: ve + i * 20,
-    rows: i && train ? null : rows.map((r) => [r[0] + i * 20, ...r.slice(1)]),
+    rows: rows.map((r) => [r[0] + i * 20, ...r.slice(1)]),
   });
   const transits = [...Array(members + 1).keys()].map(transit);
   const brightest = rows.reduce((a, b) => (Number.isFinite(b[8]) && (!Number.isFinite(a[8]) || b[8] < a[8]) ? b : a));

@@ -718,8 +718,8 @@ export class SatellitePassesView extends BaseElement {
       this._chartKey = key;
       const detail = this._detail;
       const primary = detail.transits[0];
-      const members = detail.transits.slice(1).map((m) => ({
-        track: sky.skyPoints(m.rows ?? primary.rows, m.rows ? 0 : m.offset_s ?? 0),
+      const members = detail.transits.slice(1).filter((m) => m.rows).map((m) => ({
+        track: sky.skyPoints(m.rows),
         visibleStart: m.visible_start,
         visibleEnd: m.visible_end,
       }));

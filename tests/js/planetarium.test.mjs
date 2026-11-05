@@ -175,23 +175,20 @@ test("how faint a star can be: twilight, the Moon, light pollution and the air",
 
 // ---- the satellites' paths ---------------------------------------------------
 
-test("pass_track rows become typed tracks; a train's members without rows follow the primary", () => {
+test("pass_track rows become typed tracks, each satellite on a path of its own", () => {
   const { pass, detail } = syntheticPass({ members: 3, train: true });
   const tracks = buildTracks(pass, detail);
   assert.equal(tracks.length, 4);
   assert.ok(tracks[0].primary && !tracks[1].primary);
   assert.equal(tracks[0].data.n, detail.transits[0].rows.length);
-  assert.equal(tracks[2].data, tracks[0].data, "shares the primary's samples");
-  assert.ok(tracks[2].shifted);
-  assert.equal(tracks[2].offset, 40);
+  assert.notEqual(tracks[2].data, tracks[0].data);
+  assert.equal(tracks[2].data.n, detail.transits[2].rows.length);
   assert.equal(tracks[0].startReason, "shadow");
   assert.equal(tracks[0].endReason, "set");
-  // A member 40 s behind is where the primary was 40 s before.
-  const t = pass.start + 100;
-  const member = sampleAt(tracks[2].data, t, tracks[2].offset);
-  const primary = sampleAt(tracks[0].data, t - 40);
-  close(member.azimuth, primary.azimuth, 1e-9);
-  close(member.elevation, primary.elevation, 1e-9);
+  // One that could not be placed is left out.
+  const unplaced = detail.transits.map((tr, i) => (i === 2 ? { ...tr, rows: null } : tr));
+  const placed = buildTracks(pass, { ...detail, transits: unplaced });
+  assert.deepEqual(placed.map((track) => track.id), [25544, 25545, 25547]);
   // The primary is found by its id even when it is not first.
   const swapped = { ...detail, transits: [detail.transits[1], detail.transits[0]].map((tr, i) => ({ ...tr, rows: detail.transits[0].rows, offset_s: i ? 0 : 20 })) };
   assert.equal(buildTracks(pass, swapped)[0].id, 25544);
@@ -451,6 +448,24 @@ test("a train's members carry on after the first satellite has gone", () => {
   assert.notEqual(later.track, primary, "a member is still up");
   assert.ok(later.track.visibleEnd >= primary.visibleEnd + 30);
   assert.equal(p.focusAt(primary.visibleEnd + 3600).track, primary, "all gone: back to the primary");
+});
+
+test("the others in a group are followed until the satellite it is named after appears", () => {
+  globalThis.Path2D ??= class {};
+  const p = new Planetarium({ sky: fakeCanvas(800, 600), overlay: fakeCanvas(800, 600), createCanvas: () => fakeCanvas(32, 32) });
+  const { pass, detail } = syntheticPass({ members: 3, train: true });
+  p.setObserver({ latitude: 42.36, longitude: -71.06 });
+  p.setFormatter(fakeFormatter());
+  p.resize(800, 600, 1);
+  p.setPass(pass, detail);
+  const primary = p.primary;
+  const firstVisible = primary.visibleStart;
+  primary.visibleStart += 120;
+  const meanwhile = p.focusAt(firstVisible + 60);
+  assert.notEqual(meanwhile.track, primary, "another is up, and the named one is not");
+  assert.ok(meanwhile.s, "with a position to show");
+  assert.equal(p.focusAt(primary.visibleStart + 5).track, primary, "then the named one");
+  assert.equal(p.focusAt(firstVisible - 3600).track, primary, "nothing up yet: the named one");
 });
 
 test("the edge arrow's label moves beside the arrow when its usual place is taken", () => {

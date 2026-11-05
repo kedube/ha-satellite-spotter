@@ -30,10 +30,9 @@ export const skyDotTransform = ([x, y]) => `translate(${f1(x)} ${f1(y)})`;
 /**
  * A pass_track transit's rows as sky points: [{t, azimuth, elevation, mag}]
  * (the rows carry the look angles: [t, lat, lon, alt, lit, az, el, range, mag, vis]).
- * `offsetS` shifts the times, for a train member drawn as a copy of the leader.
  */
-export function skyPoints(rows, offsetS = 0) {
-  return (rows || []).map((r) => ({ t: r[0] + offsetS, azimuth: r[5], elevation: r[6], mag: r[8] ?? null }));
+export function skyPoints(rows) {
+  return (rows || []).map((r) => ({ t: r[0], azimuth: r[5], elevation: r[6], mag: r[8] ?? null }));
 }
 
 function pathData(points, r, c) {

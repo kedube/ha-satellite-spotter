@@ -182,20 +182,16 @@ test("rows merge in time order, the finer track winning where they overlap", () 
   assert.equal(rowsCover(null, 0, 1), false);
 });
 
-test("train members without rows are the leader moved later in time", () => {
+test("a satellite that could not be placed has no rows and no position", () => {
   const pass = makePass(T0 + 600, T0 + 900, { ids: [101, 102, 103], train: true, kind: "starlink" });
   const detail = makeDetail(pass, { withRows: 1 });
-  const lead = transitRows(detail, 0);
-  const third = transitRows(detail, 2);
-  assert.equal(third.length, lead.length);
-  assert.equal(third[0][0] - lead[0][0], 40);
-  assert.deepEqual(third[0].slice(1), lead[0].slice(1));
+  assert.equal(transitRows(detail, 0), detail.transits[0].rows);
+  assert.equal(transitRows(detail, 2), null);
   assert.equal(transitRows(detail, 9), null);
-  // Where each one is, every frame, without the copy.
   for (const t of [T0 + 500, T0 + 640, T0 + 777.25, T0 + 1000]) {
-    for (const i of [0, 1, 2]) assert.deepEqual(transitPositionAt(detail, i, t), positionAt(transitRows(detail, i), t), `${i} at ${t - T0}`);
+    assert.deepEqual(transitPositionAt(detail, 0, t), positionAt(detail.transits[0].rows, t));
+    assert.equal(transitPositionAt(detail, 2, t), null);
   }
-  assert.equal(transitPositionAt(detail, 2, T0 - 3600), null, "nowhere near");
   assert.equal(transitPositionAt(detail, 9, T0 + 640), null);
 });
 
@@ -1788,19 +1784,19 @@ test("the cloud's flags: the pass's satellites gold, those in the sky now breath
   }
 });
 
-test("the other satellites of a pass are drawn where their rows reach, a train's as copies of the leader", () => {
+test("the other satellites of a pass are drawn where their rows reach", () => {
   const clock = installClock(T0 * 1000);
   try {
     const pass = makePass(T0 + 60, T0 + 360, { ids: [101, 102, 103], kind: "starlink", train: true });
     const { view } = passView(clock, [pass]);
     view._selectedId = pass.id;
-    view._details.set(pass.id, makeDetail(pass, { withRows: 2 }));
+    view._details.set(pass.id, makeDetail(pass));
     // The leader is the focus satellite (drawn in full); the other two are dots.
     const objects = view._memberObjects(T0 + 200, 2);
     assert.deepEqual(objects.map((o) => o.id), [102, 103]);
     assert.ok(objects.every((o) => !o.primary && o.size >= 7));
     assert.equal(view._memberObjects(T0 - 3600, 2).length, 0, "nowhere near: none");
-    // A train member without rows followed from the cloud: its course is made once, not every frame.
+    // A train member followed from the cloud: its course is made once, not every frame.
     view._focus = { norad_id: 103, name: "SAT 103", kind: "starlink", period_s: 5574, picked: true };
     view._focusTrack = { norad: 103, rows: rows(T0 - 2800, T0 + 7000, 30), from: T0 - 2800, to: T0 + 7000 };
     const course = view._courseRows();

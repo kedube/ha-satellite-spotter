@@ -4,6 +4,24 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.10
+
+- **Starlink trains are trains again.** 1.09 stopped showing one as a train when something
+  brighter flew with it, and **Hide Starlink** stopped hiding it. A pass now counts as a
+  train when more than five Starlinks fly together, whichever satellite it is named after,
+  and the page says what outshines them, as in "with CZ-2C R/B". A train named after the
+  ISS, Tiangong or Hubble stays in the list when Starlinks are hidden.
+- **Every satellite in a big group is drawn where it really is.** From the seventh on, they
+  used to be copies of the first one's path, moved in time, which could put a dot over 80°
+  from the truth. Each now has a path of its own, and the largest groups need far less data
+  than they did in 1.09.
+- **The street view follows a satellite you can see.** A big group can start long before the
+  satellite it is named after appears, and the view now follows whichever is up until then.
+- **Willem Vooijs's licence notice is back**, in `LICENSE.wildekek`. This integration began
+  as a fork of see-a-satellite, and its code has been reworked rather than written
+  independently, so the MIT notice stays with it. 1.08 and 1.09 went out without it.
+- Updating from 1.07 or earlier no longer logs a warning about the stored catalogue.
+
 ## 1.09
 
 - **Pass attributes have new names, so automations that read them need updating.**
@@ -27,9 +45,34 @@ commits instead.
   good during that time, `.storage/satellite_spotter.catalog` stays behind; it holds no
   location, and you can delete it.
 - **The cloud forecast** now asks Open-Meteo for the five days that are predicted, not seven.
-- **The prediction and entity code is rewritten from published sources.** The Sun's position
-  now comes from Meeus 1998. In a test across eight cities the same passes were predicted,
-  with times at most a second apart.
+- **The prediction and entity code is reworked.** The Sun's position now comes from Meeus 1998.
+  In a test across eight cities the same passes were predicted, with times at most a second
+  apart.
+
+## 1.08
+
+- **Orbits now come straight from CelesTrak, and brightness from a table of our own.** The
+  integration no longer uses See A Satellite Tonight's catalogue or the pysatellitespotter
+  library. The table, `brightness.csv`, holds mostly magnitudes measured by the
+  Mini-MegaTORTORA telescope.
+- **Which passes are listed changes**, because the brightness values are on a different scale.
+  **Faintest magnitude** now defaults to 2.25 rather than 3, in quarter steps, which lists about
+  as many passes. If you set your own value it is kept, but it now means something different,
+  so it is worth checking.
+- **Starlinks are listed 0.75 fainter than your setting**, and a pass now counts as bright below
+  magnitude 0.5 rather than 1.
+- **The device page** links to the integration's own page rather than See A Satellite Tonight's
+  website.
+- Planets in the drawn sky use modern colour measurements.
+- The first start after updating downloads a new catalogue, and logs that it is ignoring the
+  stored one. That warning is harmless.
+
+## 1.07
+
+- **Wording and documentation.** The street view's option now says that only administrators'
+  browsers receive the Google and Mapillary keys, the attribution names Space-Track alongside
+  CelesTrak, and the README is updated.
+- The integration now pins SGP4, its orbit library, to version 2.27.
 
 ## 1.06
 
@@ -67,9 +110,7 @@ Satellite Tracker is now **Satellite Spotter**, at
 
 - **A new domain**, `satellite_spotter`, so Home Assistant sets it up as a new
   integration. Remove Satellite Tracker, install Satellite Spotter and add your locations
-  again, as
-  [Moving from Satellite Tracker](https://github.com/kedube/ha-satellite-spotter#moving-from-satellite-tracker)
-  describes. Locations with the same names get the same entity ids.
+  again. Locations with the same names get the same entity ids.
 - The page is at `/satellite-spotter`, the globe card is `custom:satellite-spotter-card`,
   and the notification blueprint has a new address to import it from. This once, each
   browser starts afresh with the page's settings, the street view's options and the

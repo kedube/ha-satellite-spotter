@@ -152,24 +152,20 @@ export function makePass(start, end, { ids = [25544], kind = "iss", bright = tru
   };
 }
 
-/** The pass_track payload of a pass: rows for the first `withRows` members, the rest shifted copies. */
-export function makeDetail(pass, { withRows = 6 } = {}) {
-  const lead = pass.transits[0];
+/** The pass_track payload of a pass: rows for every satellite, or only for the first `withRows`. */
+export function makeDetail(pass, { withRows = Infinity } = {}) {
   return {
     pass_id: pass.id,
     step: 2,
     sun: [],
     transits: pass.transits.map((t, i) => {
-      const own = i < withRows;
-      const offset = t.brightest_time - lead.brightest_time;
-      const r = own ? passRows(t.start, t.end) : null;
+      const r = i < withRows ? passRows(t.start, t.end) : null;
       return {
         norad_id: t.norad_id,
         name: t.name,
         kind: t.kind,
-        offset_s: offset,
-        horizon_rise: own ? r[0][0] : lead.start - 120 + offset,
-        horizon_set: own ? r[r.length - 1][0] : lead.end + 120 + offset,
+        horizon_rise: r ? r[0][0] : t.start,
+        horizon_set: r ? r[r.length - 1][0] : t.end,
         visible_start: t.start,
         visible_end: t.end,
         rows: r,

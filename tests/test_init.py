@@ -189,6 +189,28 @@ async def test_unreadable_stored_catalog_is_downloaded(
     assert "Ignoring the stored satellite catalog" in caplog.text
 
 
+async def test_catalog_from_before_1_08_is_replaced_quietly(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    mock_config_entry: MockConfigEntry,
+    mock_downloads: dict[str, AsyncMock],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Updating from 1.07: its catalog is on another brightness scale, and nothing is wrong."""
+    freezer.move_to(NOW)
+    old = [{"OBJECT_NAME": "ISS (ZARYA)", "NORAD_CAT_ID": "25544", "MAG": -1.8}]
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {"updated": NOW.isoformat(), "catalog": old},
+    }
+    await add_location(hass, mock_config_entry)
+    assert mock_config_entry.state is ConfigEntryState.LOADED
+    mock_downloads["fetch_catalog"].assert_awaited_once()
+    assert "Ignoring the stored satellite catalog" not in caplog.text
+
+
 async def test_fresh_stored_catalog_is_not_downloaded(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],

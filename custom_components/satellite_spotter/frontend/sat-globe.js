@@ -162,31 +162,14 @@ function rowsBetween(rows, from, to) {
   return (rows || []).filter((r) => r[0] >= from - 1 && r[0] <= to + 1);
 }
 
-/**
- * One satellite's rows of a pass_track payload: its own, or, for a train
- * member sent without them, the leader's moved later by its offset.
- */
+/** One satellite's rows of a pass_track payload, or null if it could not be placed. */
 export function transitRows(detail, index) {
-  const t = detail?.transits?.[index];
-  if (!t) return null;
-  if (t.rows) return t.rows;
-  const lead = detail.transits[0]?.rows;
-  const offset = t.offset_s || 0;
-  return lead ? lead.map((r) => [r[0] + offset, ...r.slice(1)]) : null;
+  return detail?.transits?.[index]?.rows ?? null;
 }
 
-/**
- * Where one satellite of a pass_track payload is at t (as positionAt() on
- * transitRows()), for every frame: a train member sent without rows is where
- * the leader was offset_s earlier, without a copy of the leader's rows.
- */
+/** Where one satellite of a pass_track payload is at t, for every frame. */
 export function transitPositionAt(detail, index, t) {
-  const tr = detail?.transits?.[index];
-  if (!tr) return null;
-  if (tr.rows) return positionAt(tr.rows, t);
-  const pos = positionAt(detail.transits[0]?.rows, t - (tr.offset_s || 0));
-  if (pos) pos.t = t;
-  return pos;
+  return positionAt(transitRows(detail, index), t);
 }
 
 /**
@@ -2044,8 +2027,7 @@ export class SatelliteGlobeView extends BaseElement {
     const detail = pass && this._details.get(pass.id);
     for (const [i, tr] of (pass?.transits || []).entries()) {
       set(tr.norad_id, 8);
-      // Drawn as sprites while their rows reach (see _memberObjects); a train
-      // member's horizon times already carry its offset.
+      // Drawn as sprites while their rows reach (see _memberObjects).
       const d = detail?.transits?.[i];
       if (d && t >= d.horizon_rise && t <= d.horizon_set) set(tr.norad_id, 1);
     }
@@ -3318,6 +3300,7 @@ export class SatelliteGlobeView extends BaseElement {
       const track = skyPoints(first.rows);
       const members = others
         .filter((m) => m.rows)
+        .slice(0, MAX_MEMBER_LINES)
         .map((m) => ({ track: skyPoints(m.rows), visibleStart: m.visible_start, visibleEnd: m.visible_end }));
       return { track, members, visibleStart: first.visible_start ?? pass.start, visibleEnd: first.visible_end ?? pass.end };
     }

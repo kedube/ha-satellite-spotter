@@ -71,6 +71,16 @@ def validate(satellites: list[Satellite]) -> tuple[list[Satellite], list[Satrec]
     return kept, satrecs, dropped
 
 
+def _from_before_1_08(catalog: Any) -> bool:
+    """Whether a stored catalog is from another source, whose magnitudes are on another scale."""
+    return (
+        isinstance(catalog, list)
+        and bool(catalog)
+        and isinstance(catalog[0], dict)
+        and "OBJECT_NAME" in catalog[0]
+    )
+
+
 class CatalogManager:
     """Downloads the catalog from CelesTrak and keeps it, for every location.
 
@@ -151,6 +161,9 @@ class CatalogManager:
             self.last_error = stored.get("last_error")
         # Only the refusal was stored: it came before any catalog.
         if "catalog" not in stored:
+            return
+        if _from_before_1_08(stored["catalog"]):
+            _LOGGER.debug("The stored satellite catalog is from an older version: not using it")
             return
         try:
             satellites = read_catalog(stored["catalog"])

@@ -363,9 +363,9 @@ def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
 
 
 def is_train(p: ListedPass) -> bool:
-    """Whether a pass is a Starlink train: more than five satellites, a Starlink the brightest."""
-    primary = p.lead.satellite
-    return p.count > 5 and (satellite_kind(primary.norad_id, primary.name) == "starlink")
+    """Whether a pass is a Starlink train: more than five Starlinks, whichever is brightest."""
+    kinds = (satellite_kind(s.satellite.norad_id, s.satellite.name) for s in p.sightings)
+    return sum(kind == "starlink" for kind in kinds) > 5
 
 
 def pass_json(p: ListedPass) -> dict[str, Any]:
@@ -484,42 +484,29 @@ def pass_track_payload(
 ) -> dict[str, Any]:
     """Trace a pass's satellites across the sky, horizon to horizon, and the Sun meanwhile.
 
-    Every satellite gets rows of its own, except in a Starlink train: there
-    the Starlinks after the first PASS_TRACK_MEMBERS follow the path of the one
-    listed first, ``offset_s`` later (or earlier, as it need not lead the train), as
-    trains do (runs in the executor).
+    Each satellite has its own path, since those flying together need not share an orbit.
+    Past the first PASS_TRACK_MEMBERS of a big group they are only dots, so a coarser path
+    keeps the payload small: within a degree of the truth (runs in the executor).
     """
-    first = p.lead.brightest.time.timestamp()
-    train = is_train(p)
     transits: list[dict[str, Any]] = []
     for i, t in enumerate(p.sightings[:MAX_SIGHTINGS]):
         sat = t.satellite
-        kind = satellite_kind(sat.norad_id, sat.name)
         start, end = t.appears.time.timestamp(), t.vanishes.time.timestamp()
-        item: dict[str, Any] = {
-            "norad_id": sat.norad_id,
-            "name": sat.name,
-            "kind": kind,
-            "offset_s": round(t.brightest.time.timestamp() - first),
-            "horizon_rise": None,
-            "horizon_set": None,
-            "visible_start": unix(start),
-            "visible_end": unix(end),
-            "rows": None,
-        }
-        if train and i >= PASS_TRACK_MEMBERS and kind == "starlink" and transits[0]["rows"]:
-            # Drawn as the first one's path, offset_s later: so are its horizons.
-            offset = t.brightest.time.timestamp() - first
-            item["horizon_rise"] = unix(transits[0]["horizon_rise"] + offset)
-            item["horizon_set"] = unix(transits[0]["horizon_set"] + offset)
-        elif (
-            sky := track.pass_track(sat, observer, start, end, step, cutoff_for(sat, faintest))
-        ) is not None:
-            item.update(horizon_rise=sky.horizon_rise, horizon_set=sky.horizon_set, rows=sky.rows)
-        else:
-            # SGP4 cannot place it (or it never clears the horizon here).
-            item["horizon_rise"], item["horizon_set"] = item["visible_start"], item["visible_end"]
-        transits.append(item)
+        own_step = step if i < PASS_TRACK_MEMBERS else max(step, PASS_TRACK_MAX_STEP)
+        sky = track.pass_track(sat, observer, start, end, own_step, cutoff_for(sat, faintest))
+        transits.append(
+            {
+                "norad_id": sat.norad_id,
+                "name": sat.name,
+                "kind": satellite_kind(sat.norad_id, sat.name),
+                # Without a path (SGP4 cannot place it), the window stands in for its horizons.
+                "horizon_rise": unix(start) if sky is None else sky.horizon_rise,
+                "horizon_set": unix(end) if sky is None else sky.horizon_set,
+                "visible_start": unix(start),
+                "visible_end": unix(end),
+                "rows": None if sky is None else sky.rows,
+            }
+        )
     rise = min(x["horizon_rise"] for x in transits)
     set_ = max(x["horizon_set"] for x in transits)
     return {

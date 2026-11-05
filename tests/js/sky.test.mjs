@@ -136,7 +136,6 @@ test("pass_track rows give the chart its points directly", () => {
     { t: 1000, azimuth: 239.2, elevation: -0.1, mag: null },
     { t: 1002, azimuth: 239.5, elevation: 0.3, mag: 3.4 },
   ]);
-  assert.equal(skyPoints(rows, 60)[0].t, 1060, "a train member drawn as a later copy of the leader");
   assert.deepEqual(skyPoints(null), []);
 });
 

@@ -110,8 +110,7 @@ PANEL_MODULE: Final = "sat-panel.js"
 CARD_MODULE: Final = "sat-card.js"
 
 # Websocket limits. A pass track samples a few seconds apart from horizon to
-# horizon; the first members of a train get rows of their own, the rest are
-# drawn as time-shifted copies of the first.
+# horizon; past the first members of a big group, every PASS_TRACK_MAX_STEP.
 PASS_TRACK_STEP: Final = 2
 PASS_TRACK_MAX_STEP: Final = 10
 PASS_TRACK_MEMBERS: Final = 6

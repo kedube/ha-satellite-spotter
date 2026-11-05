@@ -118,6 +118,24 @@ test("passes are grouped by the part of the day they start in", () => {
   assert.equal(PASSES[0].id, "53807-1792276513", "the caller's list is not reordered");
 });
 
+test("a train stays a train whatever outshines it", () => {
+  const starlink = { kind: "starlink", name: "STARLINK-1" };
+  const rocket = { kind: "rocket", name: "CZ-2C R/B" };
+  const tiangong = { kind: "tiangong", name: "Tiangong" };
+  const train = (kind, ...transits) => ({ kind, train: true, transits });
+  // Hidden with the Starlinks, and the brighter rocket is said.
+  assert.equal(matchesFilters(train("rocket", rocket, starlink), { hideStarlink: true }), false);
+  assert.equal(notableMember(train("rocket", rocket, starlink)).name, "CZ-2C R/B");
+  // Tiangong is worth seeing anyway, and "Starlink train" does not name it.
+  assert.equal(matchesFilters(train("tiangong", tiangong, starlink), { hideStarlink: true }), true);
+  assert.equal(notableMember(train("tiangong", tiangong, starlink)).name, "Tiangong");
+  // Nothing to add to a train of Starlinks alone, and one of note is said wherever it is.
+  assert.equal(notableMember(train("starlink", starlink, starlink)), null);
+  assert.equal(notableMember(train("starlink", starlink, tiangong)).name, "Tiangong");
+  // A group that is not a train keeps through the filter.
+  assert.equal(matchesFilters({ kind: "rocket", transits: [rocket, starlink] }, { hideStarlink: true }), true);
+});
+
 test("a satellite of note riding along is named, and directions come from the first satellite", () => {
   assert.equal(notableMember(byId("67304-1792317273")).name, "ISS");
   assert.equal(notableMember(byId("25544-1792400980")), null, "the ISS itself");

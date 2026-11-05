@@ -72,10 +72,15 @@ export function normalizeFilters(filters) {
   return { brightOnly: filters?.brightOnly === true, hideStarlink: filters?.hideStarlink === true };
 }
 
+/** Whether a pass is about Starlinks: a train counts, unless one of the satellites of note names it. */
+function isStarlinkPass(pass) {
+  return pass.kind === "starlink" || (!!pass.train && !NOTABLE.has(pass.kind));
+}
+
 /** Whether a pass gets through the list's filters ("Bright only", "Hide Starlink"). */
 export function matchesFilters(pass, filters) {
   if (filters?.brightOnly && !pass.bright) return false;
-  if (filters?.hideStarlink && pass.kind === "starlink") return false;
+  if (filters?.hideStarlink && isStarlinkPass(pass)) return false;
   return true;
 }
 
@@ -96,9 +101,17 @@ export function groupPasses(passes, fmt, nowS, { filters } = {}) {
   return groups;
 }
 
-/** A satellite of note (the ISS, Tiangong, Hubble) travelling in another one's group, or null. */
+/**
+ * What deserves a mention beside a pass's name, or null: a satellite of note (the
+ * ISS, Tiangong, Hubble) travelling in another one's group, or whatever outshines a
+ * train, which goes by "Starlink train" and so does not name it.
+ */
 export function notableMember(pass) {
   const members = pass?.transits || [];
+  if (pass?.train) {
+    const named = pass.kind === "starlink" ? null : members[0] ?? null;
+    return members.find((t) => NOTABLE.has(t.kind)) ?? named;
+  }
   if (NOTABLE.has(pass?.kind)) return null;
   return members.slice(1).find((t) => NOTABLE.has(t.kind)) ?? null;
 }

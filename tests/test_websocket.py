@@ -22,11 +22,14 @@ from custom_components.satellite_spotter.const import (
     CONF_STREET_SOURCE,
     CONF_STREET_VIEW,
     DOMAIN,
+    PASS_TRACK_MAX_STEP,
 )
 from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
 from custom_components.satellite_spotter.frontend import (
     build_passes_payload,
+    is_train,
+    pass_json,
     pass_track_payload,
 )
 
@@ -174,7 +177,6 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
     assert transit["norad_id"] == 53807
     assert transit["name"] == "BLUEWALKER-3"
     assert transit["kind"] == "satellite"
-    assert transit["offset_s"] == 0
     assert transit["visible_start"] == int(t.appears.time.timestamp())
     assert transit["visible_end"] == int(t.vanishes.time.timestamp())
 
@@ -223,10 +225,6 @@ async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry)
     assert result["step"] == 5
     first, second = result["transits"]
     assert (first["name"], second["name"]) == ("ISS", "ATLAS 5 CENTAUR R/B")
-    assert first["offset_s"] == 0
-    assert second["offset_s"] == round(
-        (p.sightings[1].brightest.time - p.sightings[0].brightest.time).total_seconds()
-    )
     for transit in result["transits"]:
         assert transit["rows"]
         assert {
@@ -256,34 +254,42 @@ def _group(p: ListedPass, names: list[str]) -> ListedPass:
     )
 
 
-async def test_trains_share_the_first_path(
+async def test_big_groups_get_coarser_paths(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
-    """The first six of a Starlink train get rows; the rest follow the first, offset_s later."""
+    """Everyone has a path of their own, as those flying together need not share an orbit."""
     coordinator = init_integration.runtime_data
     p = coordinator.data.passes[0]
     names = [f"STARLINK-{1000 + i}" for i in range(8)]
     names.insert(7, "ISS")
-    train = _group(p, names)
     result = await hass.async_add_executor_job(
-        pass_track_payload, train, coordinator.observer, 2.0, 3.0
+        pass_track_payload, _group(p, names), coordinator.observer, 2.0, 3.0
     )
     transits = result["transits"]
-    assert [x["offset_s"] for x in transits] == [15 * i for i in range(9)]
-    # Another satellite in the train is on an orbit of its own: it keeps its rows.
-    assert [x["rows"] is not None for x in transits] == [True] * 6 + [False, True, False]
+    assert all(x["rows"] for x in transits)
+    steps = [{b[0] - a[0] for a, b in itertools.pairwise(x["rows"])} for x in transits]
+    assert steps == [{2}] * 6 + [{PASS_TRACK_MAX_STEP}] * 3
     for member in transits:
         assert member["horizon_rise"] < member["visible_start"] < member["horizon_set"]
-    # The time-shifted copies rise and set with the first, offset_s later.
-    assert transits[6]["horizon_rise"] == transits[0]["horizon_rise"] + 90
-    assert transits[8]["horizon_set"] == transits[0]["horizon_set"] + 120
 
-    # A group that is not a train: everyone on their own path.
-    group = _group(p, ["BLUEWALKER-3", *names[:8]])
-    result = await hass.async_add_executor_job(
-        pass_track_payload, group, coordinator.observer, 2.0, 3.0
-    )
-    assert all(x["rows"] for x in result["transits"])
+
+@pytest.mark.parametrize(
+    ("names", "train"),
+    [
+        ([f"STARLINK-{i}" for i in range(6)], True),
+        # Named after a brighter rocket, and still a train.
+        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(6))], True),
+        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(5))], False),
+        ([f"STARLINK-{i}" for i in range(5)], False),
+        ([f"CZ-2C R/B {i}" for i in range(9)], False),
+    ],
+)
+async def test_a_train_is_a_matter_of_how_many_starlinks(
+    init_integration: MockConfigEntry, names: list[str], train: bool
+) -> None:
+    group = _group(init_integration.runtime_data.data.passes[0], names)
+    assert is_train(group) is train
+    assert pass_json(group)["train"] is train
 
 
 async def test_pass_track_finds_a_pass_by_an_old_id(
