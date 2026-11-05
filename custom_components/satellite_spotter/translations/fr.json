@@ -158,8 +158,6 @@
     }
   },
   "common": {
-    "calendar_summary": "🛰️ {title}",
-    "calendar_summary_bright": "🛰️ {title} (brillant)",
     "calendar_appears": "Première visibilité à {time} vers {direction}, à {elevation}° de hauteur.",
     "calendar_brightest": "Meilleure vue à {time} : {direction}, à {elevation}° de hauteur, magnitude {magnitude}.",
     "calendar_disappears": "Dernière visibilité à {time} vers {direction}, à {elevation}° de hauteur.",

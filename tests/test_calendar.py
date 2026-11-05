@@ -31,7 +31,7 @@ from custom_components.satellite_spotter.const import (
 )
 from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
-from custom_components.satellite_spotter.links import info_url
+from custom_components.satellite_spotter.links import about_url
 from custom_components.satellite_spotter.predict import Moment, Satellite, Sighting
 
 from .common import HONOLULU, HONOLULU_ID, INTEGRATION, NOW, advance, aged, satellites
@@ -91,12 +91,11 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     for event, p in zip(events, data.passes, strict=True):
         assert dt_util.parse_datetime(event["start"]) == p.start
         assert dt_util.parse_datetime(event["end"]) == p.end
-        assert event["summary"] == f"🛰️ {p.title}" + (" (bright)" if p.bright else "")
+        assert event["summary"] == f"{'🌟' if p.bright else '🔭'} {p.title}"
         assert event["description"].splitlines()[-1] == (
-            f"Object: {p.lead.satellite.name} — "
-            f"{info_url(p.lead.satellite.norad_id, p.lead.satellite.name)}"
+            f"Object: {p.lead.satellite.name} — {about_url(p.lead.satellite.norad_id)}"
         )
-    assert events[0]["summary"] == "🛰️ BLUEWALKER-3 (bright)"
+    assert events[0]["summary"] == "🌟 BLUEWALKER-3"
     p = data.passes[0]
     t = p.lead
     lines = events[0]["description"].splitlines()
@@ -351,8 +350,9 @@ async def test_calendar_trigger_before_a_pass(
     assert not calls
     await advance(hass, freezer, pass_start - timedelta(minutes=15) + timedelta(seconds=1))
     assert len(calls) == 1
-    assert calls[0].data["summary"] == f"🛰️ {p.title}" + (" (bright)" if p.bright else "")
-    assert calls[0].data["uid"] == p.id
+    assert calls[0].data["summary"] == f"{'🌟' if p.bright else '🔭'} {p.title}"
+    # A template renders an id of digits as a number.
+    assert str(calls[0].data["uid"]) == p.id
     assert dt_util.parse_datetime(calls[0].data["start"]) == pass_start
 
     # Stops the trigger's polling, which would outlast the test.
@@ -363,17 +363,17 @@ async def test_calendar_trigger_before_a_pass(
 @pytest.mark.parametrize(
     ("language", "summary", "appears", "brightest"),
     [
-        ("de", "🛰️ BLUEWALKER-3 (hell)", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
+        ("de", "🌟 BLUEWALKER-3", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
          "Helligkeit 0,2"),
         # Regional variants get their language's text, as on the globe.
-        ("de-CH", "🛰️ BLUEWALKER-3 (hell)", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
+        ("de-CH", "🌟 BLUEWALKER-3", "Zuerst sichtbar um {} in Richtung NW, 29° hoch.",
          "Helligkeit 0,2"),
-        ("pt", "🛰️ BLUEWALKER-3 (brilhante)",
+        ("pt", "🌟 BLUEWALKER-3",
          "Visível pela primeira vez às {} na direção NO, a 29° de altura.", "magnitude 0,2"),
-        ("fr", "🛰️ BLUEWALKER-3 (brillant)",
+        ("fr", "🌟 BLUEWALKER-3",
          "Première visibilité à {} vers NO, à 29° de hauteur.", "magnitude 0,2"),
         # Languages without a translation get English.
-        ("ja", "🛰️ BLUEWALKER-3 (bright)", "First visible at {} toward NW, 29° high.",
+        ("ja", "🌟 BLUEWALKER-3", "First visible at {} toward NW, 29° high.",
          "magnitude 0.2"),
     ],
 )  # fmt: skip
@@ -432,7 +432,7 @@ def _pass(start: datetime, magnitude: float, count: int = 1, cloud: int | None =
     peak = track.SkyPoint(start.timestamp() + 180, 45.0, 67.4)
     shape = track.SightingShape(peak, "rise", "shadow")
     return ListedPass(
-        id=f"25544-{int(start.timestamp())}",
+        id=str(int(start.timestamp())),
         sightings=sightings,
         cloud_cover=cloud,
         shapes=[shape] * count,
@@ -453,7 +453,7 @@ def test_the_text_describes_the_brightest_satellite_of_a_pass() -> None:
     p = replace(train, sightings=[starlink, tiangong])
     text = PassText(_common("en"))
 
-    assert text.summary(p) == "🛰️ Tiangong +1 (bright)"
+    assert text.summary(p) == "🌟 Tiangong +1"
     description = text.description(p)
     assert "-2.1" in description
     assert "2.2" not in description
@@ -494,8 +494,7 @@ def test_every_language_describes_a_pass(language: str) -> None:
         summary = text.summary(p)
         description = text.description(p)
         assert p.title in summary
-        assert summary.startswith("🛰️ ")
-        assert summary.endswith(")") is p.bright
+        assert summary.startswith("🌟 " if p.bright else "🔭 ")
         lines = description.splitlines()
         assert len(lines) == 4 + (count > 1) + (cloud is not None)
         assert "{" not in description

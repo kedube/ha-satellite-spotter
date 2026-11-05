@@ -468,6 +468,51 @@ test("the others in a group are followed until the satellite it is named after a
   assert.equal(p.focusAt(firstVisible - 3600).track, primary, "nothing up yet: the named one");
 });
 
+test("the view moves as seldom as it can in a group spread across the sky", () => {
+  globalThis.Path2D ??= class {};
+  const p = new Planetarium({ sky: fakeCanvas(800, 600), overlay: fakeCanvas(800, 600), createCanvas: () => fakeCanvas(32, 32) });
+  const { pass, detail } = syntheticPass({ members: 3, train: true });
+  p.setObserver({ latitude: 42.36, longitude: -71.06 });
+  p.setFormatter(fakeFormatter());
+  p.resize(800, 600, 1);
+  p.setPass(pass, detail);
+  const [named, first, second, third] = p.tracks;
+  const t0 = named.visibleStart;
+  const windows = [[named, 400, 500], [first, 0, 100], [second, 50, 200], [third, 300, 350]];
+  for (const [track, from, to] of windows) {
+    track.visibleStart = t0 + from;
+    track.visibleEnd = t0 + to;
+  }
+  assert.equal(p.focusAt(t0 + 10).track, first);
+  assert.equal(p.focusAt(t0 + 60).track, first, "stays though another is up");
+  assert.equal(p.focusAt(t0 + 120).track, second, "then the one still up");
+  assert.equal(p.focusAt(t0 + 250).track, third, "none up: waits where the next appears");
+  assert.equal(p.focusAt(t0 + 310).track, third);
+  assert.equal(p.focusAt(t0 + 360).track, named, "the next to appear is the named one");
+  assert.equal(p.focusAt(t0 + 410).track, named);
+  assert.equal(p.focusAt(t0 - 3600).track, named, "before the group: the named one");
+  assert.equal(p.focusAt(t0 + 3600).track, named, "after it too");
+});
+
+test("the longest stay is chosen when several are up", () => {
+  globalThis.Path2D ??= class {};
+  const p = new Planetarium({ sky: fakeCanvas(800, 600), overlay: fakeCanvas(800, 600), createCanvas: () => fakeCanvas(32, 32) });
+  const { pass, detail } = syntheticPass({ members: 2, train: true });
+  p.setObserver({ latitude: 42.36, longitude: -71.06 });
+  p.setFormatter(fakeFormatter());
+  p.resize(800, 600, 1);
+  p.setPass(pass, detail);
+  const [named, shorter, longer] = p.tracks;
+  const t0 = named.visibleStart;
+  named.visibleStart = t0 + 400;
+  named.visibleEnd = t0 + 500;
+  shorter.visibleStart = t0;
+  shorter.visibleEnd = t0 + 50;
+  longer.visibleStart = t0;
+  longer.visibleEnd = t0 + 200;
+  assert.equal(p.focusAt(t0 + 10).track, longer);
+});
+
 test("the edge arrow's label moves beside the arrow when its usual place is taken", () => {
   const P = makeProjector({ bearing: 0, pitch: 100, fov: 60, width: 800, height: 600 });
   // At the right edge, pointing right: the label goes inside, to its left.

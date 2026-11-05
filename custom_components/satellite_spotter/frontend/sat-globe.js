@@ -1397,8 +1397,8 @@ export class SatelliteGlobeView extends BaseElement {
     let pass = this._selectedPass();
     if (!pass && this._selectedId) {
       // Refreshed predictions move a pass by a few seconds, and so its id.
-      const [norad, start] = this._selectedId.split("-").map(Number);
-      pass = this._passes().find((p) => leader(p)?.norad_id === norad && Math.abs(p.start - start) <= 120) ?? null;
+      const start = Number(this._selectedId);
+      pass = this._passes().find((p) => Math.abs(p.start - start) <= 120) ?? null;
     }
     // The user's pass stays until it is over (and while it is simulated or in the street view).
     const busy = this._clock.mode === "sim" || !!this._street;
@@ -3138,7 +3138,7 @@ export class SatelliteGlobeView extends BaseElement {
       if (e.kind.className !== kindCls) e.kind.className = kindCls;
       setHtml(e.kind, svgIcon(icon));
       setText(e.name, fmt.passTitle(pass));
-      const url = lead?.info_url;
+      const url = lead?.about_url;
       e.about.hidden = !url;
       if (url && e.about.getAttribute("href") !== url) e.about.setAttribute("href", url);
       e.about.setAttribute("aria-label", this._t("mission.about_name", { name: lead?.name ?? "" }));

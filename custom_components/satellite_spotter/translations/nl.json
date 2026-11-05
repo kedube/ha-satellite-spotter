@@ -158,8 +158,6 @@
     }
   },
   "common": {
-    "calendar_summary": "🛰️ {title}",
-    "calendar_summary_bright": "🛰️ {title} (helder)",
     "calendar_appears": "Voor het eerst zichtbaar om {time} richting {direction}, {elevation}° hoog.",
     "calendar_brightest": "Beste zicht om {time}: {direction}, {elevation}° hoog, magnitude {magnitude}.",
     "calendar_disappears": "Voor het laatst zichtbaar om {time} richting {direction}, {elevation}° hoog.",

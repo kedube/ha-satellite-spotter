@@ -72,7 +72,7 @@ from .const import (
 )
 from .coordinator import ListedPass, PredictionSettings, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, satellite_kind
-from .links import info_url
+from .links import about_url
 from .predict import Moment, Satellite, Sighting, cutoff_for
 from .street import street_payload
 
@@ -357,15 +357,20 @@ def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
         "intrinsic_magnitude": _number(sat.standard_magnitude, 1),
         "model": sat.curve,
         "period_s": round(track.period_s(sat)),
-        "info_url": info_url(sat.norad_id, sat.name),
+        "about_url": about_url(sat.norad_id),
         "confidence": confidence(t.appears.time, sat),
     }
 
 
+def starlink_count(p: ListedPass) -> int:
+    """Return how many of a pass's satellites are Starlinks."""
+    kinds = (satellite_kind(s.satellite.norad_id, s.satellite.name) for s in p.sightings)
+    return sum(kind == "starlink" for kind in kinds)
+
+
 def is_train(p: ListedPass) -> bool:
     """Whether a pass is a Starlink train: more than five Starlinks, whichever is brightest."""
-    kinds = (satellite_kind(s.satellite.norad_id, s.satellite.name) for s in p.sightings)
-    return sum(kind == "starlink" for kind in kinds) > 5
+    return starlink_count(p) > 5
 
 
 def pass_json(p: ListedPass) -> dict[str, Any]:
@@ -386,6 +391,7 @@ def pass_json(p: ListedPass) -> dict[str, Any]:
         "limiting_magnitude": _number(p.sky_limit, 1),
         "cloud_cover": p.cloud_cover,
         "satellite_count": count,
+        "starlink_count": starlink_count(p),
         "train": is_train(p),
         "peak": peak_json(p.peak),
         "transits": [
@@ -608,7 +614,7 @@ def catalog_payload(
                 "perigee_km": round(perigee),
                 "apogee_km": round(apogee),
                 "inclination": _number(float(sat.elements.get("INCLINATION", "nan")), 1),
-                "info_url": info_url(sat.norad_id, sat.name),
+                "about_url": about_url(sat.norad_id),
             }
         )
     return {

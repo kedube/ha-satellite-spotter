@@ -21,7 +21,7 @@ from .const import (
     VERSION,
 )
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
-from .links import info_url
+from .links import about_url
 
 if TYPE_CHECKING:
     from .predict import Moment, Satellite
@@ -106,7 +106,7 @@ def _moment(name: str, moment: Moment) -> dict[str, Any]:
 def describe_pass(p: ListedPass | None) -> dict[str, Any]:
     """Describe a pass for automations, which read these names; nothing without a pass.
 
-    ``start``, ``end`` and ``duration`` are the whole pass's. The three moments are the
+    ``begins``, ``ends`` and ``length_seconds`` are the whole pass's. The three moments are the
     satellite's it is named after, which is the one worth looking for.
     """
     if p is None:
@@ -116,20 +116,20 @@ def describe_pass(p: ListedPass | None) -> dict[str, Any]:
     return {
         # Opens the pass in the sidebar page: /satellite-spotter?pass=<id>.
         "pass_id": p.id,
-        "satellite": sat.name,
-        "norad_id": sat.norad_id,
-        "info_url": info_url(sat.norad_id, sat.name),
-        "satellite_count": p.count,
-        "satellites": [s.satellite.name for s in p.sightings[:MAX_GROUP_NAMES]],
-        "magnitude": magnitude(p.peak_magnitude),
-        "bright": p.bright,
+        "object_name": sat.name,
+        "catalog_number": sat.norad_id,
+        "about_url": about_url(sat.norad_id),
+        "object_count": p.count,
+        "objects": [s.satellite.name for s in p.sightings[:MAX_GROUP_NAMES]],
+        "peak_magnitude": magnitude(p.peak_magnitude),
+        "is_bright": p.bright,
         "sun_up": p.sun_up,
-        "cloud_cover": p.cloud_cover,
-        "start": p.start.isoformat(),
-        "end": p.end.isoformat(),
-        "duration": p.duration,
+        "cloud_percent": p.cloud_cover,
+        "begins": p.start.isoformat(),
+        "ends": p.end.isoformat(),
+        "length_seconds": p.duration,
         **_moment("appears", named.appears),
-        **_moment("brightest", named.brightest),
+        **_moment("best_view", named.brightest),
         **_moment("disappears", named.vanishes),
     }
 
@@ -169,7 +169,7 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
 class PassEntity(SatelliteSpotterEntity):
     """An entity that follows one pass at a time, and carries its details."""
 
-    _unrecorded_attributes = frozenset({"satellites", "info_url"})
+    _unrecorded_attributes = frozenset({"objects", "about_url"})
 
     def __init__(
         self,

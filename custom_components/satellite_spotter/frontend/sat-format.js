@@ -378,7 +378,7 @@ export class Formatter {
   /** A pass's name: its title ("ISS", "Hubble +1"), or "Starlink train · 22" for a train. */
   passTitle(pass) {
     if (!pass) return "";
-    if (pass.train) return this.t("passes.train_title", { count: pass.satellite_count ?? pass.transits?.length ?? 0 });
+    if (pass.train) return this.t("passes.train_title", { count: pass.starlink_count ?? pass.satellite_count ?? pass.transits?.length ?? 0 });
     return pass.title ?? pass.transits?.[0]?.name ?? "";
   }
 }

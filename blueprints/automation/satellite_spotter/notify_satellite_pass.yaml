@@ -96,11 +96,9 @@ variables:
   # The location the calendar belongs to, so the link opens the pass there
   # when Satellite Spotter has several.
   entry_id: "{{ config_entry_id(calendar) or '' }}"
-  bright: >-
-    {{ summary is search('\\((bright|hell|brillante|brillant|luminoso|helder|jasny|brilhante|ljusstark)\\)$') }}
+  bright: "{{ summary.startswith('🌟') }}"
   satellite: >-
-    {% set name = summary | regex_replace('^\\W+', '') %}
-    {{ (name | regex_replace('\\s*\\([^()]*\\)$', '') if bright else name) | trim }}
+    {{ summary | regex_replace('^\\W+', '') | trim }}
   minutes: >-
     {{ ((as_timestamp(trigger.calendar_event.start) - as_timestamp(now())) / 60) | round(0) | int }}
   cloud_cover: >-
@@ -121,7 +119,7 @@ actions:
   - domain: mobile_app
     type: notify
     device_id: !input notify_device
-    title: "🛰️ {{ satellite }} in {{ minutes }} min"
+    title: "{{ satellite }} in {{ minutes }} min"
     message: "{{ details }}"
     data:
       # Opens the pass in the street view: url on iOS, clickAction on Android.

@@ -312,13 +312,13 @@ async def test_cloud_cover_failure_is_tolerated(
     mock_downloads: dict[str, AsyncMock],
 ) -> None:
     """Passes are still predicted without a cloud cover forecast."""
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 16
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_percent"] == 16
     mock_downloads["fetch_forecast"].side_effect = CloudCoverError("boom")
     await advance(hass, freezer, NOW + timedelta(hours=2, seconds=1))
     assert mock_downloads["fetch_forecast"].await_count == 2
     state = hass.states.get("sensor.home_next_pass")
     assert state.state not in ("unknown", "unavailable")
-    assert state.attributes["cloud_cover"] is None
+    assert state.attributes["cloud_percent"] is None
 
 
 async def test_cloud_cover_can_be_switched_off(
@@ -334,7 +334,7 @@ async def test_cloud_cover_can_be_switched_off(
     await add_location(hass, entry)
     assert entry.state is ConfigEntryState.LOADED
     mock_downloads["fetch_forecast"].assert_not_awaited()
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] is None
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_percent"] is None
     assert entry.runtime_data.data.cloud_cover is None
 
 
@@ -371,7 +371,7 @@ async def test_requests_identify_the_integration(
     ):
         await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] == 16
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_percent"] == 16
 
     assert aioclient_mock.call_count == len(QUERIES) + 2
     for _method, url, _data, headers in aioclient_mock.mock_calls:
@@ -759,7 +759,7 @@ async def test_unusable_satellites_are_skipped(
     await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert hass.states.get("sensor.home_next_pass").state == FIRST_PASS
-    assert hass.states.get("sensor.home_catalog_updated").attributes["satellites"] == 22
+    assert hass.states.get("sensor.home_catalog_updated").attributes["catalog_size"] == 22
     manager = async_shared_catalog(hass)
     assert set(manager.by_id()) == {s.norad_id for s in catalog}
     # The globe's description of the catalog can be built from what is left.
@@ -1118,7 +1118,7 @@ async def test_location_stays_out_of_logs(
         await add_location(hass, mock_config_entry)
     assert mock_config_entry.state is ConfigEntryState.LOADED
     assert "No cloud cover forecast" in caplog.text
-    assert hass.states.get("sensor.home_next_pass").attributes["cloud_cover"] is None
+    assert hass.states.get("sensor.home_next_pass").attributes["cloud_percent"] is None
 
     diag = await async_get_config_entry_diagnostics(hass, mock_config_entry)
     logged = "\n".join(

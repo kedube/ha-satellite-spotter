@@ -86,7 +86,8 @@ class PredictionSettings:
 class ListedPass(Flyover):
     """A flyover as a location lists it, with its id, its weather and how it looks."""
 
-    # f"{lead NORAD id}-{start}", also the calendar event's uid.
+    # When it starts, in Unix seconds: passes at one place never start together. Also the
+    # calendar event's uid.
     id: str
     cloud_cover: int | None
     # One per sighting (up to MAX_SIGHTINGS), in the flyover's order.
@@ -159,25 +160,18 @@ class Predictions:
         return min((moment for moment in moments if moment > now), default=None)
 
     def find(self, pass_id: str) -> ListedPass | None:
-        """Return the pass with this id, or a pass a moment from it with that satellite in it.
+        """Return the pass with this id, or the nearest a moment from it.
 
-        A refresh with newer orbital elements can move a pass by a few seconds, or
-        change which of its satellites is brightest, and either changes its id; a page
-        opened before still finds it.
+        A refresh with newer orbital elements can move a pass by a few seconds, which
+        changes its id; a page opened before still finds it.
         """
         if (found := self.by_id.get(pass_id)) is not None:
             return found
-        norad_id, _, start = pass_id.rpartition("-")
         try:
-            when = dt_util.utc_from_timestamp(int(start))
+            when = dt_util.utc_from_timestamp(int(pass_id))
         except (OverflowError, ValueError, OSError):
             return None
-        near = [
-            p
-            for p in self.passes
-            if abs(p.start - when) <= PASS_ID_TOLERANCE
-            and any(str(s.satellite.norad_id) == norad_id for s in p.sightings)
-        ]
+        near = [p for p in self.passes if abs(p.start - when) <= PASS_ID_TOLERANCE]
         return min(near, key=lambda p: abs(p.start - when), default=None)
 
 
@@ -202,7 +196,7 @@ def _listed(
     shapes = [_shape(sighting, observer) for sighting in flyover.sightings[:MAX_SIGHTINGS]]
     return ListedPass(
         flyover.sightings,
-        id=f"{flyover.lead.satellite.norad_id}-{int(flyover.start.timestamp())}",
+        id=str(int(flyover.start.timestamp())),
         cloud_cover=None if forecast is None else forecast.after(flyover.start),
         shapes=shapes,
         peak=max((shape.peak for shape in shapes), key=attrgetter("elevation")),

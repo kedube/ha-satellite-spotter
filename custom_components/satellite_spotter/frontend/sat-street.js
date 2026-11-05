@@ -233,12 +233,11 @@ export function supportsWebGL2(doc = globalThis.document) {
   }
 }
 
-/** Whether a pass_track payload belongs to a pass (an id from before a refresh still matches its satellite). */
+/** Whether a pass_track payload belongs to a pass (an id from before a refresh is a moment from it). */
 export function detailMatches(pass, detail) {
   if (!pass || !detail) return false;
   if (detail.pass_id === pass.id) return true;
-  const [norad, start] = String(detail.pass_id ?? "").split("-").map(Number);
-  return norad === pass.transits?.[0]?.norad_id && Math.abs(start - pass.start) <= 120;
+  return Math.abs(Number(detail.pass_id) - pass.start) <= 120;
 }
 
 /** The points of a pass known before its path has loaded: rise, brightest, peak and set. */

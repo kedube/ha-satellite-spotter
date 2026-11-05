@@ -72,9 +72,13 @@ export function normalizeFilters(filters) {
   return { brightOnly: filters?.brightOnly === true, hideStarlink: filters?.hideStarlink === true };
 }
 
-/** Whether a pass is about Starlinks: a train counts, unless one of the satellites of note names it. */
+/**
+ * Whether a pass is about Starlinks: a train counts, unless what it is named after is
+ * worth seeing anyway, being a satellite of note or bright enough to be hard to miss.
+ */
 function isStarlinkPass(pass) {
-  return pass.kind === "starlink" || (!!pass.train && !NOTABLE.has(pass.kind));
+  if (pass.kind === "starlink") return true;
+  return !!pass.train && !pass.bright && !NOTABLE.has(pass.kind);
 }
 
 /** Whether a pass gets through the list's filters ("Bright only", "Hide Starlink"). */

@@ -30,7 +30,7 @@ export function makePass({
     norad_id: norad, name, kind, start, end, magnitude, brightest_time: peak.time,
     rise: look(from, 10.5), brightest: look("S", elevation), set: look(to, 10.2), peak,
     start_reason: "rise", end_reason: "set", intrinsic_magnitude: magnitude, model: null, prediction: false,
-    period_s: 5574, info_url: null, confidence: "high",
+    period_s: 5574, about_url: null, confidence: "high",
   };
   const transits = [primary, ...members.map((m, i) => ({ ...primary, ...m, start: start + 20 * (i + 1), end: end + 20 * (i + 1) }))];
   return {

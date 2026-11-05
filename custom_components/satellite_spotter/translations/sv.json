@@ -158,8 +158,6 @@
     }
   },
   "common": {
-    "calendar_summary": "🛰️ {title}",
-    "calendar_summary_bright": "🛰️ {title} (ljusstark)",
     "calendar_appears": "Först synlig kl. {time} mot {direction}, {elevation}° högt.",
     "calendar_brightest": "Bäst sikt kl. {time}: {direction}, {elevation}° högt, magnitud {magnitude}.",
     "calendar_disappears": "Senast synlig kl. {time} mot {direction}, {elevation}° högt.",

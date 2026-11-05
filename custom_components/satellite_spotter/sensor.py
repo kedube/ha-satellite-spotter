@@ -20,7 +20,7 @@ PARALLEL_UPDATES = 0
 
 # Keep the lists out of the recorder database: they are large and change with
 # every pass.
-_LIST_ATTRIBUTES = frozenset({"passes", "satellites", "info_url"})
+_LIST_ATTRIBUTES = frozenset({"passes", "objects", "about_url"})
 
 
 async def async_setup_entry(
@@ -79,12 +79,12 @@ class PassCountSensor(SatelliteSpotterEntity, SensorEntity):
 def _summary(p: ListedPass) -> dict[str, Any]:
     return {
         "pass_id": p.id,
-        "satellite": p.title,
-        "magnitude": magnitude(p.peak_magnitude),
-        "bright": p.bright,
-        "cloud_cover": p.cloud_cover,
-        "start": p.start.isoformat(),
-        "direction": compass(p.lead.appears.azimuth),
+        "title": p.title,
+        "peak_magnitude": magnitude(p.peak_magnitude),
+        "is_bright": p.bright,
+        "cloud_percent": p.cloud_cover,
+        "begins": p.start.isoformat(),
+        "appears_direction": compass(p.lead.appears.azimuth),
     }
 
 
@@ -113,7 +113,7 @@ class CatalogSensor(SatelliteSpotterEntity, SensorEntity):
         catalog = self.coordinator.catalog
         age = catalog.median_epoch_age(dt_util.utcnow())
         return {
-            "satellites": len(catalog.satellites or []),
+            "catalog_size": len(catalog.satellites or []),
             # Half the satellites have older orbital elements than this.
             "age_days": None if age is None else round(age.total_seconds() / 86400, 1),
             "stale": age is not None and age > CATALOG_MAX_AGE,

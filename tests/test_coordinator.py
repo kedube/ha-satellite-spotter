@@ -29,12 +29,11 @@ def _sighting(norad_id: int, start: datetime, magnitude: float) -> Sighting:
 
 
 def _pass(*sightings: Sighting) -> ListedPass:
-    lead = min(sightings, key=lambda s: s.peak_magnitude)
     start = min(s.appears.time for s in sightings)
     peak = track.SkyPoint(start.timestamp(), 45.0, 60.0)
     return ListedPass(
         list(sightings),
-        id=f"{lead.satellite.norad_id}-{int(start.timestamp())}",
+        id=str(int(start.timestamp())),
         cloud_cover=None,
         shapes=[],
         peak=peak,
@@ -107,15 +106,13 @@ async def test_bright_pass_soon_waits_for_the_bright_satellite(
 
 
 def test_finding_a_pass_after_a_refresh() -> None:
-    """A page's old id still finds the pass: moved a little, or named differently now."""
+    """A page's old id still finds the pass when new elements have moved it a little."""
     p = _pass(_sighting(1, START, 2.0), _sighting(2, START + MINUTE, -1.0))
     predictions = _predictions(p)
     start = int(START.timestamp())
-    near = PASS_ID_TOLERANCE.total_seconds() - 1
+    near = int(PASS_ID_TOLERANCE.total_seconds())
     assert predictions.find(p.id) is p
-    assert predictions.find(f"2-{start + int(near)}") is p
-    # It was named after the other satellite before the refresh.
-    assert predictions.find(f"1-{start}") is p
-    assert predictions.find(f"3-{start}") is None
-    assert predictions.find(f"2-{start + int(near) + 3600}") is None
+    assert predictions.find(str(start + near)) is p
+    assert predictions.find(str(start - near)) is p
+    assert predictions.find(str(start + near + 1)) is None
     assert predictions.find("not an id") is None

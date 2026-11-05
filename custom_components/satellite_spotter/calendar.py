@@ -17,13 +17,16 @@ from . import SatelliteSpotterConfigEntry
 from .const import DOMAIN
 from .coordinator import ListedPass, Predictions, SatelliteSpotterCoordinator
 from .entity import SatelliteSpotterEntity, compass
-from .links import info_url
+from .links import about_url
 from .predict import Moment
 
 PARALLEL_UPDATES = 0
 
 TRANSLATIONS_DIR = Path(__file__).parent / "translations"
 _PREFIX = f"component.{DOMAIN}.common."
+# The blueprint tells bright passes by this mark.
+_BRIGHT_MARK = "🌟"
+_PASS_MARK = "🔭"
 # Event times are whole seconds, like the sensors'; every event lasts at least one.
 _MIN_EVENT = timedelta(seconds=1)
 
@@ -81,9 +84,8 @@ class PassText:
         )
 
     def summary(self, p: ListedPass) -> str:
-        """Event title: the satellite, and whether the pass is bright."""
-        key = "calendar_summary_bright" if p.bright else "calendar_summary"
-        return self._t(key, title=p.title)
+        """Event title: what is passing, marked in a way that needs no translating."""
+        return f"{_BRIGHT_MARK if p.bright else _PASS_MARK} {p.title}"
 
     def description(self, p: ListedPass) -> str:
         """Say the best moment to look, then the rest of the pass, what else to know, and the link.
@@ -104,7 +106,7 @@ class PassText:
                 else self._t("calendar_cloud_cover", cloud_cover=p.cloud_cover)
             ),
             self._t("calendar_together", count=count) if count > 1 else None,
-            self._t("calendar_about", name=sat.name, url=info_url(sat.norad_id, sat.name)),
+            self._t("calendar_about", name=sat.name, url=about_url(sat.norad_id)),
         )
         return "\n".join(filter(None, lines))
 

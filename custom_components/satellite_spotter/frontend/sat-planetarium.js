@@ -690,6 +690,7 @@ export class Planetarium {
     this.pass = pass;
     this.tracks = detail ? buildTracks(pass, detail) : [];
     this.primary = this.tracks[0] ?? null;
+    this._followed = null;
     this.hidden = null;
     this._invalidate();
   }
@@ -802,25 +803,37 @@ export class Planetarium {
   // -- state -----------------------------------------------------------------
 
   /**
-   * The satellite to look for now: the primary during its own window; otherwise,
-   * for a group or a train, the brightest member in its window (a big group can
-   * start long before the primary appears, and go on after it has gone).
+   * The satellite to look for now: the primary during its own window. Otherwise, as a
+   * big group can start long before the primary appears and go on after it has gone,
+   * another that is up. The camera follows this, so to move it as seldom as possible it
+   * stays with one satellite while it is up, then takes whichever will stay longest,
+   * and with none up it waits for the next to appear rather than swing away and back.
    */
   focusAt(tS) {
     const primary = this.primary;
     if (!primary) return null;
-    const ps = sampleAt(primary.data, tS);
     const inWindow = tS >= primary.visibleStart && tS <= primary.visibleEnd;
-    if (inWindow || this.tracks.length === 1) return { track: primary, s: ps };
-    let best = null;
-    for (const track of this.tracks) {
-      if (track === primary || tS < track.visibleStart || tS > track.visibleEnd) continue;
+    if (inWindow || this.tracks.length === 1) return { track: primary, s: sampleAt(primary.data, tS) };
+    const upNow = (track) => {
+      if (tS < track.visibleStart || tS > track.visibleEnd) return null;
       const s = sampleAt(track.data, tS);
-      if (!s || s.elevation <= 0) continue;
-      const m = Number.isFinite(s.magnitude) ? s.magnitude : 9;
-      if (!best || (s.visible && !best.s.visible) || (s.visible === best.s.visible && m < best.m)) best = { track, s, m };
+      return s && s.elevation > 0 ? s : null;
+    };
+    const stays = this._followed && upNow(this._followed);
+    if (stays) return { track: this._followed, s: stays };
+    let best = null;
+    let next = null;
+    for (const track of this.tracks) {
+      const s = upNow(track);
+      if (s && (!best || track.visibleEnd > best.track.visibleEnd)) best = { track, s };
+      if (tS < track.visibleStart && (!next || track.visibleStart < next.visibleStart)) next = track;
     }
-    return best ? { track: best.track, s: best.s } : { track: primary, s: ps };
+    this._followed = best?.track ?? null;
+    if (best) return best;
+    // Before the group has begun, the one it is named after; after it has ended too.
+    const begun = this.tracks.some((track) => track.visibleStart <= tS);
+    const track = begun && next ? next : primary;
+    return { track, s: sampleAt(track.data, tS) };
   }
 
   _state(P, tS, sky, insets) {

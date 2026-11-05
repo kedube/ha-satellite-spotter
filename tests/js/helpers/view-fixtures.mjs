@@ -129,11 +129,11 @@ export function makePass(start, end, { ids = [25544], kind = "iss", bright = tru
     start_reason: "rise",
     end_reason: "set",
     period_s: 5574,
-    info_url: "https://en.wikipedia.org/wiki/International_Space_Station",
+    about_url: "https://en.wikipedia.org/wiki/International_Space_Station",
     confidence: "high",
   }));
   return {
-    id: `${ids[0]}-${start}`,
+    id: String(start),
     title,
     kind,
     start,

@@ -28,21 +28,21 @@ pytestmark = pytest.mark.usefixtures("init_integration")
 # The attributes of a pass, which automations and cards read.
 PASS_KEYS = {
     "pass_id",
-    "satellite",
-    "norad_id",
-    "info_url",
-    "satellite_count",
-    "satellites",
-    "magnitude",
-    "bright",
+    "object_name",
+    "catalog_number",
+    "about_url",
+    "object_count",
+    "objects",
+    "peak_magnitude",
+    "is_bright",
     "sun_up",
-    "cloud_cover",
-    "start",
-    "end",
-    "duration",
+    "cloud_percent",
+    "begins",
+    "ends",
+    "length_seconds",
     *(
         f"{moment}_{part}"
-        for moment in ("appears", "brightest", "disappears")
+        for moment in ("appears", "best_view", "disappears")
         for part in ("time", "direction", "azimuth", "elevation")
     ),
 }
@@ -63,19 +63,19 @@ async def test_next_pass(hass: HomeAssistant) -> None:
     assert state.state == FIRST_PASS
     assert state.attributes.keys() == PASS_KEYS | {"attribution", "device_class", "friendly_name"}
     expected = {
-        "satellite": "BLUEWALKER-3",
-        "norad_id": 53807,
-        "start": FIRST_PASS,
-        "magnitude": 0.2,
-        "bright": True,
+        "object_name": "BLUEWALKER-3",
+        "catalog_number": 53807,
+        "begins": FIRST_PASS,
+        "peak_magnitude": 0.2,
+        "is_bright": True,
         "sun_up": False,
         "appears_time": FIRST_PASS,
         "appears_direction": "NW",
         # The first forecast hour after the start.
-        "cloud_cover": 16,
-        "satellite_count": 1,
-        "satellites": ["BLUEWALKER-3"],
-        "info_url": "https://en.wikipedia.org/wiki/BlueWalker_3",
+        "cloud_percent": 16,
+        "object_count": 1,
+        "objects": ["BLUEWALKER-3"],
+        "about_url": "https://www.n2yo.com/satellite/?s=53807",
         "pass_id": FIRST_PASS_ID,
         "attribution": ATTRIBUTION,
     }
@@ -90,12 +90,12 @@ async def test_what_comes_after_the_next_pass(hass: HomeAssistant) -> None:
     assert passes.attributes["unit_of_measurement"] == "passes"
     assert passes.attributes["passes"][0] == {
         "pass_id": FIRST_PASS_ID,
-        "satellite": "BLUEWALKER-3",
-        "magnitude": 0.2,
-        "bright": True,
-        "cloud_cover": 16,
-        "start": FIRST_PASS,
-        "direction": "NW",
+        "title": "BLUEWALKER-3",
+        "peak_magnitude": 0.2,
+        "is_bright": True,
+        "cloud_percent": 16,
+        "begins": FIRST_PASS,
+        "appears_direction": "NW",
     }
 
 
@@ -103,7 +103,7 @@ async def test_catalog_sensor(hass: HomeAssistant) -> None:
     catalog = hass.states.get("sensor.home_catalog_updated")
     assert catalog.state == NOW.isoformat()
     attributes = catalog.attributes
-    assert (attributes["satellites"], attributes["stale"]) == (22, False)
+    assert (attributes["catalog_size"], attributes["stale"]) == (22, False)
     assert attributes["last_download_error"] is None
     assert 0 < attributes["age_days"] < 1
 
@@ -150,14 +150,14 @@ async def test_lists_stay_out_of_the_recorder(hass: HomeAssistant) -> None:
     unrecorded = hass.states.get("sensor.home_passes_next_24_hours").state_info[
         "unrecorded_attributes"
     ]
-    assert {"passes", "satellites", "info_url"} <= unrecorded
+    assert {"passes", "objects", "about_url"} <= unrecorded
     unrecorded = hass.states.get("binary_sensor.home_bright_pass_soon").state_info[
         "unrecorded_attributes"
     ]
-    assert {"satellites", "info_url"} <= unrecorded
+    assert {"objects", "about_url"} <= unrecorded
     # The catalog's size is worth a history.
     catalog = hass.states.get("sensor.home_catalog_updated")
-    assert "satellites" not in catalog.state_info["unrecorded_attributes"]
+    assert "catalog_size" not in catalog.state_info["unrecorded_attributes"]
 
 
 async def test_visible_while_a_pass_is_under_way(
@@ -174,7 +174,7 @@ async def test_visible_while_a_pass_is_under_way(
     await advance(hass, freezer, first.start + timedelta(seconds=5))
     during = hass.states.get(sensor)
     assert during.state == STATE_ON
-    assert (during.attributes["satellite"], during.attributes["pass_id"]) == (
+    assert (during.attributes["object_name"], during.attributes["pass_id"]) == (
         "BLUEWALKER-3",
         FIRST_PASS_ID,
     )
@@ -217,7 +217,7 @@ async def test_bright_pass_soon(
     state = hass.states.get(soon)
     assert state.state == STATE_ON
     assert state.attributes["pass_id"] == following.id
-    assert state.attributes["bright"] is True
+    assert state.attributes["is_bright"] is True
     await advance(hass, freezer, following.start + second)
     assert hass.states.get(soon).state == STATE_ON
     await advance(hass, freezer, following.end + second)
@@ -243,7 +243,7 @@ async def test_passes_next_24h_follow_the_window(
     await advance(hass, freezer, later.start - timedelta(hours=24) + timedelta(seconds=2))
     state = hass.states.get(sensor)
     assert int(state.state) == before + 1
-    assert state.attributes["passes"][-1]["start"] == later.start.isoformat()
+    assert state.attributes["passes"][-1]["begins"] == later.start.isoformat()
 
 
 async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
@@ -251,14 +251,14 @@ async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTime
     start = datetime(2026, 11, 8, 4, 15, 34, tzinfo=UTC)
     await advance(hass, freezer, start - timedelta(seconds=30))
     passes = hass.states.get("sensor.home_passes_next_24_hours").attributes["passes"]
-    assert passes[0]["start"] == start.isoformat()
-    assert passes[0]["satellite"] == "ISS +1"
+    assert passes[0]["begins"] == start.isoformat()
+    assert passes[0]["title"] == "ISS +1"
 
     attrs = hass.states.get("sensor.home_next_pass").attributes
-    assert attrs["satellite"] == "ISS"
-    assert attrs["satellite_count"] == 2
-    assert attrs["satellites"] == ["ISS", "Hubble"]
-    assert attrs["pass_id"] == f"25544-{int(start.timestamp())}"
+    assert attrs["object_name"] == "ISS"
+    assert attrs["object_count"] == 2
+    assert attrs["objects"] == ["ISS", "Hubble"]
+    assert attrs["pass_id"] == str(int(start.timestamp()))
     assert attrs.keys() == PASS_KEYS | {"attribution", "device_class", "friendly_name"}
 
 

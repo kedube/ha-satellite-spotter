@@ -72,7 +72,7 @@ def _variables(hass: HomeAssistant, summary: str, description: str, start: datet
         "calendar_event": {
             "summary": summary,
             "description": description,
-            "uid": "53807-1791659316",
+            "uid": "1791659316",
             "start": start.isoformat(),
             "end": (start + timedelta(minutes=2)).isoformat(),
         }
@@ -126,10 +126,10 @@ async def test_every_pass_is_announced(
             "tag": f"satellite-pass-{p.id}",
         }
         assert event.data["title"].endswith(" in 10 min")
-        assert event.data["title"].startswith("🛰️ ")
+        assert event.data["title"].endswith(" min")
         assert event.data["message"] == " ".join(text.description(p).splitlines()[:-1])
 
-    assert notifications[0].data["title"] == "🛰️ SAOCOM 1B in 10 min"
+    assert notifications[0].data["title"] == "SAOCOM 1B in 10 min"
 
 
 async def test_bright_passes_under_clear_skies(
@@ -145,7 +145,7 @@ async def test_bright_passes_under_clear_skies(
         f"/satellite-spotter?entry_id={init_integration.entry_id}&pass={p.id}&view=street"
         for p in bright[:2]
     ]
-    assert notifications[0].data["title"] == "🛰️ ISS in 10 min"
+    assert notifications[0].data["title"] == "ISS in 10 min"
 
 
 async def test_other_languages(
@@ -168,7 +168,7 @@ async def test_other_languages(
     assert calendar == "calendar.home_satellitenuberfluge"
     notifications = await _run(hass, freezer, [bright], calendar=calendar, max_cloud_cover=50)
     (event,) = notifications
-    assert event.data["title"] == "🛰️ ISS in 10 min"
+    assert event.data["title"] == "ISS in 10 min"
     assert event.data["data"]["url"] == (
         f"/satellite-spotter?entry_id={mock_config_entry.entry_id}&pass={bright.id}&view=street"
     )
@@ -186,8 +186,7 @@ async def test_bright_passes_in_every_language(hass: HomeAssistant, language: st
     start = NOW + timedelta(minutes=10)
     for title in ("ISS", "IUS R/B(1)", "LEASAT 5 PKM (SSUS-A)", "Starlink 1 B +10"):
         for bright in (True, False):
-            key = "calendar_summary_bright" if bright else "calendar_summary"
-            summary = common[key].format(title=title)
+            summary = f"{'🌟' if bright else '🔭'} {title}"
             description = "\n".join(
                 [
                     common["calendar_brightest"].format(
@@ -210,7 +209,7 @@ async def test_bright_passes_in_every_language(hass: HomeAssistant, language: st
             assert variables["details"] == " ".join(description.splitlines()[:-1])
             # No such calendar in the registry: a link without the location.
             assert variables["entry_id"] == ""
-            assert variables["link"] == "/satellite-spotter?pass=53807-1791659316&view=street"
+            assert variables["link"] == "/satellite-spotter?pass=1791659316&view=street"
 
 
 async def test_without_a_forecast(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
@@ -218,7 +217,7 @@ async def test_without_a_forecast(hass: HomeAssistant, freezer: FrozenDateTimeFa
     freezer.move_to(NOW)
     variables = _variables(
         hass,
-        "🛰️ ISS (bright)",
+        "🌟 ISS",
         "Best view at 20:32:30: NW, 40° high, magnitude -2.5.\n"
         "First visible at 20:31:02 toward W, 21° high.\n"
         "Last visible at 20:34:55 toward NE, 10° high.\n"
@@ -245,10 +244,10 @@ async def test_the_link_names_the_calendars_location(hass: HomeAssistant) -> Non
         config_entry=entry,
         suggested_object_id="home_satellite_passes",
     )
-    variables = _variables(hass, "🛰️ ISS (bright)", "", NOW + timedelta(minutes=10))
+    variables = _variables(hass, "🌟 ISS", "", NOW + timedelta(minutes=10))
     assert variables["entry_id"] == "01K8CABIN0000000000000000"
     assert variables["link"] == (
-        "/satellite-spotter?entry_id=01K8CABIN0000000000000000&pass=53807-1791659316&view=street"
+        "/satellite-spotter?entry_id=01K8CABIN0000000000000000&pass=1791659316&view=street"
     )
 
 

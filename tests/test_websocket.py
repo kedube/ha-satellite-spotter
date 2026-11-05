@@ -38,12 +38,13 @@ from .common import FIRST_PASS_ID, HONOLULU, NOW, advance
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
     "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "sun_up",
-    "limiting_magnitude", "cloud_cover", "satellite_count", "train", "peak", "transits",
+    "limiting_magnitude", "cloud_cover", "satellite_count", "starlink_count", "train", "peak",
+    "transits",
 }  # fmt: skip
 TRANSIT_KEYS = {
     "norad_id", "name", "kind", "start", "end", "magnitude", "brightest_time", "rise",
     "brightest", "set", "peak", "start_reason", "end_reason", "intrinsic_magnitude", "model",
-    "period_s", "info_url", "confidence",
+    "period_s", "about_url", "confidence",
 }  # fmt: skip
 KINDS = {"iss", "tiangong", "hubble", "starlink", "rocket", "debris", "satellite"}
 
@@ -138,7 +139,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
         assert p["peak"]["direction"] in DIRECTIONS
         assert len(p["transits"]) == p["satellite_count"]
         assert p["peak"]["elevation"] == max(t["peak"]["elevation"] for t in p["transits"])
-        assert p["id"] == f"{p['transits'][0]['norad_id']}-{p['start']}"
+        assert p["id"] == str(p["start"])
         for t in p["transits"]:
             assert t.keys() == TRANSIT_KEYS
             assert t["start"] <= t["brightest_time"] < t["end"]
@@ -289,7 +290,10 @@ async def test_a_train_is_a_matter_of_how_many_starlinks(
 ) -> None:
     group = _group(init_integration.runtime_data.data.passes[0], names)
     assert is_train(group) is train
-    assert pass_json(group)["train"] is train
+    payload = pass_json(group)
+    assert payload["train"] is train
+    assert payload["satellite_count"] == len(names)
+    assert payload["starlink_count"] == sum(name.startswith("STARLINK") for name in names)
 
 
 async def test_pass_track_finds_a_pass_by_an_old_id(
@@ -297,15 +301,13 @@ async def test_pass_track_finds_a_pass_by_an_old_id(
 ) -> None:
     """New orbital elements move a pass by seconds; a page opened before still finds it."""
     p = init_integration.runtime_data.data.passes[0]
-    norad_id, start = p.id.split("-")
-    msg = await ws("pass_track", pass_id=f"{norad_id}-{int(start) - 90}")
+    msg = await ws("pass_track", pass_id=str(int(p.id) - 90))
     assert msg["success"], msg
     assert msg["result"]["pass_id"] == p.id
     for pass_id in (
-        f"{norad_id}-{int(start) - 200}",
-        f"25544-{start}",
+        str(int(p.id) - 200),
         "nonsense",
-        "1-99999999999",
+        "99999999999",
     ):
         msg = await ws("pass_track", pass_id=pass_id)
         assert msg["error"]["code"] == "unknown_pass", pass_id
@@ -452,13 +454,13 @@ async def test_catalog(hass: HomeAssistant, ws: Any) -> None:
     iss = satellites[25544]
     assert iss.keys() == {
         "norad_id", "name", "kind", "magnitude", "model", "epoch", "period_s", "perigee_km",
-        "apogee_km", "inclination", "info_url",
+        "apogee_km", "inclination", "about_url",
     }  # fmt: skip
     assert (iss["name"], iss["kind"], iss["magnitude"], iss["model"]) == ("ISS", "iss", -1.8, None)
     assert 5500 < iss["period_s"] < 5600
     assert 400 < iss["perigee_km"] <= iss["apogee_km"] < 440
     assert iss["inclination"] == 51.6
-    assert iss["info_url"] == "https://en.wikipedia.org/wiki/International_Space_Station"
+    assert iss["about_url"] == "https://en.wikipedia.org/wiki/International_Space_Station"
     assert dt_util.utc_from_timestamp(iss["epoch"]) < NOW
     # Built once per catalog.
     again = await ws("catalog")

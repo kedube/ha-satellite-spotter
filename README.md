@@ -136,10 +136,10 @@ names.
 | `calendar.home_satellite_passes` | Every pass for five days, with where to look |
 | `sensor.home_catalog_updated` | When the catalogue was downloaded, and how old its orbits are |
 
-The pass entities carry `pass_id`, `satellite`, `norad_id`, `info_url`, `satellite_count`,
-`satellites`, `magnitude`, `bright`, `sun_up`, `cloud_cover`, `start`, `end` and `duration` for
-the pass. For the satellite it is named after, they carry `_time`, `_direction`, `_azimuth` and
-`_elevation` for `appears`, `brightest` and `disappears`.
+The pass entities carry `pass_id`, `object_name`, `catalog_number`, `about_url`, `object_count`,
+`objects`, `peak_magnitude`, `is_bright`, `sun_up`, `cloud_percent`, `begins`, `ends` and
+`length_seconds` for the pass. For the satellite it is named after, they carry `_time`, `_direction`,
+`_azimuth` and `_elevation` for `appears`, `best_view` and `disappears`.
 
 ## Notifications
 
@@ -149,7 +149,7 @@ The blueprint notifies your phone before each pass in a location's calendar. By 
 bright passes only, ten minutes ahead, and skips skies more than 60% cloudy. Tapping the
 notification opens the pass in the street view.
 
-> **🛰️ ISS in 10 min**\
+> **ISS in 10 min**\
 > Best view at 20:32:30: NW, 40° high, magnitude -2.5. First visible at 20:31:02 toward W, 21° high.
 > Last visible at 20:34:55 toward NE, 10° high. Cloud cover near the pass: 12%.
 
@@ -283,10 +283,7 @@ To add a language, copy a JSON file in both `translations/` folders, translate t
 
 ## Credits and references
 
-Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`. It began as a fork of Willem
-Vooijs's [see-a-satellite](https://github.com/wildekek/see-a-satellite), under the MIT licence. Its
-code has been reworked since, not written independently, so that notice stays with it, in
-[`LICENSE.wildekek`](custom_components/satellite_spotter/LICENSE.wildekek).
+Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 
 ### The predictions
 

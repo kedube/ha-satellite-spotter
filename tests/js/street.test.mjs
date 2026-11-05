@@ -398,9 +398,9 @@ test("options are checked and old names understood", () => {
 test("a path belongs to its pass, even under an id from before a refresh", () => {
   const { pass, detail } = syntheticPass();
   assert.ok(detailMatches(pass, detail));
-  assert.ok(detailMatches(pass, { ...detail, pass_id: `25544-${pass.start + 60}` }));
-  assert.ok(!detailMatches(pass, { ...detail, pass_id: `25544-${pass.start + 600}` }));
-  assert.ok(!detailMatches(pass, { ...detail, pass_id: `99999-${pass.start}` }));
+  assert.ok(detailMatches(pass, { ...detail, pass_id: String(pass.start + 60) }));
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: String(pass.start + 600) }));
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: "not a time" }));
   assert.ok(!detailMatches(null, detail));
   assert.equal(summaryArc(pass).length, 4);
   const arc = visibleArc(detail, pass);

@@ -126,6 +126,10 @@ test("a train stays a train whatever outshines it", () => {
   // Hidden with the Starlinks, and the brighter rocket is said.
   assert.equal(matchesFilters(train("rocket", rocket, starlink), { hideStarlink: true }), false);
   assert.equal(notableMember(train("rocket", rocket, starlink)).name, "CZ-2C R/B");
+  // A bright pass is worth seeing whatever it flies with.
+  const brightRocket = { ...train("rocket", rocket, starlink), bright: true };
+  assert.equal(matchesFilters(brightRocket, { hideStarlink: true }), true);
+  assert.equal(matchesFilters({ kind: "starlink", bright: true, train: true, transits: [starlink] }, { hideStarlink: true }), false);
   // Tiangong is worth seeing anyway, and "Starlink train" does not name it.
   assert.equal(matchesFilters(train("tiangong", tiangong, starlink), { hideStarlink: true }), true);
   assert.equal(notableMember(train("tiangong", tiangong, starlink)).name, "Tiangong");
