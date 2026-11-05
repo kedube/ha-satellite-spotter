@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.const import PASS_ID_TOLERANCE, UPCOMING_WINDOW
 from custom_components.satellite_spotter.coordinator import ListedPass, Predictions
@@ -76,6 +78,32 @@ def test_next_change_walks_through_a_bright_pass() -> None:
 def test_a_faint_pass_gives_no_advance_notice() -> None:
     predictions = _predictions(_pass(_sighting(1, START, 2.0)))
     assert predictions.next_change(START - UPCOMING_WINDOW, NOTICE) == START
+
+
+def test_advance_notice_counts_from_the_bright_satellite() -> None:
+    """A big group can start long before the satellite that makes it bright appears."""
+    p = _pass(_sighting(1, START, 2.0), _sighting(2, START + 30 * MINUTE, -2.0))
+    assert p.notice_at(NOTICE) == START + 15 * MINUTE
+    predictions = _predictions(p)
+    assert predictions.next_change(START - MINUTE, NOTICE) == START
+    assert predictions.next_change(START, NOTICE) == START + 15 * MINUTE
+    assert predictions.next_change(START + 15 * MINUTE, NOTICE) == START + 35 * MINUTE
+
+
+async def test_bright_pass_soon_waits_for_the_bright_satellite(
+    init_integration: MockConfigEntry,
+) -> None:
+    coordinator = init_integration.runtime_data
+    p = _pass(_sighting(1, START, 2.0), _sighting(2, START + 30 * MINUTE, -2.0))
+    coordinator.data = _predictions(p)
+    notice = START + 30 * MINUTE - coordinator.settings.alert_lead
+    assert notice > START
+    second = timedelta(seconds=1)
+    assert coordinator.bright_pass_soon(START) is None, "only the faint one is up"
+    assert coordinator.bright_pass_soon(notice - second) is None
+    assert coordinator.bright_pass_soon(notice) is p
+    assert coordinator.bright_pass_soon(p.end - second) is p
+    assert coordinator.bright_pass_soon(p.end) is None
 
 
 def test_finding_a_pass_after_a_refresh() -> None:

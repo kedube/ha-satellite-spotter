@@ -57,7 +57,7 @@
         "data_description": {
           "max_magnitude": "Only report passes at least this bright. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb; 1 keeps the easy ones, and below 0 only the dazzling ones remain.",
           "cloud_cover": "Adds the Open-Meteo cloud cover forecast to each pass. Open-Meteo receives this location's coordinates (to four decimals) every two hours.",
-          "alert_lead_minutes": "The \"Bright pass soon\" sensor turns on this long before a bright pass begins.",
+          "alert_lead_minutes": "The \"Bright pass soon\" sensor turns on this long before the brightest satellite of a bright pass appears.",
           "show_in_sidebar": "Adds a Satellite Spotter page to the sidebar with the passes, a 3D globe and a street-level view of the sky. The street view loads map tiles of the area around the location from OpenFreeMap and AWS (and from Esri with aerial imagery). The dashboard cards work either way.",
           "show_in_calendar": "Adds a calendar of the passes of the next five days, each with when and where to look. Calendar triggers can then start automations before a pass.",
           "units": "For distances and speeds on the globe and in the street view. \"Automatic\" follows Home Assistant's unit system."

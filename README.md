@@ -105,7 +105,7 @@ Select **Configure** on a location.
 |---|---|---|
 | Faintest magnitude | 2.25 | Lists only passes at least this bright, from -2 to 4. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb, and 1 keeps the easy ones. Starlinks are listed 0.75 past this. |
 | Cloud cover forecast | On | Adds Open-Meteo's forecast to each pass. |
-| Advance notice | 15 min | How long before a bright pass **Bright pass soon** turns on. |
+| Advance notice | 15 min | **Bright pass soon** turns on this long before the brightest satellite of a bright pass appears. |
 | Show Satellite Spotter in the sidebar | On | Adds the page. The cards work either way. |
 | Show the passes in the calendar | On | Adds the location's calendar. |
 | Units | Automatic | Metric or imperial on the page and in the street view. |
@@ -132,7 +132,7 @@ names.
 | `sensor.home_next_bright_pass` | The same for the next bright pass |
 | `sensor.home_passes_next_24_hours` | How many passes are under way or start within a day; `passes` lists them |
 | `binary_sensor.home_satellite_visible` | On during a pass |
-| `binary_sensor.home_bright_pass_soon` | On from the advance notice until a bright pass ends |
+| `binary_sensor.home_bright_pass_soon` | On from the advance notice before a bright satellite appears until its pass ends |
 | `calendar.home_satellite_passes` | Every pass for five days, with where to look |
 | `sensor.home_catalog_updated` | When the catalogue was downloaded, and how old its orbits are |
 

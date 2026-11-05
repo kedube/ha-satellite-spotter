@@ -57,7 +57,7 @@
         "data_description": {
           "max_magnitude": "Nur Überflüge melden, die mindestens so hell sind. Kleinere Zahlen sind heller: 2,25 ist etwa das Schwächste, was man in einem Vorort noch findet; 1 lässt die leicht sichtbaren übrig, unter 0 bleiben nur die strahlend hellen.",
           "cloud_cover": "Ergänzt jeden Überflug um die Bewölkungsvorhersage von Open-Meteo. Open-Meteo erhält dafür alle zwei Stunden die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
-          "alert_lead_minutes": "Der Sensor „Heller Überflug in Kürze“ schaltet sich so lange vor Beginn eines hellen Überflugs ein.",
+          "alert_lead_minutes": "Der Sensor „Heller Überflug in Kürze“ schaltet sich so lange vor dem Erscheinen des hellsten Satelliten eines hellen Überflugs ein.",
           "show_in_sidebar": "Fügt der Seitenleiste eine Satellite-Spotter-Seite mit den Überflügen, einem 3D-Globus und einer Ansicht des Himmels auf Straßenhöhe hinzu. Die Straßenansicht lädt Kartenkacheln der Umgebung des Standorts von OpenFreeMap und AWS (mit Luftbildern auch von Esri). Die Dashboard-Karten funktionieren in jedem Fall.",
           "show_in_calendar": "Fügt einen Kalender mit den Überflügen der nächsten fünf Tage hinzu, jeweils mit Zeit und Blickrichtung. Kalender-Auslöser können damit vor einem Überflug Automationen starten.",
           "units": "Für Entfernungen und Geschwindigkeiten auf dem Globus und in der Straßenansicht. „Automatisch“ folgt dem Einheitensystem von Home Assistant."

@@ -57,7 +57,7 @@
         "data_description": {
           "max_magnitude": "Solo notifica los pasos al menos así de brillantes. Los números más bajos son más brillantes: 2,25 es más o menos lo más débil que se encuentra desde una zona residencial; 1 deja los fáciles, y por debajo de 0 solo quedan los deslumbrantes.",
           "cloud_cover": "Añade a cada paso la previsión de nubosidad de Open-Meteo. Open-Meteo recibe las coordenadas de esta ubicación (con cuatro decimales) cada dos horas.",
-          "alert_lead_minutes": "El sensor \"Paso brillante inminente\" se activa con esta antelación antes de que empiece un paso brillante.",
+          "alert_lead_minutes": "El sensor \"Paso brillante inminente\" se activa con esta antelación antes de que aparezca el satélite más brillante de un paso brillante.",
           "show_in_sidebar": "Añade a la barra lateral una página de Satellite Spotter con los pasos, un globo 3D y una vista del cielo a pie de calle. La vista de calle carga teselas de mapa de los alrededores desde OpenFreeMap y AWS (y desde Esri con imágenes aéreas). Las tarjetas del panel funcionan en cualquier caso.",
           "show_in_calendar": "Añade un calendario con los pasos de los próximos cinco días, cada uno con cuándo y hacia dónde mirar. Así, los desencadenantes de calendario pueden iniciar automatizaciones antes de un paso.",
           "units": "Para las distancias y velocidades del globo y de la vista de calle. \"Automático\" sigue el sistema de unidades de Home Assistant."

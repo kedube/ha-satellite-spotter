@@ -94,6 +94,13 @@ class ListedPass(Flyover):
     # The highest point any of the satellites reaches while visible.
     peak: track.SkyPoint
 
+    def notice_at(self, alert_lead: timedelta) -> datetime:
+        """Return when a bright pass's advance notice starts.
+
+        Counted from the satellite that makes it bright: a big group can start long before.
+        """
+        return self.lead.appears.time - alert_lead
+
 
 @dataclass(slots=True)
 class Predictions:
@@ -146,7 +153,7 @@ class Predictions:
                 p.start - UPCOMING_WINDOW,
                 p.start,
                 p.end,
-                *((p.start - alert_lead,) if p.bright else ()),
+                *((p.notice_at(alert_lead),) if p.bright else ()),
             )
         ]
         return min((moment for moment in moments if moment > now), default=None)
@@ -410,7 +417,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
     def bright_pass_soon(self, now: datetime) -> ListedPass | None:
         """Return the next bright pass from its advance notice until it ends, else None."""
         coming = self.next_bright_pass(now)
-        return coming if coming and coming.start - self.settings.alert_lead <= now else None
+        return coming if coming and coming.notice_at(self.settings.alert_lead) <= now else None
 
     def paused_reason(self, now: datetime) -> str | None:
         """Why predictions are paused, or None while they can be trusted.

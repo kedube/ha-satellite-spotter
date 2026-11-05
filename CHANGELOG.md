@@ -17,6 +17,10 @@ commits instead.
   than they did in 1.09.
 - **The street view follows a satellite you can see.** A big group can start long before the
   satellite it is named after appears, and the view now follows whichever is up until then.
+- **"Bright pass soon" counts from the bright satellite.** Its advance notice used to count from
+  the start of the whole pass, which in a big group can be long before the bright satellite
+  appears. The calendar event, and so the blueprint's notification, still start with the whole
+  pass.
 - **Willem Vooijs's licence notice is back**, in `LICENSE.wildekek`. This integration began
   as a fork of see-a-satellite, and its code has been reworked rather than written
   independently, so the MIT notice stays with it. 1.08 and 1.09 went out without it.
