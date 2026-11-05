@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import io
 import math
@@ -94,6 +95,25 @@ def test_sighting_shapes(place: tuple[str, track.Observer], sightings: list[Any]
                 assert el[outside] >= 10 and lit[outside]
 
 
+def test_the_formula_is_mmts_definition_run_backwards(catalog: list[Satellite]) -> None:
+    """A standard magnitude is for 1000 km and half lit, so 2.5 log10(1 + cos phase) of phase."""
+    sat = replace(catalog[0], magnitude=3.0, model=None)
+    observer = track.Observer(*PLACES["denver"])
+    seconds = START.timestamp() + np.arange(0.0, 86400.0, 60.0)
+    places = track.propagate([sat.sgp4_record()], seconds)[0]
+    sun = track.sun_at(seconds)
+    light = track.photometry(sat, observer, places, sun)
+
+    to_sat = places - observer.position
+    to_sun = sun - places
+    cos_phase = np.einsum("ij,ij->i", -to_sat, to_sun) / (
+        np.linalg.norm(to_sat, axis=-1) * np.linalg.norm(to_sun, axis=-1)
+    )
+    air = np.interp(light.elevation, track._EXTINCTION_ELEVATIONS, observer.extinctions)
+    expected = 3.0 + 5 * np.log10(light.distance / 1e6) - 2.5 * np.log10(1 + cos_phase) + air
+    assert light.magnitude == pytest.approx(expected)
+
+
 def test_reasons_cover_every_case(catalog: list[Satellite]) -> None:
     """Satellites rise into view, leave Earth's shadow, set and fade into it."""
     seen: set[tuple[str, str]] = set()
@@ -116,7 +136,7 @@ def test_pass_track_rows(catalog: list[Satellite]) -> None:
         t for t in find_sightings(catalog, observer, start=START) if t.satellite.norad_id == 25544
     )
     start, end = t.start.timestamp(), t.end.timestamp()
-    sky = track.pass_track(t.satellite, observer, start, end, 1.0, 3.0)
+    sky = track.pass_track(t.satellite, observer, start, end, 1.0, 2.25)
     assert sky is not None
     rows = sky.rows
     # Horizon to horizon (about ten minutes for the station), one second apart.

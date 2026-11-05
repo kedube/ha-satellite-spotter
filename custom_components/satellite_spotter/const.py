@@ -14,9 +14,11 @@ USER_AGENT: Final = (
     f"HomeAssistant-SatelliteSpotter/{VERSION} (+https://github.com/kedube/ha-satellite-spotter)"
 )
 
+# Mini-MegaTORTORA asks for this acknowledgement, and for Karpov et al. 2016 to be cited.
 ATTRIBUTION: Final = (
-    "Orbital data from CelesTrak, brightness from Mike McCants, SCORE (IAU CPS) and "
-    "Stellarium, cloud cover from Open-Meteo"
+    "Orbital data from CelesTrak, brightness from Mini-MegaTORTORA (Karpov et al. 2016), which "
+    "belongs to Kazan Federal University, with Mike McCants, SCORE (IAU CPS) and Stellarium, "
+    "cloud cover from Open-Meteo"
 )
 
 CONF_MAX_MAGNITUDE: Final = "max_magnitude"
@@ -34,7 +36,7 @@ CONF_GOOGLE_API_KEY: Final = "google_api_key"
 
 # About the faintest a satellite can be and still be found from a suburb.
 # Lower numbers are brighter.
-DEFAULT_MAX_MAGNITUDE: Final = 3.0
+DEFAULT_MAX_MAGNITUDE: Final = 2.25
 DEFAULT_CLOUD_COVER: Final = True
 DEFAULT_ALERT_LEAD_MINUTES: Final = 15
 DEFAULT_SHOW_PANEL: Final = True
@@ -48,7 +50,7 @@ DEFAULT_UNITS: Final = "auto"
 STREET_SOURCES: Final = ("auto", "google", "mapillary", "panoramax", "model")
 DEFAULT_STREET_SOURCE: Final = "auto"
 
-# The catalog of the brightest satellites (about 750), downloaded once for
+# The catalog of the brightest satellites (about 970), downloaded once for
 # every location, from CelesTrak (celestrak.py).
 CATALOG_REFRESH: Final = timedelta(hours=12)
 # When CelesTrak could not be reached, try again this much later: soon while

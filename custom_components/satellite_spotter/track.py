@@ -7,9 +7,9 @@ magnitude even while it is too faint to count, and why a pass begins and ends.
 The formulas are published, and cited where they are used. Some numbers have no
 source to cite: what counts as visible (the horizon, the height sunlight must
 clear, the margin over the sky's limit), two departures from Weaver's curve, and
-in predict.py what counts as bright and how close passes must be to count as one.
-They are the choices James Darpinian made for See A Satellite Tonight
-(https://james.darpinian.com/satellites/), kept because nothing yet says better.
+in predict.py how close passes must be to count as one. They are the choices James
+Darpinian made for See A Satellite Tonight (https://james.darpinian.com/satellites/),
+kept because nothing yet says better.
 tests/test_track.py checks the geometry against Skyfield, and tests/test_predict.py
 the tables against their sources.
 
@@ -127,6 +127,9 @@ def _starlink_curve(
 
     return model
 
+
+# How much brighter than half lit a satellite is fully lit, by the formula in photometry().
+_FULLY_LIT_GAIN = 2.5 * math.log10(2)
 
 # Starlinks, by the catalog's MODEL field. Direct-to-cell satellites: the phase
 # function in Mallama et al. 2025, arXiv:2502.03651, table 1. Those still raising
@@ -339,10 +342,13 @@ def photometry(sat: Satellite, observer: Observer, pos: np.ndarray, sun: np.ndar
         if model is not None:
             magnitude = model(phase, distance) + extinction
         elif sat.magnitude is not None:
-            # Standard magnitude at 1000 km, range, extinction and the phase of
-            # a diffusely reflecting sphere.
-            f = (np.sin(phase) + (np.pi - phase) * np.cos(phase)) / np.pi
-            magnitude = sat.magnitude + _distance_dimming(distance) + extinction - 2.5 * np.log10(f)
+            # Mini-MegaTORTORA's standard magnitude run backwards (Karpov et al. 2016): it is
+            # for 1000 km and half lit, so range, extinction and the lit fraction, which is
+            # (1 + cos phase) / 2 of the disc. See scripts/make_brightness_table.py.
+            lit = 1 + np.clip(cos_phase, -1, 1)
+            magnitude = (
+                sat.magnitude + _distance_dimming(distance) + extinction - 2.5 * np.log10(lit)
+            )
         else:
             magnitude = np.full(len(pos), np.nan)
     magnitude = np.where(np.isfinite(magnitude), magnitude, np.nan)
@@ -392,7 +398,7 @@ def brightest_possible(sat: Satellite, observer: Observer) -> float:
     elif sat.magnitude is None:
         return math.inf
     else:
-        best = sat.magnitude + 5 * math.log10(distance * 1e-6)
+        best = sat.magnitude + 5 * math.log10(distance * 1e-6) - _FULLY_LIT_GAIN
     return best + float(observer.extinctions.min())
 
 

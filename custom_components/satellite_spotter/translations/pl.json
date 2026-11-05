@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Skąd obserwujesz?",
-        "description": "Przeloty są przewidywane w twoim Home Assistant na podstawie danych orbitalnych CelesTrak o około 750 jasnych satelitach. Domyślnie lokalizacją jest twój dom. Ujawniają ją dwie rzeczy: prognoza zachmurzenia wysyła jej współrzędne do Open-Meteo (można to wyłączyć w opcjach), a widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS.",
+        "description": "Przeloty są przewidywane w twoim Home Assistant na podstawie danych orbitalnych CelesTrak o około 970 jasnych satelitach. Domyślnie lokalizacją jest twój dom. Ujawniają ją dwie rzeczy: prognoza zachmurzenia wysyła jej współrzędne do Open-Meteo (można to wyłączyć w opcjach), a widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS.",
         "data": {
           "name": "Nazwa",
           "location": "Lokalizacja",
@@ -55,7 +55,7 @@
           "units": "Jednostki"
         },
         "data_description": {
-          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 3 to mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
+          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 2,25 to mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
           "cloud_cover": "Dodaje do każdego przelotu prognozę zachmurzenia z Open-Meteo. Open-Meteo otrzymuje co dwie godziny współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
           "alert_lead_minutes": "Sensor „Jasny przelot wkrótce” włącza się z takim wyprzedzeniem przed początkiem jasnego przelotu.",
           "show_in_sidebar": "Dodaje do paska bocznego stronę Satellite Spotter z przelotami, globusem 3D i widokiem nieba z poziomu ulicy. Widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS (a ze zdjęciami lotniczymi także z Esri). Karty dashboardu działają w każdym przypadku.",

@@ -162,6 +162,7 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
     """An entity of one location, named by its translation key."""
 
     _attr_has_entity_name = True
+
     _attr_attribution = ATTRIBUTION
 
     def __init__(self, coordinator: SatelliteSpotterCoordinator, key: str) -> None:

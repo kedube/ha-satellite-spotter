@@ -14,6 +14,7 @@ from custom_components.satellite_spotter.predict import (
     Flyover,
     Satellite,
     Sighting,
+    cutoff_for,
     find_sightings,
     group_sightings,
     read_catalog,
@@ -88,14 +89,14 @@ def test_extinction_between_and_beyond_the_tables_heights() -> None:
 
 
 def test_extinction_is_used_from_the_observers_height() -> None:
-    """Straight up, 1000 km away, phase 0: only the air differs."""
+    """Straight up, 1000 km away, fully lit: only the air differs."""
     sat = Satellite.from_elements(satellites()[0].elements, 3.0)
     for height_m, dimming in ((0.0, 0.32), (2000.0, 0.17)):
         observer = track.Observer(0.0, 0.0, height_m)
         position = (observer.position + 1e6 * observer.normal)[None, :]
         sun = position - 1e11 * observer.normal
         assert track.photometry(sat, observer, position, sun).magnitude[0] == pytest.approx(
-            3.0 + dimming
+            3.0 - 2.5 * np.log10(2) + dimming
         )
 
 
@@ -133,8 +134,8 @@ def test_starlink_models(model: str, phase: float, at_1000km: float) -> None:
     assert magnitude[0] == pytest.approx(at_1000km, abs=1e-3)
 
 
-def test_diffuse_sphere() -> None:
-    """Full at phase 0 and a third at phase 90 (1/pi), at the reference distance."""
+def test_the_standard_magnitude_is_for_half_lit() -> None:
+    """At the reference distance: as it says at phase 90, and twice the light at phase 0."""
     sat = Satellite.from_elements(satellites()[0].elements, 3.0)
     # The satellite straight up, 1000 km away, and the Sun far off.
     observer = track.Observer(0.0, 0.0)
@@ -145,8 +146,8 @@ def test_diffuse_sphere() -> None:
     full = track.photometry(sat, observer, position, behind).magnitude[0]
     half = track.photometry(sat, observer, position, aside).magnitude[0]
     zenith = float(observer.extinctions[-1])
-    assert full == pytest.approx(3.0 + zenith)
-    assert half == pytest.approx(3.0 + zenith + 2.5 * np.log10(np.pi))
+    assert half == pytest.approx(3.0 + zenith)
+    assert full == pytest.approx(3.0 + zenith - 2.5 * np.log10(2))
 
 
 # --- The search ---------------------------------------------------------------
@@ -368,12 +369,12 @@ def test_dropping_starlinks_redoes_the_group() -> None:
 @pytest.mark.parametrize(
     ("changes", "bright"),
     [
-        ({"peak_magnitude": 0.5}, True),
-        # Not brighter than magnitude 1.
-        ({"peak_magnitude": 1.0}, False),
+        ({"peak_magnitude": 0.4}, True),
+        # Not brighter than magnitude 0.5.
+        ({"peak_magnitude": 0.5}, False),
         # Not 3 magnitudes clear of what the sky shows.
-        ({"peak_magnitude": 0.5, "sky_limit": 3.5}, False),
-        ({"peak_magnitude": 0.5, "before_sunset": True}, False),
+        ({"peak_magnitude": 0.4, "sky_limit": 3.3}, False),
+        ({"peak_magnitude": 0.4, "before_sunset": True}, False),
     ],
 )
 def test_bright(changes: dict[str, Any], bright: bool) -> None:
@@ -395,3 +396,21 @@ def test_starlink_model_without_a_magnitude_survives_storage() -> None:
     sat = Satellite.from_elements(satellites()[0].elements, None, "starlink-raising", "STARLINK-1")
     (again,) = read_catalog(write_catalog([sat]))
     assert (again.magnitude, again.model, again.name) == (None, "starlink-raising", "STARLINK-1")
+
+
+# --- Starlinks ----------------------------------------------------------------
+
+
+def test_starlinks_are_listed_past_the_cutoff() -> None:
+    assert cutoff_for(_sat(2, "STARLINK-1"), 2.25) == 3.0
+    assert cutoff_for(_sat(1, "SOME SAT"), 2.25) == 2.25
+
+
+def test_the_search_keeps_to_the_starlink_cutoff() -> None:
+    """A Starlink's sightings at a cutoff are those of anything else at 0.75 fainter."""
+    elements = next(s for s in satellites() if s.norad_id == 53807).elements
+    starlink = Satellite.from_elements(elements, None, "starlink-raising", "STARLINK-1")
+    found = find_sightings([starlink], DENVER_SKY, start=START, max_magnitude=2.25)
+    assert found
+    assert all(t.peak_magnitude < 3.0 for t in found)
+    assert any(t.peak_magnitude >= 2.25 for t in found)

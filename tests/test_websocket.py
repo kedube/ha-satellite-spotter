@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 import itertools
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
@@ -100,7 +100,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
         **HONOLULU,
     }
     assert result["settings"] == {
-        "max_magnitude": 3.0,
+        "max_magnitude": 2.25,
         "cloud_cover": True,
         "alert_lead_minutes": 15,
         "units": "auto",
@@ -114,8 +114,8 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert 0 < catalog["median_epoch_age_days"] < 1
 
     passes = result["passes"]
-    assert len(passes) == 18
-    assert len({p["id"] for p in passes}) == 18
+    assert len(passes) == 28
+    assert len({p["id"] for p in passes}) == 28
     assert [p["start"] for p in passes] == sorted(p["start"] for p in passes)
     assert _no_negative_zero(passes)
     first = passes[0]
@@ -125,7 +125,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert first["kind"] == "satellite"
     assert first["start"] == 1793806408
     assert first["duration"] == first["end"] - first["start"]
-    assert (first["magnitude"], first["bright"], first["cloud_cover"]) == (1.0, True, 16)
+    assert (first["magnitude"], first["bright"], first["cloud_cover"]) == (0.2, True, 16)
     assert (first["satellite_count"], first["train"]) == (1, False)
     for p in passes:
         assert p["start"] < p["end"]
@@ -157,7 +157,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert kinds["ISS"] == "iss"
     group = next(p for p in passes if p["title"] == "ISS +1")
     assert group["satellite_count"] == 2
-    assert [t["name"] for t in group["transits"]] == ["ISS", "Hubble"]
+    assert [t["name"] for t in group["transits"]] == ["ISS", "CZ-2C R/B"]
 
 
 async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
@@ -198,7 +198,7 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
         assert distance > 0
         assert (mag is None) == (not lit or el <= 0)
         if vis:
-            assert lit and el >= 10 and mag <= 3.0  # rounded
+            assert lit and el >= 10 and mag <= 2.3  # rounded
             # Drawn where the countdown says it is visible (give or take a few seconds).
             assert transit["visible_start"] - 6 <= when <= transit["visible_end"] + 6
     # The search's look angles agree with the rows' within a degree.
@@ -221,7 +221,7 @@ async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry)
     result = msg["result"]
     assert result["step"] == 5
     first, second = result["transits"]
-    assert (first["name"], second["name"]) == ("ISS", "Hubble")
+    assert (first["name"], second["name"]) == ("ATLAS 5 CENTAUR R/B", "ISS")
     assert first["offset_s"] == 0
     assert second["offset_s"] == round(
         (p.flyover.sightings[1].peak_time - p.flyover.sightings[0].peak_time).total_seconds()
@@ -608,3 +608,23 @@ async def test_times_are_unix_seconds(ws: Any) -> None:
     assert found
     assert all(isinstance(t, int) for t in found)
     assert all(datetime.fromtimestamp(t).year == 2026 for t in found)
+
+
+async def test_the_drawing_uses_the_same_cutoff_as_the_list(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """Otherwise a Starlink past the cutoff would be listed, but not drawn as visible."""
+    coordinator = init_integration.runtime_data
+    p = coordinator.data.passes[0]
+
+    def named(name: str) -> Any:
+        sighting = replace(p.lead, satellite=replace(p.lead.satellite, name=name))
+        return replace(p, flyover=replace(p.flyover, sightings=[sighting]))
+
+    with patch(
+        "custom_components.satellite_spotter.frontend.track.pass_track", return_value=None
+    ) as drawn:
+        pass_track_payload(named("STARLINK-1"), coordinator.observer, 2.0, 2.25)
+        assert drawn.call_args.args[5] == 3.0
+        pass_track_payload(named("SOME SAT"), coordinator.observer, 2.0, 2.25)
+        assert drawn.call_args.args[5] == 2.25

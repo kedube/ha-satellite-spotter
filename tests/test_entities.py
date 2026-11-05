@@ -70,7 +70,7 @@ async def test_next_pass(hass: HomeAssistant) -> None:
         "satellite": "BLUEWALKER-3",
         "norad_id": 53807,
         "start": FIRST_PASS,
-        "magnitude": 1.0,
+        "magnitude": 0.2,
         "bright": True,
         "before_sunset": False,
         "rise_direction": "NW",
@@ -88,12 +88,12 @@ async def test_what_comes_after_the_next_pass(hass: HomeAssistant) -> None:
     """The other sensors tell the same story."""
     assert hass.states.get("sensor.home_next_bright_pass").state == FIRST_PASS
     passes = hass.states.get("sensor.home_passes_next_24_hours")
-    assert int(passes.state) == len(passes.attributes["passes"]) == 5
+    assert int(passes.state) == len(passes.attributes["passes"]) == 7
     assert passes.attributes["unit_of_measurement"] == "passes"
     assert passes.attributes["passes"][0] == {
         "start": FIRST_PASS,
         "satellite": "BLUEWALKER-3",
-        "magnitude": 1.0,
+        "magnitude": 0.2,
         "direction": "NW",
         "cloud_cover": 16,
     }
@@ -248,7 +248,7 @@ async def test_passes_next_24h_follow_the_window(
 
 async def test_groups_of_satellites(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> None:
     """Satellites passing together are one pass, named after the first."""
-    start = datetime(2026, 11, 8, 4, 16, 9, tzinfo=UTC)
+    start = datetime(2026, 11, 8, 4, 15, 34, tzinfo=UTC)
     await advance(hass, freezer, start - timedelta(seconds=30))
     passes = hass.states.get("sensor.home_passes_next_24_hours").attributes["passes"]
     assert passes[0]["start"] == start.isoformat()

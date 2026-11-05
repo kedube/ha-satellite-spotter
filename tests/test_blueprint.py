@@ -129,7 +129,7 @@ async def test_every_pass_is_announced(
         assert event.data["title"].startswith("🛰️ ")
         assert event.data["message"] == " ".join(text.description(p).splitlines()[:-1])
 
-    assert notifications[0].data["title"] == "🛰️ SAOCOM 1A in 10 min"
+    assert notifications[0].data["title"] == "🛰️ SAOCOM 1B in 10 min"
 
 
 async def test_bright_passes_under_clear_skies(

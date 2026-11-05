@@ -22,14 +22,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 INTEGRATION = ROOT / "custom_components/satellite_spotter"
 
 # A small catalog: CelesTrak's elements of 22 objects, as read on 2026-11-04, with
-# the magnitudes brightness.csv gave them then. They do not follow later changes to the
-# table, so a rebuilt table does not move these tests.
+# magnitudes that are test values and do not follow brightness.csv, so a rebuilt table
+# does not move these tests.
 CATALOG_FILE = FIXTURES / "catalog.json"
 NOW = datetime(2026, 11, 4, 15, 30, tzinfo=UTC)
-# 18 passes in five days, 9 of them bright, and a bright one first.
+# 28 passes in five days, 10 of them bright, and a bright one first.
 HONOLULU = {CONF_LATITUDE: 21.3069, CONF_LONGITUDE: -157.8583, CONF_ELEVATION: 5.0}
 HONOLULU_ID = "21.3069_-157.8583"
-# 25 passes, 2 of them bright, and the first not until the next day.
+# 29 passes, 8 of them bright, and the first not until the next day.
 DENVER = {CONF_LATITUDE: 39.74, CONF_LONGITUDE: -104.99, CONF_ELEVATION: 1609.0}
 DENVER_ID = "39.7400_-104.9900"
 FIRST_PASS = "2026-11-04T15:33:28+00:00"

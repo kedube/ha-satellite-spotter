@@ -317,7 +317,7 @@ export default {
     // A pass going on right now.
     now: "Now",
     // The star on a pass the integration calls bright: brighter than magnitude
-    // 1 against a dark enough sky.
+    // 0.5 against a dark enough sky.
     bright: "Bright pass",
     daylight: "Daylight",
     daylight_hint: "Before sunset: only a very bright satellite shows against the daylight sky",

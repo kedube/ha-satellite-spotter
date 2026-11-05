@@ -32,10 +32,8 @@ _LOGGER = logging.getLogger(__name__)
 GP_URL = "https://celestrak.org/NORAD/elements/gp.php"
 # Together about 2.9 MB, smallest first. "active" holds the working satellites,
 # most of them Starlinks, and R/B the spent rocket stages; "visual" adds some
-# dead satellites and debris that are easy to see. USA 60 is in none of them,
-# and it is bright enough to be worth a request of its own.
+# dead satellites and debris that are easy to see.
 QUERIES: tuple[Mapping[str, str], ...] = (
-    {"CATNR": "20682"},
     {"GROUP": "visual"},
     {"NAME": "R/B"},
     {"GROUP": "active"},
@@ -66,7 +64,7 @@ class DownloadRefused(CatalogError):
 
 @lru_cache(maxsize=1)
 def brightness_table() -> dict[int, float]:
-    """Return each satellite's intrinsic magnitude (reads a file: not in the event loop)."""
+    """Return each satellite's standard magnitude (reads a file: not in the event loop)."""
     with _TABLE.open(encoding="utf-8", newline="") as handle:
         lines = (line for line in handle if not line.startswith("#"))
         return {int(row["norad_id"]): float(row["magnitude"]) for row in csv.DictReader(lines)}

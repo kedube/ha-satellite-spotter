@@ -22,7 +22,7 @@ from custom_components.satellite_spotter.celestrak import (
     async_fetch_catalog,
     build_catalog,
 )
-from custom_components.satellite_spotter.const import USER_AGENT
+from custom_components.satellite_spotter.const import ATTRIBUTION, USER_AGENT
 
 from .common import INTEGRATION, gp_csv
 
@@ -230,6 +230,7 @@ def test_the_table_shipped_can_be_read() -> None:
     assert all(-3 <= float(row["magnitude"]) <= 8 for row in rows)
     assert {row["source"] for row in rows} <= {
         "override",
+        "mmt",
         "mccants",
         "score",
         "stellarium",
@@ -246,9 +247,18 @@ def test_the_table_shipped_can_be_read() -> None:
     assert not {61563, 63166} & set(ids)
 
 
+def test_the_entities_credit_where_the_brightness_comes_from() -> None:
+    """Mini-MegaTORTORA asks for the citation and this acknowledgement."""
+    assert "Karpov et al. 2016" in ATTRIBUTION
+    assert "Kazan Federal University" in ATTRIBUTION
+
+
 def test_the_table_keeps_the_attribution_its_sources_ask_for() -> None:
     header = (INTEGRATION / "brightness.csv").read_text(encoding="utf-8").split("norad_id")[0]
     for credit in (
+        "Mini-MegaTORTORA",
+        "Karpov",
+        "Kazan Federal University",
         "McCants",
         "SCORE",
         "CC BY 4.0",

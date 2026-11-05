@@ -37,8 +37,10 @@ _FLYOVER_GAP = timedelta(seconds=60)
 _TRAIN_SIZE = 5
 # A flyover is bright when it beats this magnitude, and the sky's limit by this
 # much, after sunset.
-_BRIGHT_MAGNITUDE = 1.0
+_BRIGHT_MAGNITUDE = 0.5
 _BRIGHT_OVER_SKY = 3.0
+# Starlinks are listed this much past the cutoff: at the default most trains would go otherwise.
+_STARLINK_MARGIN = 0.75
 
 # The largest number SGP4's records can hold (Alpha-5). New launches can carry nine
 # digit temporary numbers; the number plays no part in the orbit.
@@ -111,6 +113,11 @@ class Satellite:
             },
         )
         return record
+
+
+def cutoff_for(sat: Satellite, max_magnitude: float) -> float:
+    """Return the faintest magnitude at which this satellite is listed."""
+    return max_magnitude + (_STARLINK_MARGIN if sat.is_starlink else 0.0)
 
 
 @dataclass(slots=True)
@@ -254,7 +261,8 @@ def find_sightings(
 
     # Brightest first, so that each batch can skip the minutes too light for its best.
     best = {id(sat): track.brightest_possible(sat, observer) for sat in satellites}
-    worth_trying = [sat for sat in satellites if best[id(sat)] < max_magnitude]
+    cutoff = {id(sat): cutoff_for(sat, max_magnitude) for sat in satellites}
+    worth_trying = [sat for sat in satellites if best[id(sat)] < cutoff[id(sat)]]
     worth_trying.sort(key=lambda sat: best[id(sat)])
 
     found: list[Sighting] = []
@@ -275,7 +283,7 @@ def find_sightings(
                 continue
             with np.errstate(invalid="ignore"):
                 light = track.photometry(sat, observer, places[row, up], sun[sampled[up]])
-                seen = track.visible(light, max_magnitude + _SEARCH_MARGIN)
+                seen = track.visible(light, cutoff[id(sat)] + _SEARCH_MARGIN)
             promising = np.zeros(minutes.size, dtype=bool)
             promising[sampled[up[seen]]] = True
             for first, past in _stretches(promising):
@@ -288,7 +296,7 @@ def find_sightings(
                     observer,
                     float(minutes[max(first - 1, 0)]),
                     float(minutes[past]),
-                    max_magnitude,
+                    cutoff[id(sat)],
                 )
 
     # Those that appear together keep the catalog's order.

@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Where are you watching from?",
-        "description": "Passes are predicted on your Home Assistant, from CelesTrak's orbital data for about 750 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
+        "description": "Passes are predicted on your Home Assistant, from CelesTrak's orbital data for about 970 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
         "data": {
           "name": "Name",
           "location": "Location",
@@ -55,7 +55,7 @@
           "units": "Units"
         },
         "data_description": {
-          "max_magnitude": "Only report passes at least this bright. Lower numbers are brighter: 3 is about the faintest you can find from a suburb; 1 keeps the easy ones, and below 0 only the dazzling ones remain.",
+          "max_magnitude": "Only report passes at least this bright. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb; 1 keeps the easy ones, and below 0 only the dazzling ones remain.",
           "cloud_cover": "Adds the Open-Meteo cloud cover forecast to each pass. Open-Meteo receives this location's coordinates (to four decimals) every two hours.",
           "alert_lead_minutes": "The \"Bright pass soon\" sensor turns on this long before a bright pass begins.",
           "show_in_sidebar": "Adds a Satellite Spotter page to the sidebar with the passes, a 3D globe and a street-level view of the sky. The street view loads map tiles of the area around the location from OpenFreeMap and AWS (and from Esri with aerial imagery). The dashboard cards work either way.",

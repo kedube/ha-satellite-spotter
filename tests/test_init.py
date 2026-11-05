@@ -894,9 +894,9 @@ async def test_diagnostics_are_private(
     assert diag["catalog"]["version"] == 1
     assert diag["catalog"]["last_error"] is None
     assert 0 < diag["catalog"]["median_epoch_age_days"] < 1
-    assert diag["predictions"]["pass_count"] == 18
-    assert diag["predictions"]["bright_pass_count"] == 9
-    assert diag["predictions"]["sighting_count"] == 20
+    assert diag["predictions"]["pass_count"] == 28
+    assert diag["predictions"]["bright_pass_count"] == 10
+    assert diag["predictions"]["sighting_count"] == 32
     assert diag["predictions"]["cloud_cover"] == {"enabled": True, "available": True}
     assert diag["paused"] is None
     text = repr(diag)

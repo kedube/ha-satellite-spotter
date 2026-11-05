@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Da dove osservi?",
-        "description": "I passaggi vengono previsti nel tuo Home Assistant, con i dati orbitali di CelesTrak di circa 750 satelliti luminosi. Per impostazione predefinita la posizione è casa tua. Due cose la rivelano: la previsione della copertura nuvolosa invia le sue coordinate a Open-Meteo (puoi disattivarla nelle opzioni) e la vista stradale carica tasselli di mappa dei dintorni da OpenFreeMap e AWS.",
+        "description": "I passaggi vengono previsti nel tuo Home Assistant, con i dati orbitali di CelesTrak di circa 970 satelliti luminosi. Per impostazione predefinita la posizione è casa tua. Due cose la rivelano: la previsione della copertura nuvolosa invia le sue coordinate a Open-Meteo (puoi disattivarla nelle opzioni) e la vista stradale carica tasselli di mappa dei dintorni da OpenFreeMap e AWS.",
         "data": {
           "name": "Nome",
           "location": "Posizione",
@@ -55,7 +55,7 @@
           "units": "Unità"
         },
         "data_description": {
-          "max_magnitude": "Segnala solo i passaggi luminosi almeno così. I numeri più bassi sono più luminosi: 3 è più o meno il più debole che si trova dalla periferia; 1 tiene i più facili, e sotto lo 0 restano solo quelli abbaglianti.",
+          "max_magnitude": "Segnala solo i passaggi luminosi almeno così. I numeri più bassi sono più luminosi: 2,25 è più o meno il più debole che si trova dalla periferia; 1 tiene i più facili, e sotto lo 0 restano solo quelli abbaglianti.",
           "cloud_cover": "Aggiunge a ogni passaggio la previsione della copertura nuvolosa di Open-Meteo. Open-Meteo riceve le coordinate di questa posizione (con quattro decimali) ogni due ore.",
           "alert_lead_minutes": "Il sensore \"Passaggio luminoso imminente\" si attiva con questo anticipo prima che inizi un passaggio luminoso.",
           "show_in_sidebar": "Aggiunge alla barra laterale una pagina Satellite Spotter con i passaggi, un globo 3D e una vista del cielo dal livello della strada. La vista stradale carica tasselli di mappa dei dintorni da OpenFreeMap e AWS (e da Esri con le immagini aeree). Le schede della plancia funzionano in ogni caso.",

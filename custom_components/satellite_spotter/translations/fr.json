@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "D'où observez-vous ?",
-        "description": "Les passages sont prédits dans votre Home Assistant, à partir des données orbitales de CelesTrak pour environ 750 satellites brillants. Par défaut, le lieu est votre domicile. Deux choses le révèlent : la prévision de la couverture nuageuse envoie ses coordonnées à Open-Meteo (désactivable dans les options), et la vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS.",
+        "description": "Les passages sont prédits dans votre Home Assistant, à partir des données orbitales de CelesTrak pour environ 970 satellites brillants. Par défaut, le lieu est votre domicile. Deux choses le révèlent : la prévision de la couverture nuageuse envoie ses coordonnées à Open-Meteo (désactivable dans les options), et la vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS.",
         "data": {
           "name": "Nom",
           "location": "Emplacement",
@@ -55,7 +55,7 @@
           "units": "Unités"
         },
         "data_description": {
-          "max_magnitude": "Ne signaler que les passages au moins aussi brillants. Plus le nombre est petit, plus c'est brillant : 3 est à peu près le plus faible qu'on repère depuis une banlieue ; 1 garde les plus faciles, et en dessous de 0 il ne reste que les éblouissants.",
+          "max_magnitude": "Ne signaler que les passages au moins aussi brillants. Plus le nombre est petit, plus c'est brillant : 2,25 est à peu près le plus faible qu'on repère depuis une banlieue ; 1 garde les plus faciles, et en dessous de 0 il ne reste que les éblouissants.",
           "cloud_cover": "Ajoute à chaque passage la prévision de couverture nuageuse d'Open-Meteo. Open-Meteo reçoit les coordonnées de ce lieu (à quatre décimales) toutes les deux heures.",
           "alert_lead_minutes": "Le capteur « Passage brillant imminent » s'active avec cette avance sur le début d'un passage brillant.",
           "show_in_sidebar": "Ajoute à la barre latérale une page Satellite Spotter avec les passages, un globe 3D et une vue du ciel au niveau de la rue. La vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS (et depuis Esri avec l'imagerie aérienne). Les cartes de tableau de bord fonctionnent dans tous les cas.",

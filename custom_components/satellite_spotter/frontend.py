@@ -73,7 +73,7 @@ from .const import (
 from .coordinator import PredictionSettings, SatellitePass, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, pass_title, satellite_kind
 from .links import info_url
-from .predict import Direction, Satellite, Sighting
+from .predict import Direction, Satellite, Sighting, cutoff_for
 from .street import street_payload
 
 if TYPE_CHECKING:
@@ -513,7 +513,9 @@ def pass_track_payload(
             offset = t.peak_time.timestamp() - first
             item["horizon_rise"] = unix(transits[0]["horizon_rise"] + offset)
             item["horizon_set"] = unix(transits[0]["horizon_set"] + offset)
-        elif (sky := track.pass_track(sat, observer, start, end, step, max_magnitude)) is not None:
+        elif (
+            sky := track.pass_track(sat, observer, start, end, step, cutoff_for(sat, max_magnitude))
+        ) is not None:
             item.update(horizon_rise=sky.horizon_rise, horizon_set=sky.horizon_set, rows=sky.rows)
         else:
             # SGP4 cannot place it (or it never clears the horizon here).

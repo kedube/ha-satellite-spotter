@@ -83,7 +83,7 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
     entry = await _setup(hass)
     data = entry.runtime_data.data
     events = await _events(hass, NOW, NOW + timedelta(days=5))
-    assert len(events) == len(data.passes) == 18
+    assert len(events) == len(data.passes) == 28
     entity = hass.data["calendar"].get_entity(CALENDAR)
     uids = [e.uid for e in await entity.async_get_events(hass, NOW, NOW + timedelta(days=5))]
     assert uids == [p.id for p in data.passes]
@@ -103,12 +103,12 @@ async def test_calendar_lists_the_passes(hass: HomeAssistant) -> None:
         f"At {dt_util.as_local(t.start):%H:%M:%S}, look toward {compass(t.appears.azimuth)}: "
         f"{t.appears.elevation:.0f}° above the horizon.",
         f"Best view at {dt_util.as_local(t.peak_time):%H:%M:%S}: "
-        f"{compass(t.peak.azimuth)}, {t.peak.elevation:.0f}° high, magnitude 1.0.",
+        f"{compass(t.peak.azimuth)}, {t.peak.elevation:.0f}° high, magnitude 0.2.",
         f"Last visible at {dt_util.as_local(t.end):%H:%M:%S} toward "
         f"{compass(t.vanishes.azimuth)}, {t.vanishes.elevation:.0f}° high.",
     ]
     assert "Cloud cover near the pass: 16%" in events[0]["description"]
-    assert sum(" +1" in e["summary"] for e in events) == 2
+    assert sum(" +1" in e["summary"] for e in events) == 4
 
     sensor = hass.states.get("sensor.home_next_pass")
     assert dt_util.parse_datetime(events[0]["start"]) == dt_util.parse_datetime(sensor.state)
@@ -363,17 +363,17 @@ async def test_calendar_trigger_before_a_pass(
     ("language", "summary", "appears", "brightest"),
     [
         ("de", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
-         "Helligkeit 1,0"),
+         "Helligkeit 0,2"),
         # Regional variants get their language's text, as on the globe.
         ("de-CH", "🛰️ BLUEWALKER-3 (hell)", "Um {} nach NW schauen: 29° über dem Horizont.",
-         "Helligkeit 1,0"),
+         "Helligkeit 0,2"),
         ("pt", "🛰️ BLUEWALKER-3 (brilhante)",
-         "Às {}, olhe para NO: 29° acima do horizonte.", "magnitude 1,0"),
+         "Às {}, olhe para NO: 29° acima do horizonte.", "magnitude 0,2"),
         ("fr", "🛰️ BLUEWALKER-3 (brillant)",
-         "À {}, regardez vers NO : 29° au-dessus de l'horizon.", "magnitude 1,0"),
+         "À {}, regardez vers NO : 29° au-dessus de l'horizon.", "magnitude 0,2"),
         # Languages without a translation get English.
         ("ja", "🛰️ BLUEWALKER-3 (bright)", "At {}, look toward NW: 29° above the horizon.",
-         "magnitude 1.0"),
+         "magnitude 0.2"),
     ],
 )  # fmt: skip
 async def test_events_follow_the_home_assistant_language(

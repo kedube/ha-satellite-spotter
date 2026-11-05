@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Waarvandaan kijk je?",
-        "description": "Overkomsten worden in je Home Assistant voorspeld, met de baangegevens van CelesTrak van ongeveer 750 heldere satellieten. Standaard is de locatie je thuis. Twee dingen verraden haar: de bewolkingsverwachting stuurt de coördinaten naar Open-Meteo (uit te zetten in de opties), en de straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS.",
+        "description": "Overkomsten worden in je Home Assistant voorspeld, met de baangegevens van CelesTrak van ongeveer 970 heldere satellieten. Standaard is de locatie je thuis. Twee dingen verraden haar: de bewolkingsverwachting stuurt de coördinaten naar Open-Meteo (uit te zetten in de opties), en de straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS.",
         "data": {
           "name": "Naam",
           "location": "Locatie",
@@ -55,7 +55,7 @@
           "units": "Eenheden"
         },
         "data_description": {
-          "max_magnitude": "Meld alleen overkomsten die minstens zo helder zijn. Lagere getallen zijn helderder: 3 is ongeveer het zwakste dat je vanuit een buitenwijk nog vindt; 1 houdt de makkelijke over, en onder 0 blijven alleen de verblindende.",
+          "max_magnitude": "Meld alleen overkomsten die minstens zo helder zijn. Lagere getallen zijn helderder: 2,25 is ongeveer het zwakste dat je vanuit een buitenwijk nog vindt; 1 houdt de makkelijke over, en onder 0 blijven alleen de verblindende.",
           "cloud_cover": "Voegt aan elke overkomst de bewolkingsverwachting van Open-Meteo toe. Open-Meteo ontvangt daarvoor elke twee uur de coördinaten van deze locatie (op vier decimalen).",
           "alert_lead_minutes": "De sensor \"Heldere overkomst binnenkort\" gaat zo lang voor het begin van een heldere overkomst aan.",
           "show_in_sidebar": "Voegt een Satellite Spotter-pagina toe aan de zijbalk met de overkomsten, een 3D-globe en een weergave van de hemel op straatniveau. De straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS (en van Esri met luchtfoto's). De dashboardkaarten werken hoe dan ook.",

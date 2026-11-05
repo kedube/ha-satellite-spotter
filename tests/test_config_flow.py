@@ -339,6 +339,15 @@ async def _options(hass: HomeAssistant, entry: MockConfigEntry, **street: Any) -
     )
 
 
+async def test_faintest_magnitude_moves_in_quarters(hass: HomeAssistant) -> None:
+    """The default is 2.25."""
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
+    entry.add_to_hass(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    schema = result["data_schema"].schema
+    assert next(v for k, v in schema.items() if str(k) == CONF_MAX_MAGNITUDE).config["step"] == 0.25
+
+
 async def test_options_flow(hass: HomeAssistant) -> None:
     """The options are stored on the entry; the form offers the current ones."""
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
@@ -346,7 +355,7 @@ async def test_options_flow(hass: HomeAssistant) -> None:
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     assert _defaults(result["data_schema"]) == {
-        CONF_MAX_MAGNITUDE: 3.0,
+        CONF_MAX_MAGNITUDE: 2.25,
         CONF_CLOUD_COVER: True,
         CONF_ALERT_LEAD_MINUTES: 15,
         CONF_SHOW_PANEL: True,
@@ -459,14 +468,15 @@ async def test_refused_keys_are_explained(
         hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_GOOGLE_API_KEY: GOOGLE_KEY}
     )
     assert result["errors"] == {"base": "google_refused"}
-    assert result["description_placeholders"] == {
-        "error": "API key not valid. Please pass a valid API key."
-    }
+    assert (
+        result["description_placeholders"]["error"]
+        == "API key not valid. Please pass a valid API key."
+    )
     result = await _options(
         hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN}
     )
     assert result["errors"] == {"base": "mapillary_refused"}
-    assert result["description_placeholders"] == {"error": "Invalid OAuth access token"}
+    assert result["description_placeholders"]["error"] == "Invalid OAuth access token"
     assert entry.options == {}
 
 

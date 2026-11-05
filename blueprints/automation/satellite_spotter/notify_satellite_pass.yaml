@@ -46,7 +46,7 @@ blueprint:
     bright_only:
       name: Bright passes only
       description: >-
-        Only bright passes: brighter than magnitude 1 against a properly dark
+        Only bright passes: brighter than magnitude 0.5 against a properly dark
         sky, easy to see even from a town.
       default: true
       selector:

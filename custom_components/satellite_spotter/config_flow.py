@@ -327,7 +327,7 @@ class SatelliteSpotterOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_MAX_MAGNITUDE,
                     default=current.get(CONF_MAX_MAGNITUDE, DEFAULT_MAX_MAGNITUDE),
-                ): _number(-2, 4, 0.5, mode=NumberSelectorMode.SLIDER),
+                ): _number(-2, 4, 0.25, mode=NumberSelectorMode.SLIDER),
                 vol.Required(
                     CONF_CLOUD_COVER,
                     default=current.get(CONF_CLOUD_COVER, DEFAULT_CLOUD_COVER),

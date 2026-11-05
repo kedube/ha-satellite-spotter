@@ -9,7 +9,7 @@ Know when to step outside and look up. Satellite Spotter predicts when satellite
 **visible to the naked eye** from your home, and shows you where to look: on a 3D globe, on a
 sky chart and from your own street.
 
-It follows about 750 objects, including the International Space Station, Tiangong, Hubble, spent
+It follows about 970 objects, including the International Space Station, Tiangong, Hubble, spent
 rocket stages and trains of new Starlinks. Everything is worked out on your Home Assistant, five
 days ahead, for each location you add.
 
@@ -65,7 +65,7 @@ Select **Configure** on a location.
 
 | Option | Default | What it does |
 |---|---|---|
-| Faintest magnitude | 3 | Lists only passes at least this bright, from -2 to 4. Lower numbers are brighter: 3 is about the faintest you can find from a suburb, and 1 keeps the easy ones. |
+| Faintest magnitude | 2.25 | Lists only passes at least this bright, from -2 to 4. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb, and 1 keeps the easy ones. Starlinks are listed 0.75 past this. |
 | Cloud cover forecast | On | Adds Open-Meteo's forecast to each pass. |
 | Advance notice | 15 min | How long before a bright pass **Bright pass soon** turns on. |
 | Show Satellite Spotter in the sidebar | On | Adds the page. The cards work either way. |
@@ -150,18 +150,19 @@ Both are in the card picker, with visual editors.
 ## How it works
 
 1. **Catalogue.** Every 12 hours, once for all locations, the integration downloads orbital elements
-   from CelesTrak (about 4.7 MB) and joins them with `brightness.csv`, a table that ships with it.
-   It keeps objects that could reach magnitude 3 overhead. Starlinks are chosen by height instead:
-   those below 350 km, which are new ones still climbing and old ones coming down.
+   from CelesTrak (about 4.7 MB) and joins them with `brightness.csv`, a table that ships with it,
+   mostly of magnitudes measured by the Mini-MegaTORTORA telescope. It holds objects that could reach
+   magnitude 3 overhead. Starlinks are chosen by height instead: those below 350 km, which are new
+   ones still climbing and old ones coming down.
 2. **Position.** SGP4 places each satellite once a minute for five days, then second by second
    around anything that might be visible.
-3. **Brightness.** Each satellite's magnitude at 1,000 km is adjusted for its distance, the angle
-   between the Sun, the satellite and you, and the air in the way, which depends on your elevation.
-   Starlinks use published models of their own.
+3. **Brightness.** Each satellite's standard magnitude, which is for 1,000 km and half lit by the Sun,
+   is adjusted for its distance, how much of it is lit as you see it, and the air in the way, which
+   depends on your elevation. Starlinks use published models of their own.
 4. **Visibility.** A satellite counts while it is at least 10° up, lit by the Sun, brighter than
    your **Faintest magnitude**, and bright enough for the sky at that moment.
 5. **Passes.** Satellites that overlap or follow within a minute make one pass, and fewer than five
-   Starlinks together are left out. A pass is **bright** when it beats magnitude 1, and the sky's
+   Starlinks together are left out. A pass is **bright** when it beats magnitude 0.5, and the sky's
    limit by 3 magnitudes, after sunset.
 
 Passes are predicted again every two hours. In between nothing polls: entities change at the
@@ -171,13 +172,13 @@ moments that matter.
 
 - **Geometry** matches Skyfield with JPL's DE421 to within 0.005° on the sky and 0.04 km in
   distance, and the Sun to within 0.01°.
-- **The method** follows See A Satellite Tonight. Given that site's catalogue and sea-level air,
-  this code agreed with a Python port of it on 1,209 of 1,215 passes, over five days at nine places.
-- **The list differs from that site's**, because the brightness values do. Over five days at eight
-  cities it found 200 of the site's 357 passes outside Starlink trains, and 178 others: near the
-  cutoff, a small difference decides whether a pass is listed. It listed all 36 of the site's
-  bright passes, and labelled about seven in ten of them bright.
-- **Starlink trains** matched in the next two days (3 of 3), but only 10 of 18 over five days,
+- **Brightness values** are mostly measured. Against what people reported in SCORE for 119 objects,
+  81% come within a magnitude, though most of those reports are of satellites too faint for the
+  naked eye.
+- **The list differs from See A Satellite Tonight's**, which is a comparison here, not the truth. Over
+  five days at eight cities it found 249 of the site's 330 passes outside Starlink trains, and 62
+  others. Of the site's 31 bright passes it listed 29, and labelled 18 of them bright.
+- **Starlink trains** matched in the next two days (2 of 2), but only 10 of 17 over five days,
   because their orbits change quickly.
 - **Brightness is an estimate.** A satellite can look a magnitude or more brighter or fainter than
   predicted, and rocket stages flash as they tumble. The Moon and light pollution are not modelled.
@@ -233,6 +234,9 @@ The tests need no network. The scripts in `scripts/` build the generated files
 (`validate_against_skyfield.py`) and publish releases (`release.py`). Each explains itself at the
 top.
 
+Update `brightness.csv` about every four months: see
+[Updating the brightness table](docs/updating-brightness.md).
+
 To add a language, copy a JSON file in both `translations/` folders, translate the values, keep each
 `{placeholder}`, and add the code to `LANGUAGES` in `frontend/sat-i18n.js`. The tests check the rest.
 
@@ -242,6 +246,10 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 
 ### The predictions
 
+- **How bright a satellite is:** Karpov et al. 2016,
+  [Massive photometry of low-altitude artificial satellites on Mini-Mega-TORTORA](https://ui.adsabs.harvard.edu/abs/2016RMxAC..48..112K/abstract),
+  RMxAA Conf. Ser. 48, 112, for both the values and the formula's definition. Mini-MegaTORTORA belongs
+  to Kazan Federal University.
 - **What the sky lets you see:** Weaver 1947,
   [The Visibility of Stars Without Optical Aid](https://doi.org/10.1086/125956), PASP 59, 232. This
   code departs from its curve on purpose: -4 rather than about -3.2 in full daylight, and stopping
@@ -254,8 +262,8 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
   Mallama et al. 2024,
   [The Brightness of Starlink Mini Satellites During Orbit-Raising](https://arxiv.org/abs/2405.12007).
 - **Thresholds with no published source:** the horizon, the height sunlight must clear, the margin
-  over the sky's limit, the departures from Weaver's curve, what counts as bright and which passes
-  count as one are James Darpinian's choices for
+  over the sky's limit, the departures from Weaver's curve and which passes count as one are James
+  Darpinian's choices for
   [See A Satellite Tonight](https://james.darpinian.com/satellites/), which does not make or support
   this integration.
 
@@ -264,7 +272,7 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 | Used for | Source | Licence or terms |
 |---|---|---|
 | Orbits | [CelesTrak](https://celestrak.org), from US Space Force data on Space-Track and, for Starlinks, SpaceX's ephemerides | |
-| Brightness (`brightness.csv` credits each value) | [Mike McCants's list](https://www.mmccants.org/), [SCORE](https://score.cps.iau.org) (IAU CPS), [Stellarium](https://stellarium.org), and [Heavens-Above](https://www.heavens-above.com/satinfo.aspx?satid=48274) for Tiangong | SCORE: CC BY 4.0. Stellarium: GPL |
+| Brightness (`brightness.csv` credits each value) | [Mini-MegaTORTORA](http://mmt.favor2.info/satellites), then [Mike McCants's list](https://www.mmccants.org/), [SCORE](https://score.cps.iau.org) (IAU CPS) and [Stellarium](https://stellarium.org), and [Heavens-Above](https://www.heavens-above.com/satinfo.aspx?satid=48274) for Tiangong | MMT: no licence stated, and its page asks research to cite it. SCORE: CC BY 4.0. Stellarium: GPL |
 | Checking those values | [GCAT](https://planet4589.org/space/gcat) by Jonathan McDowell; Mallama & Cole 2025, [arXiv:2507.00107](https://arxiv.org/abs/2507.00107) | GCAT: CC BY 4.0 |
 | Cloud cover | [Open-Meteo](https://open-meteo.com) | CC BY 4.0, free for non-commercial use |
 | Globe imagery | NASA Blue Marble and Black Marble via GIBS; [Sentinel-2 cloudless](https://s2maps.eu) by EOX IT Services (contains modified Copernicus Sentinel data 2025); Esri World Imagery (Esri, Vantor, Earthstar Geographics and the GIS User Community) | NASA: free with credit. EOX: CC BY-NC-SA 4.0, personal and non-commercial use. Esri: its terms of use |
@@ -276,7 +284,8 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 ### The sky and the software
 
 - **Sun, Moon and planets:** the Astronomical Almanac (Sun), Meeus 1998, *Astronomical Algorithms*
-  (Moon), JPL's approximate planetary elements, and Mallama & Hilton 2018 (planet magnitudes).
+  (Moon), JPL's approximate planetary elements, Mallama & Hilton 2018 (planet magnitudes) and
+  Neuhäuser et al. 2022 (planet colours).
 - **Drawing the sky:** Lieske et al. 1977 (precession), Sæmundsson 1986 (refraction), Kasten &
   Young 1989 (air mass) and Ballesteros 2012 (star colours).
 - **Software:** [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes (MIT),

@@ -428,8 +428,11 @@ const ELEMENTS = {
     -0.0012506, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794],
 };
 export const PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn"];
-/** B-V colour indices of the planets (Mallama 2017), to tint them like stars with bvToRgb. */
-const PLANET_BV = { mercury: 0.93, venus: 0.82, mars: 1.36, jupiter: 0.83, saturn: 1.04 };
+/**
+ * B-V colour indices of the planets, to tint them like stars with bvToRgb: Neuhäuser et al.
+ * 2022, MNRAS 516, 693, from Tholen et al. 2000 and Mallama et al. 2017.
+ */
+const PLANET_BV = { mercury: 0.97, venus: 0.81, mars: 1.43, jupiter: 0.87, saturn: 1.09 };
 /** Saturn's north pole (J2000), for the tilt of its rings. */
 const SATURN_POLE = [0.08547883, 0.07323576, 0.99364475];
 

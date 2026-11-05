@@ -6,7 +6,7 @@
     "step": {
       "user": {
         "title": "Von wo aus beobachtest du?",
-        "description": "Überflüge werden in deinem Home Assistant vorhergesagt, mit den Bahndaten von CelesTrak für rund 750 helle Satelliten. Standardmäßig ist der Standort dein Zuhause. Zwei Dinge verraten ihn: Die Bewölkungsvorhersage schickt seine Koordinaten an Open-Meteo (in den Optionen abschaltbar), und die Straßenansicht lädt Kartenkacheln der Umgebung von OpenFreeMap und AWS.",
+        "description": "Überflüge werden in deinem Home Assistant vorhergesagt, mit den Bahndaten von CelesTrak für rund 970 helle Satelliten. Standardmäßig ist der Standort dein Zuhause. Zwei Dinge verraten ihn: Die Bewölkungsvorhersage schickt seine Koordinaten an Open-Meteo (in den Optionen abschaltbar), und die Straßenansicht lädt Kartenkacheln der Umgebung von OpenFreeMap und AWS.",
         "data": {
           "name": "Name",
           "location": "Standort",
@@ -55,7 +55,7 @@
           "units": "Einheiten"
         },
         "data_description": {
-          "max_magnitude": "Nur Überflüge melden, die mindestens so hell sind. Kleinere Zahlen sind heller: 3 ist etwa das Schwächste, was man in einem Vorort noch findet; 1 lässt die leicht sichtbaren übrig, unter 0 bleiben nur die strahlend hellen.",
+          "max_magnitude": "Nur Überflüge melden, die mindestens so hell sind. Kleinere Zahlen sind heller: 2,25 ist etwa das Schwächste, was man in einem Vorort noch findet; 1 lässt die leicht sichtbaren übrig, unter 0 bleiben nur die strahlend hellen.",
           "cloud_cover": "Ergänzt jeden Überflug um die Bewölkungsvorhersage von Open-Meteo. Open-Meteo erhält dafür alle zwei Stunden die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
           "alert_lead_minutes": "Der Sensor „Heller Überflug in Kürze“ schaltet sich so lange vor Beginn eines hellen Überflugs ein.",
           "show_in_sidebar": "Fügt der Seitenleiste eine Satellite-Spotter-Seite mit den Überflügen, einem 3D-Globus und einer Ansicht des Himmels auf Straßenhöhe hinzu. Die Straßenansicht lädt Kartenkacheln der Umgebung des Standorts von OpenFreeMap und AWS (mit Luftbildern auch von Esri). Die Dashboard-Karten funktionieren in jedem Fall.",
