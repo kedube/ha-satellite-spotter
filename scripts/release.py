@@ -1,23 +1,26 @@
-"""Releases: the version in manifest.json, published by CI once it passes on main.
+"""Releases: the version in manifest.json, published by the Release workflow.
 
 Versions are MAJOR.MM with no "v": 1.00, 1.01, ... 1.99, then 2.00. To release,
-raise "version" in manifest.json (bump does it) and push that to main, or merge
-a pull request that does. When CI passes on that commit, the Release workflow
-tags it with the version and publishes a GitHub release with notes (the
-version's section of CHANGELOG.md, or else the commits since the last release)
-and satellite_spotter.zip, which HACS installs. Pushes that leave the version
-alone release nothing.
+run the Release workflow by hand on main: it runs CI, raises "version" in
+manifest.json if that version is already released, pushes that, and publishes a
+GitHub release with notes (the version's section of CHANGELOG.md, or else the
+commits since the last release) and satellite_spotter.zip, which HACS installs.
+
+Raising the version yourself (bump does it) and pushing that to main also releases
+it, once CI passes. Pushes that leave the version alone release nothing.
 
 usage:
   python scripts/release.py bump                      # manifest.json to the next version
   python scripts/release.py status                    # would pushing to main release it?
-  python scripts/release.py plan                      # CI: released versions on stdin
+  python scripts/release.py plan [--bump]             # CI: released versions on stdin
   python scripts/release.py notes VERSION [PREVIOUS]  # CI: the release notes (Markdown)
   python scripts/release.py package OUT.zip           # CI: what HACS installs
 
-`plan` prints `version=`, `release=` and `previous=` lines for $GITHUB_OUTPUT.
-Versions that are already released, or tags in another format, are never
-released again; a manifest version lower than the latest release fails.
+`plan` prints `version=`, `release=`, `bump=` and `previous=` lines for
+$GITHUB_OUTPUT. With --bump, a version that is already released is followed by the
+next, to be raised first. Versions that are already released, or tags in another
+format, are never released again; a manifest version lower than the latest release
+fails.
 """
 
 from __future__ import annotations
@@ -134,7 +137,9 @@ def notes(version: str, since: str | None = None, ref: str = "HEAD") -> str:
     """The release notes: the changelog's section, else the commits since the last release."""
     body = changelog_section(version)
     if body is None:
-        body = "\n".join(f"- {subject}" for subject in commits(since, ref)) or "- Maintenance"
+        # The commit that raises the version says nothing about what changed.
+        subjects = [s for s in commits(since, ref) if s != f"Release {version}"]
+        body = "\n".join(f"- {subject}" for subject in subjects) or "- Maintenance"
     if since:
         compare = f"https://github.com/{REPOSITORY}/compare/{since}...{version}"
         body += f"\n\n**Full changelog**: {compare}"
@@ -182,12 +187,17 @@ def main(argv: list[str]) -> int:
         elif command == "status" and not args:
             release, why = plan(manifest_version(), _remote_tags())
             print(f"{why}." + (" CI releases it once the checks pass on main." if release else ""))
-        elif command == "plan" and not args:
+        elif command == "plan" and args in ([], ["--bump"]):
             version = manifest_version()
             released = sys.stdin.read().split()
             release, why = plan(version, released)
+            raise_it = bool(args) and not release
+            if raise_it:
+                version = next_version(version)
+                release, why = True, f"{version} follows the latest release, {latest(released)}"
             print(f"::notice title=Release::{why}", file=sys.stderr)
             print(f"version={version}\nrelease={str(release).lower()}")
+            print(f"bump={str(raise_it).lower()}")
             print(f"previous={previous(version, released) or ''}")
         elif command == "notes" and len(args) in (1, 2):
             print(notes(args[0], args[1] if len(args) == 2 and args[1] else None), end="")

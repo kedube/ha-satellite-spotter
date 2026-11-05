@@ -1,13 +1,15 @@
 name: Release
 
-# Publishes the version in manifest.json once CI has passed on main. Raise
-# "version" there (python scripts/release.py bump) and push or merge it: when
-# CI passes on a commit whose version is not released yet, this tags that
-# commit with the version and publishes a GitHub release, with the notes from
-# CHANGELOG.md (or else the commits since the last release) and
-# satellite_spotter.zip, which HACS installs. Every other push releases
-# nothing. If a release fails, the next push that passes CI tries again; run
-# this workflow by hand to try at once (it runs CI on main's head first).
+# Publishes a GitHub release, with the notes from CHANGELOG.md (or else the
+# commits since the last release) and satellite_spotter.zip, which HACS installs.
+#
+# Run by hand on main, it releases main's head: it runs CI, raises the version in
+# manifest.json if that version is already released, pushes that commit, and
+# publishes. If a release failed, the version is already raised, so it tries again.
+#
+# It also runs when CI passes on a push to main, and publishes if that commit's
+# version is not released yet, so raising the version yourself releases it too.
+# Every other push releases nothing.
 
 on:
   workflow_run:
@@ -27,16 +29,17 @@ concurrency:
 jobs:
   plan:
     name: Plan
-    # CI passed for a push to main (not a pull request or the Monday run), or a run by hand.
+    # CI passed for a push to main (not a pull request or the Monday run), or a run by hand on main.
     if: >-
       github.repository == 'kedube/ha-satellite-spotter' &&
-      (github.event_name == 'workflow_dispatch' ||
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
       version: ${{ steps.plan.outputs.version }}
       release: ${{ steps.plan.outputs.release }}
+      bump: ${{ steps.plan.outputs.bump }}
       previous: ${{ steps.plan.outputs.previous }}
     steps:
       - uses: actions/checkout@v7
@@ -47,11 +50,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Run by hand, a version that is already released gets raised.
+          BY_HAND: ${{ github.event_name == 'workflow_dispatch' && 'true' || '' }}
         run: |
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           { gh release list --limit 1000 --json tagName --jq '.[].tagName'
             git ls-remote --tags --refs origin | sed 's|.*refs/tags/||'
-          } | python3 scripts/release.py plan >> "$GITHUB_OUTPUT"
+          } | python3 scripts/release.py plan ${BY_HAND:+--bump} >> "$GITHUB_OUTPUT"
 
   # Run by hand, the commit has not come through CI: test it first.
   ci:
@@ -60,24 +65,52 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.release == 'true'
     uses: ./.github/workflows/ci.yml
 
+  # After CI, so that a failure leaves the version as it was. A push with this
+  # workflow's own token starts no other workflow, so CI does not run again. If main
+  # has moved on since CI tested it, the push is refused: run this workflow again.
+  bump:
+    name: Raise the version to ${{ needs.plan.outputs.version }}
+    needs: [plan, ci]
+    if: needs.plan.outputs.bump == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - id: bump
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          python3 scripts/release.py bump
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit --all --message "Release $VERSION"
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   publish:
     name: Publish ${{ needs.plan.outputs.version }}
-    needs: [plan, ci]
+    needs: [plan, ci, bump]
     if: >-
       always() && needs.plan.result == 'success' && needs.plan.outputs.release == 'true' &&
-      (needs.ci.result == 'success' || needs.ci.result == 'skipped')
+      (needs.ci.result == 'success' || needs.ci.result == 'skipped') &&
+      (needs.bump.result == 'success' || needs.bump.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      SHA: ${{ needs.plan.outputs.sha }}
+      SHA: ${{ needs.bump.outputs.sha || needs.plan.outputs.sha }}
       VERSION: ${{ needs.plan.outputs.version }}
       PREVIOUS: ${{ needs.plan.outputs.previous }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.plan.outputs.sha }}
+          ref: ${{ needs.bump.outputs.sha || needs.plan.outputs.sha }}
           # The history, for the commits since the last release.
           fetch-depth: 0
       - name: Package

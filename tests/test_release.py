@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
 import zipfile
 
 import pytest
+import yaml
 
+WORKFLOWS = Path(__file__).parents[1] / ".github/workflows"
 _SPEC = importlib.util.spec_from_file_location(
     "release_tool", Path(__file__).parents[1] / "scripts/release.py"
 )
@@ -71,13 +74,18 @@ def test_plan_tells_the_workflow_what_to_do(
     version = release.manifest_version()
     major, minor = release.parse(version)
     older = f"{major - 1}.{minor:02d}" if major > 1 else None
-    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(f"v0.9.0\n{older or ''}\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"v0.9.0\n{older or ''}\n"))
     assert release.main(["release.py", "plan"]) == 0
     out = capsys.readouterr()
-    assert out.out.splitlines() == [f"version={version}", "release=true", f"previous={older or ''}"]
+    assert out.out.splitlines() == [
+        f"version={version}",
+        "release=true",
+        "bump=false",
+        f"previous={older or ''}",
+    ]
     assert out.err.startswith("::notice title=Release::")
     # Already released: nothing to do.
-    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(f"{version}\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{version}\n"))
     assert release.main(["release.py", "plan"]) == 0
     assert "release=false" in capsys.readouterr().out
 
@@ -121,6 +129,11 @@ def test_without_a_changelog_section_the_notes_list_the_commits(
     monkeypatch.setattr(release, "CHANGELOG", repo / "CHANGELOG.md")
     assert release.notes("1.01", "1.00").startswith("- Third\n- Second\n\n**Full changelog**")
     assert release.notes("1.00") == "- Third\n- Second\n- First\n"
+    # The commit that raises the version says nothing about what changed.
+    (repo / "file.txt").write_text("Raised")
+    git("add", "file.txt")
+    git("commit", "-q", "-m", "Release 1.01")
+    assert release.notes("1.01", "1.00").startswith("- Third\n- Second\n\n**Full changelog**")
 
 
 def test_the_package_is_what_hacs_installs(tmp_path: Path) -> None:
@@ -149,6 +162,72 @@ def test_the_package_is_what_hacs_installs(tmp_path: Path) -> None:
     again = tmp_path / "again.zip"
     release.package(again)
     assert again.read_bytes() == out.read_bytes()
+
+
+def _plan_by_hand(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], released: str
+) -> dict[str, str]:
+    monkeypatch.setattr("sys.stdin", io.StringIO(released))
+    assert release.main(["release.py", "plan", "--bump"]) == 0
+    return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
+
+
+def test_a_run_by_hand_raises_a_version_that_is_already_released(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    version = release.manifest_version()
+    assert _plan_by_hand(monkeypatch, capsys, f"{version}\n") == {
+        "version": release.next_version(version),
+        "release": "true",
+        "bump": "true",
+        "previous": version,
+    }
+
+
+def test_a_run_by_hand_does_not_raise_it_twice_after_a_failed_release(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The version was raised and pushed, and publishing failed: this tries that again."""
+    version = release.manifest_version()
+    major, minor = release.parse(version)
+    older = f"{major - 1}.{minor:02d}"
+    planned = _plan_by_hand(monkeypatch, capsys, f"{older}\n")
+    assert (planned["version"], planned["release"], planned["bump"]) == (version, "true", "false")
+
+
+def test_a_run_by_hand_refuses_a_version_below_the_latest_release(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    major, minor = release.parse(release.manifest_version())
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{major + 1}.{minor:02d}\n"))
+    assert release.main(["release.py", "plan", "--bump"]) == 1
+    assert "lower than the latest release" in capsys.readouterr().err
+
+
+def test_a_push_never_raises_the_version(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    version = release.manifest_version()
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{version}\n"))
+    assert release.main(["release.py", "plan"]) == 0
+    assert "bump=false" in capsys.readouterr().out.splitlines()
+
+
+def test_the_workflow_raises_the_version_only_by_hand_on_main_and_after_ci() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "release.yml").read_text())
+    jobs = workflow["jobs"]
+    plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
+    assert "workflow_dispatch" in plan_step["env"]["BY_HAND"]
+    assert "${BY_HAND:+--bump}" in plan_step["run"]
+    assert "refs/heads/main" in jobs["plan"]["if"]
+    # A failed CI run leaves the version as it was, and publishing follows the raised commit.
+    assert jobs["bump"]["needs"] == ["plan", "ci"]
+    assert jobs["publish"]["needs"] == ["plan", "ci", "bump"]
+    assert jobs["bump"]["permissions"] == {"contents": "write"}
+    assert "git push origin HEAD:main" in jobs["bump"]["steps"][1]["run"]
+    assert (
+        jobs["publish"]["env"]["SHA"] == "${{ needs.bump.outputs.sha || needs.plan.outputs.sha }}"
+    )
 
 
 def test_a_folder_without_a_manifest_is_not_packaged(tmp_path: Path) -> None:
