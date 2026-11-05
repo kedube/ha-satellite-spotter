@@ -167,7 +167,7 @@
     "train_hint": "Eine Kette von Satelliten: Suche die ganze Bahn ab",
     "with": "Mit {name}",
     "confidence_high": "Hohe Zuverlässigkeit",
-    "confidence_medium": "Mittlere Zuverlässigkeit: Bahndaten einige Tage alt",
+    "confidence_medium": "Mittlere Zuverlässigkeit: einige Tage von den neuesten Bahndaten entfernt, Zeiten können sich verschieben",
     "confidence_low": "Niedrige Zuverlässigkeit: alte Bahndaten",
     "simulate": "Simulieren",
     "simulate_short": "Simulieren",

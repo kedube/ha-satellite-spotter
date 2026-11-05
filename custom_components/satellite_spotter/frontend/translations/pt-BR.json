@@ -167,7 +167,7 @@
     "train_hint": "Um trem de satélites: observe todo o trajeto",
     "with": "Com {name}",
     "confidence_high": "Confiabilidade alta",
-    "confidence_medium": "Confiabilidade média: dados orbitais de alguns dias atrás",
+    "confidence_medium": "Confiabilidade média: a alguns dias dos dados orbitais mais recentes, os horários podem mudar",
     "confidence_low": "Confiabilidade baixa: dados orbitais antigos",
     "simulate": "Simular",
     "simulate_short": "Simular",

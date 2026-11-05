@@ -206,7 +206,7 @@ export default {
     train_hint: "A train of satellites: scan along the whole path",
     with: "With {name}",
     confidence_high: "High confidence",
-    confidence_medium: "Medium confidence: orbit data a few days old",
+    confidence_medium: "Medium confidence: a few days from its latest orbit data, so times may shift",
     confidence_low: "Low confidence: old orbit data",
     simulate: "Simulate",
     simulate_short: "Simulate",

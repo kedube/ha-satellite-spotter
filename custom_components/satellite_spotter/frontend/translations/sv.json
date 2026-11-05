@@ -167,7 +167,7 @@
     "train_hint": "Ett satellittåg: spana längs hela banan",
     "with": "Med {name}",
     "confidence_high": "Hög tillförlitlighet",
-    "confidence_medium": "Medelhög tillförlitlighet: några dagar gamla bandata",
+    "confidence_medium": "Medelhög tillförlitlighet: några dagar från senaste bandata, tiderna kan ändras",
     "confidence_low": "Låg tillförlitlighet: gamla bandata",
     "simulate": "Simulera",
     "simulate_short": "Simulera",

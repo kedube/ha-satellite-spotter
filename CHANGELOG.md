@@ -4,6 +4,13 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.14
+
+- **Medium confidence** no longer says a pass's orbit data is a few days old, as the data is usually
+  fresh and the pass simply days ahead. It now reads "a few days from its latest orbit data, so times
+  may shift", in every language.
+- The brightness table gains GAOFEN-14 02.
+
 ## 1.13
 
 - **Automations and dashboards that use this integration's entities need updating.** The entities are

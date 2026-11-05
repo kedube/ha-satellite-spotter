@@ -243,7 +243,9 @@ are refreshed every hour. In between nothing polls: entities change at the momen
 - **Brightness is an estimate.** A satellite can look a magnitude or more brighter or fainter than
   predicted, and rocket stages flash as they tumble. The Moon and light pollution are not modelled.
 - **Orbits drift** by seconds to minutes as elements age. The page marks a pass **Medium confidence**
-  when its elements are more than 3 days from the pass, and **Low confidence** beyond a week.
+  when its elements are more than 3 days from the pass, and **Low confidence** beyond a week. Passes
+  are predicted 5 days ahead, so those more than about 2 days away usually show Medium even with
+  fresh elements.
 
 ## Privacy
 

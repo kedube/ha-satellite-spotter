@@ -4,6 +4,9 @@ name: Brightness
 # proposes the result in a pull request. Merging that releases nothing: the next release takes
 # it along. A week with nothing new proposes nothing.
 #
+# GitHub holds CI and HACS on a pull request opened with this workflow's own token until someone
+# with write access approves them there.
+#
 # MMT's team agreed to a script fetching the list about once a week, so keep it to that. Anything
 # but a 200 from MMT or CelesTrak stops the run and leaves the table as it is, and next week's
 # run tries again. See docs/updating-brightness.md.
@@ -30,9 +33,8 @@ jobs:
     if: github.repository == 'kedube/ha-satellite-spotter' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      # To push the branch, start CI on it and open its pull request.
+      # To push the branch and open its pull request.
       contents: write
-      actions: write
       pull-requests: write
     defaults:
       run:
@@ -61,8 +63,6 @@ jobs:
           git switch --create "$BRANCH"
           git commit --all --message "Update the brightness table from Mini-MegaTORTORA's list"
           git push --force origin "$BRANCH"
-          # A pull request opened with this workflow's own token starts no CI by itself.
-          gh workflow run ci.yml --ref "$BRANCH"
           {
             echo "This week's update from Mini-MegaTORTORA's list and CelesTrak's catalogue."
             echo

@@ -167,7 +167,7 @@
     "train_hint": "Un train de satellites : balayez toute la trajectoire du regard",
     "with": "Avec {name}",
     "confidence_high": "Fiabilité élevée",
-    "confidence_medium": "Fiabilité moyenne : données d'orbite datant de quelques jours",
+    "confidence_medium": "Fiabilité moyenne : à quelques jours de ses dernières données d'orbite, les horaires peuvent changer",
     "confidence_low": "Fiabilité faible : données d'orbite anciennes",
     "simulate": "Simuler",
     "simulate_short": "Simuler",

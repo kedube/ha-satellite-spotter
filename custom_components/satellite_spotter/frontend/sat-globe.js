@@ -3048,7 +3048,7 @@ export class SatelliteGlobeView extends BaseElement {
    * What can make a pass harder (or easier) to see: the forecast cloud (for
    * its hour), a bright Moon up at the time, a sky still bright before
    * sunset, a train to scan for, a famous satellite riding along,
-   * predictions from old orbit data. [{cls, icon | glyph, text}]
+   * a pass days from its orbit data. [{cls, icon | glyph, text}]
    */
   _conditions(pass) {
     const out = [];

@@ -173,7 +173,7 @@
     "train_hint": "Pociąg satelitów: śledź wzrokiem całą trasę",
     "with": "Razem z {name}",
     "confidence_high": "Wysoka pewność",
-    "confidence_medium": "Średnia pewność: dane orbitalne sprzed kilku dni",
+    "confidence_medium": "Średnia pewność: kilka dni od najnowszych danych orbitalnych, godziny mogą się przesunąć",
     "confidence_low": "Niska pewność: stare dane orbitalne",
     "simulate": "Symuluj",
     "simulate_short": "Symuluj",

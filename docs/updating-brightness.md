@@ -10,8 +10,12 @@ MMT's list and what it needs from CelesTrak, updates the table, and proposes the
 request, which it keeps up to date until you merge or close it. A week with nothing new proposes
 nothing.
 
-To review one, read the summary in the pull request and wait for CI, which the workflow starts. A
-normal result adds a few objects and loses few or none:
+To review one, read the summary in the pull request, then approve its CI and HACS runs from the
+banner in the merge box and wait for them to pass. GitHub holds them because the workflow's own
+token opened the pull request. Merged without approval, the two runs show as failed in the Actions
+tab with no jobs: nothing was tested, and CI runs on main after the merge as usual.
+
+A normal result adds a few objects and loses few or none:
 
 ```
 1 objects added, 0 gone.

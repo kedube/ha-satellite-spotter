@@ -167,7 +167,7 @@
     "train_hint": "Een trein van satellieten: zoek de hele baan af",
     "with": "Met {name}",
     "confidence_high": "Hoge betrouwbaarheid",
-    "confidence_medium": "Matige betrouwbaarheid: baangegevens enkele dagen oud",
+    "confidence_medium": "Matige betrouwbaarheid: enkele dagen van de nieuwste baangegevens verwijderd, tijden kunnen verschuiven",
     "confidence_low": "Lage betrouwbaarheid: oude baangegevens",
     "simulate": "Simuleren",
     "simulate_short": "Simuleren",

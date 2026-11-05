@@ -734,14 +734,14 @@ test("a pass says what can make it easier or harder to see", () => {
   assert.deepEqual(daylight, [["warn", "sun", "Before sunset: the sky is still bright"]]);
   const train = makePass(T0 + 600, T0 + 900, { ids: [101, 102, 103, 104, 105, 106, 107], kind: "starlink", train: true, cloud: null });
   assert.equal(conds(train)[0][1], "train");
-  // A famous satellite riding along, and predictions from old orbit data.
+  // A famous satellite riding along, and a pass days from its orbit data.
   const group = makePass(T0 + 600, T0 + 900, { ids: [67304, 25544], kind: "satellite", title: "COSMO-SKYMED-FM3 +1", cloud: null });
   group.transits[1].kind = "iss";
   group.transits[1].name = "ISS";
   group.transits[0].confidence = "medium";
   assert.deepEqual(conds(group), [
     ["gold", "station", "With ISS"],
-    ["dim", "info", "Medium confidence: orbit data a few days old"],
+    ["dim", "info", "Medium confidence: a few days from its latest orbit data, so times may shift"],
   ]);
   // A bright Moon up at the time: after the cloud, with its phase drawn.
   const evening = Date.parse("2026-10-20T22:45:00Z") / 1000; // Boston, a 71 % Moon in the SSE
