@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 import math
 from typing import Any, NamedTuple, Self
 
@@ -12,7 +13,7 @@ import numpy as np
 from sgp4.api import WGS72, Satrec
 
 from . import track
-from .const import DEFAULT_MAX_MAGNITUDE, PREDICTION_DAYS
+from .const import DEFAULT_BRIGHTNESS_CUTOFF, PREDICTION_DAYS
 
 # SGP4 counts its epochs in days from here.
 _SGP4_EPOCH = datetime(1949, 12, 31, tzinfo=UTC)
@@ -26,7 +27,9 @@ _LARGEST_RECORD_NUMBER = 339999
 _STARLINK_EXTRA_MAGNITUDES = 0.75
 _MIN_STARLINKS = 5
 
-_BATCH_SIZE = 48
+# SGP4 keeps Python's lock for a whole batch, and Home Assistant's event loop waits that long.
+# This many keeps the wait to about 12 ms on a fast computer, and takes no longer overall.
+_BATCH_SIZE = 8
 _GRID_S = 60.0
 # Well past the cutoff, so that a sighting's edges fall inside the stretch searched exactly.
 _PROMISING_PAST_CUTOFF = 2.0
@@ -112,6 +115,11 @@ class Sighting:
     sky_limit: float
     sun_up: bool
 
+    @property
+    def duration(self) -> int:
+        """How long it can be seen, in whole seconds."""
+        return round((self.vanishes.time - self.appears.time).total_seconds())
+
 
 @dataclass
 class Flyover:
@@ -130,12 +138,12 @@ class Flyover:
         """The brightest sighting."""
         return self.sightings[0]
 
-    @property
+    @cached_property
     def start(self) -> datetime:
         """The earliest appearance."""
         return min(sighting.appears.time for sighting in self.sightings)
 
-    @property
+    @cached_property
     def end(self) -> datetime:
         """The latest vanishing."""
         return max(sighting.vanishes.time for sighting in self.sightings)
@@ -150,12 +158,12 @@ class Flyover:
         """How bright the lead gets."""
         return self.lead.peak_magnitude
 
-    @property
+    @cached_property
     def sky_limit(self) -> float:
         """The least the sky shows as any of them appears."""
         return min(sighting.sky_limit for sighting in self.sightings)
 
-    @property
+    @cached_property
     def sun_up(self) -> bool:
         """Whether the Sun is up as any of them appears."""
         return any(sighting.sun_up for sighting in self.sightings)
@@ -259,7 +267,7 @@ def find_sightings(
     *,
     start: datetime,
     days: float = PREDICTION_DAYS,
-    faintest: float = DEFAULT_MAX_MAGNITUDE,
+    faintest: float = DEFAULT_BRIGHTNESS_CUTOFF,
 ) -> list[Sighting]:
     """Return everything visible, ordered by appearance and then catalog order.
 
@@ -331,26 +339,26 @@ def read_catalog(entries: Iterable[Mapping[str, Any]]) -> list[Satellite]:
     return [
         Satellite.from_elements(
             entry["elements"],
-            entry.get("magnitude"),
-            curve=entry.get("model"),
-            name=entry.get("name"),
+            entry["standard_magnitude"],
+            curve=entry["curve"],
+            name=entry["name"],
         )
         for entry in entries
     ]
 
 
 def write_catalog(satellites: Iterable[Satellite]) -> list[dict[str, Any]]:
-    """Return the stored form of a catalog. Its field names are on people's disks: keep them."""
+    """Return the stored form of a catalog."""
     return [
         {
             "name": sat.name,
             "elements": dict(sat.elements),
-            "magnitude": (
+            "standard_magnitude": (
                 sat.standard_magnitude
                 if sat.standard_magnitude is not None and math.isfinite(sat.standard_magnitude)
                 else None
             ),
-            "model": sat.curve,
+            "curve": sat.curve,
         }
         for sat in satellites
     ]

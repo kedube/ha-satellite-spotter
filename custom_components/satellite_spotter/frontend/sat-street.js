@@ -93,6 +93,8 @@ const CONTEXT_RESTORE_MS = 5000;
 const FOLLOW_PAUSE_MS = 6000;
 // Live, the dot creeps: redraw about this often (ms) unless something else moves.
 const LIVE_FRAME_MS = 100;
+// With no satellite up only the clock moves: a frame for each of its seconds.
+const LIVE_IDLE_MS = 1000;
 // The HUD's words change at most this often (ms).
 const HUD_MS = 250;
 // Credits by source. The links fill the translated sentences; Esri's line is
@@ -446,6 +448,7 @@ export class SatelliteStreetView extends BaseElement {
     this._settings = null;
     this._photos = null;
     this._photoNote = null;
+    this._onScreen = true;
     this._onVisibility = () => (globalThis.document?.hidden ? this._stopLoop() : this._kick());
     this._onKeyDown = (ev) => this._keyDown(ev);
     this._onMotion = () => this._planetarium?.setOptions({ reducedMotion: prefersReducedMotion() });
@@ -610,6 +613,7 @@ export class SatelliteStreetView extends BaseElement {
     this._motionQuery = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
     this._motionQuery?.addEventListener?.("change", this._onMotion);
     this._observeSize();
+    this._observeOnScreen();
     this._planetarium = new Planetarium({ sky: this._els.sky, overlay: this._els.overlay, font: this._font() });
     this._planetarium.setObserver(this._observer());
     this._planetarium.setOptions({ constellations: this._options.constellations, lightPollution: this._options.lightPollution, reducedMotion: prefersReducedMotion() });
@@ -648,6 +652,9 @@ export class SatelliteStreetView extends BaseElement {
     this._motionQuery?.removeEventListener?.("change", this._onMotion);
     this._resizeObserver?.disconnect();
     this._resizeObserver = null;
+    this._intersection?.disconnect();
+    this._intersection = null;
+    this._onScreen = true;
     this._stopOrientation();
     this._unsubscribeClock?.();
     this._unsubscribeClock = null;
@@ -2067,10 +2074,21 @@ export class SatelliteStreetView extends BaseElement {
     return (this._clock?.simMs ?? Date.now()) / 1000;
   }
 
-  /** Make sure a frame comes (the loop stops itself when nothing moves; off the page none comes). */
+  /** Make sure a frame comes (the loop stops itself when nothing moves; off the page or out of sight none comes). */
   _kick() {
-    if (!this._opened || this._raf !== null || globalThis.document?.hidden || this.isConnected === false) return;
+    if (!this._opened || this._raf !== null || !this._onScreen || globalThis.document?.hidden || this.isConnected === false) return;
     this._raf = requestAnimationFrame((now) => this._tick(now));
+  }
+
+  /** Stop drawing while scrolled out of sight, as the globe does. */
+  _observeOnScreen() {
+    if (!globalThis.IntersectionObserver) return;
+    this._intersection ??= new IntersectionObserver((entries) => {
+      this._onScreen = entries[entries.length - 1].isIntersecting;
+      if (this._onScreen) this._kick();
+      else this._stopLoop();
+    });
+    this._intersection.observe(this);
   }
 
   _stopLoop() {
@@ -2091,13 +2109,18 @@ export class SatelliteStreetView extends BaseElement {
     this._timebar?.update?.();
     const playing = !!this._clock?.playing;
     const live = this._clock?.mode === "live";
-    // Following waits while the replay is paused: nothing moves until it plays (which kicks the loop again).
-    if (tween || this._tween || this._dragging || (playing && !live) || (this._following && playing)) {
+    const tS = this._timeS();
+    const up = !!this._planetarium?.anyDotAt(tS);
+    // Following waits while the replay is paused, as nothing moves until it plays (which kicks the
+    // loop again), and while no satellite is up to follow.
+    if (tween || this._tween || this._dragging || (playing && !live) || (this._following && playing && up)) {
       this._kick();
     } else if (playing && live) {
-      // Real time: the dot creeps across the sky; ten frames a second are plenty.
+      // Real time: the dot creeps across the sky, and ten frames a second are plenty. With none up,
+      // the next frame shows the clock's next second.
       clearTimeout(this._liveTimer);
-      this._liveTimer = setTimeout(() => this._kick(), LIVE_FRAME_MS);
+      const wait = up ? LIVE_FRAME_MS : LIVE_IDLE_MS - ((tS * 1000) % LIVE_IDLE_MS);
+      this._liveTimer = setTimeout(() => this._kick(), wait);
     } else {
       this._lastFrame = null;
     }

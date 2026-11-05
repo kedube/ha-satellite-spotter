@@ -1,36 +1,65 @@
 {
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "default": "mdi:satellite-variant",
+      "satellite_visible_now": {
+        "default": "mdi:space-station",
         "state": {
           "off": "mdi:weather-night"
         }
       },
-      "bright_pass_soon": {
+      "visible_pass_soon": {
         "default": "mdi:bell-ring-outline",
+        "state": {
+          "off": "mdi:bell-outline"
+        }
+      },
+      "bright_pass_soon": {
+        "default": "mdi:bell-badge-outline",
         "state": {
           "off": "mdi:bell-outline"
         }
       }
     },
     "calendar": {
-      "passes": {
-        "default": "mdi:calendar-star"
+      "visible_passes": {
+        "default": "mdi:calendar-clock"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "default": "mdi:satellite-variant"
       }
     },
     "sensor": {
-      "next_pass": {
+      "next_visible_pass": {
+        "default": "mdi:telescope"
+      },
+      "next_visible_pass_peak_elevation": {
+        "default": "mdi:angle-acute"
+      },
+      "next_visible_pass_brightness": {
+        "default": "mdi:brightness-6"
+      },
+      "next_visible_pass_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "next_visible_pass_cloud_cover": {
+        "default": "mdi:weather-cloudy"
+      },
+      "next_visible_satellite_name": {
         "default": "mdi:satellite-variant"
       },
       "next_bright_pass": {
-        "default": "mdi:star-four-points"
+        "default": "mdi:flare"
       },
-      "passes_next_24h": {
-        "default": "mdi:counter"
+      "satellite_elevation": {
+        "default": "mdi:angle-acute"
       },
-      "catalog_updated": {
-        "default": "mdi:database-clock"
+      "visible_passes_next_24_hours": {
+        "default": "mdi:format-list-numbered"
+      },
+      "orbital_elements_epoch": {
+        "default": "mdi:database-clock-outline"
       }
     }
   }

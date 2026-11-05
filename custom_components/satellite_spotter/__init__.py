@@ -8,10 +8,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
+from .binary_sensor import BINARY_SENSORS
 from .catalog import async_remove_catalog, async_shared_catalog
-from .const import DOMAIN
+from .const import CALENDAR_KEY, DOMAIN, POSITION_KEY
 from .coordinator import PredictionSettings, SatelliteSpotterCoordinator
 from .frontend import async_clear_stale_issue, async_setup_frontend, async_update_panel
+from .sensor import SENSOR_KEYS
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -19,7 +21,7 @@ type SatelliteSpotterConfigEntry = ConfigEntry[SatelliteSpotterCoordinator]
 
 
 def _platforms(settings: PredictionSettings) -> list[Platform]:
-    platforms = [Platform.BINARY_SENSOR, Platform.SENSOR]
+    platforms = [Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER, Platform.SENSOR]
     if settings.show_in_calendar:
         platforms.append(Platform.CALENDAR)
     return platforms
@@ -32,11 +34,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 @callback
-def _async_remove_calendar(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
-    """Take away a calendar that is switched off, rather than leave it behind unavailable."""
+def _async_remove_what_is_gone(
+    hass: HomeAssistant, entry: SatelliteSpotterConfigEntry, settings: PredictionSettings
+) -> None:
+    """Take away entities no longer provided, rather than leave them behind unavailable."""
+    keys = [*SENSOR_KEYS, *(description.key for description in BINARY_SENSORS), POSITION_KEY]
+    if settings.show_in_calendar:
+        keys.append(CALENDAR_KEY)
+    provided = {f"{entry.entry_id}_{key}" for key in keys}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if entity.domain == Platform.CALENDAR:
+        if entity.unique_id not in provided:
             registry.async_remove(entity.entity_id)
 
 
@@ -45,20 +53,14 @@ def _async_keep_refreshing() -> None:
     """Do nothing: as a listener, it keeps predictions refreshing with every entity disabled."""
 
 
-async def _async_entry_updated(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEntry) -> bool:
     """Set up a location."""
     # First, so that the page is there to say why while setup retries.
     await async_update_panel(hass, adding=entry)
     coordinator = SatelliteSpotterCoordinator(hass, entry, async_shared_catalog(hass))
-    if not coordinator.settings.show_in_calendar:
-        _async_remove_calendar(hass, entry)
+    _async_remove_what_is_gone(hass, entry, coordinator.settings)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
-    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     entry.async_on_unload(coordinator.async_add_listener(_async_keep_refreshing))
     await hass.config_entries.async_forward_entry_setups(entry, _platforms(coordinator.settings))
     return True

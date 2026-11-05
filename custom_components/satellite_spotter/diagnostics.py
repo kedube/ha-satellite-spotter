@@ -51,14 +51,14 @@ async def async_get_config_entry_diagnostics(
     }
     if (data := coordinator.predictions) is not None:
         diagnostics["predictions"] = {
-            "computed_at": data.computed_at.isoformat(),
+            "searched_at": data.searched_at.isoformat(),
             "catalog_version": data.catalog_version,
             "pass_count": len(data.passes),
             "bright_pass_count": sum(p.bright for p in data.passes),
             "sighting_count": sum(p.count for p in data.passes),
-            "cloud_cover": {
-                "enabled": data.cloud_cover is not None,
-                "available": bool(data.cloud_cover),
+            "cloud_forecast": {
+                "enabled": data.cloud_forecast is not None,
+                "available": bool(data.cloud_forecast),
             },
         }
     return diagnostics

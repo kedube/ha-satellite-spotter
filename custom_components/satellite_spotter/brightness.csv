@@ -4,9 +4,13 @@
 #
 # Sources, in the "source" column:
 #   mmt      The median standard magnitude in the satellite list of Mini-MegaTORTORA (MMT-9),
-#            http://mmt.favor2.info/satellites. Karpov et al. 2016, Massive photometry of
-#            low-altitude artificial satellites on Mini-Mega-TORTORA, RMxAA Conf. Ser. 48, 112.
-#            Mini-MegaTORTORA belongs to Kazan Federal University.
+#            http://mmt.favor2.info/satellites, used with its team's permission.
+#            Karpov et al. 2016, "Massive photometry of low-altitude artificial satellites on
+#            Mini-Mega-TORTORA", Revista Mexicana de Astronomía y Astrofísica (Serie de
+#            Conferencias) Vol. 48, pp. 112-113.
+#            The telescope: Beskin et al. 2017, "Wide-field optical monitoring with
+#            Mini-MegaTORTORA (MMT-9) multichannel high temporal resolution telescope",
+#            Astrophysical Bulletin, Volume 72, Issue 1, pp. 81-92.
 #   mccants  qs.mag by Mike McCants, plus 0.75 and an offset by kind of object.
 #            https://www.mmccants.org/
 #   score    Medians computed from SCORE, IAU CPS, CC BY 4.0, changed by being turned into

@@ -43,10 +43,10 @@ def _pass(*sightings: Sighting) -> ListedPass:
 def _predictions(*passes: ListedPass) -> Predictions:
     return Predictions(
         passes=list(passes),
-        computed_at=START,
+        searched_at=START,
         catalog_version=1,
         satellites={},
-        cloud_cover=None,
+        cloud_forecast=None,
     )
 
 
@@ -74,9 +74,9 @@ def test_next_change_walks_through_a_bright_pass() -> None:
     assert predictions.next_change(now, NOTICE) is None
 
 
-def test_a_faint_pass_gives_no_advance_notice() -> None:
+def test_a_faint_pass_gives_advance_notice_too() -> None:
     predictions = _predictions(_pass(_sighting(1, START, 2.0)))
-    assert predictions.next_change(START - UPCOMING_WINDOW, NOTICE) == START
+    assert predictions.next_change(START - UPCOMING_WINDOW, NOTICE) == START - NOTICE
 
 
 def test_advance_notice_counts_from_the_bright_satellite() -> None:

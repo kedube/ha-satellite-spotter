@@ -814,6 +814,119 @@ test("paused while following, the frame loop rests until the replay plays again"
   }
 });
 
+/** Count the frames of a view for some fake seconds, as frames a second, with when each came. */
+function frameCounter(view, clock) {
+  const at = [];
+  const tick = view._tick.bind(view);
+  view._tick = (now) => {
+    at.push(Date.now());
+    return tick(now);
+  };
+  return (seconds) => {
+    at.length = 0;
+    for (let i = 0; i < (seconds * 1000) / 16; i++) clock.step(16);
+    return { perSecond: at.length / seconds, at: [...at] };
+  };
+}
+
+test("live, a frame a second while no satellite is up, and about ten while one is", async () => {
+  const start = T0 + 1000;
+  const { pass, detail } = syntheticPass({ start });
+  // What is up, when the view opens, how long until the frames are counted, and how many to allow.
+  // A view is live from PASS_LEAD_S before the visible window, and stays so after its pass.
+  for (const [what, opened, wait, least, most] of [
+    ["nothing up yet", pass.start - PASS_LEAD_S + 1, 0, 0.8, 1.2],
+    ["a satellite up", pass.start + 30, 0, 6, 10.5],
+    ["left open after the pass", pass.end - 1, start + 610 - pass.end, 0.8, 1.2],
+  ]) {
+    const clock = installClock(opened * 1000);
+    try {
+      const { view } = streetView();
+      view.clock = new PassClock({ now: () => Date.now() });
+      view.setPass(pass, detail);
+      view.open();
+      await clock.settle(3);
+      for (let i = 0; i < wait * 25; i++) clock.step(40);
+      assert.equal(view.clock.mode, "live", what);
+      const run = frameCounter(view, clock);
+      run(1);
+      const { perSecond, at } = run(5);
+      assert.ok(perSecond >= least && perSecond <= most, `${what}: ${perSecond} frames a second`);
+      if (most < 2) for (const t of at) assert.ok(t % 1000 < 50, `${what}: each frame shows a new second, not ${t % 1000} ms into one`);
+      view.dispose();
+      assert.equal(clock.timeouts.size, 0, "no timer left");
+    } finally {
+      clock.restore();
+    }
+  }
+});
+
+test("looking for a satellite that has gone does not leave the loop running every frame", async () => {
+  const start = T0 + 1000;
+  const { pass, detail } = syntheticPass({ start });
+  const clock = installClock((pass.end - 1) * 1000);
+  try {
+    const { view } = streetView();
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    for (let i = 0; i < (start + 610 - pass.end) * 25; i++) clock.step(40);
+    view._lookAtSatellite();
+    const run = frameCounter(view, clock);
+    run(2);
+    assert.ok(view._following, "it would follow, were one up");
+    close(run(5).perSecond, 1, 0.2, "nothing to follow");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("out of sight the frame loop stops, and it comes back with the view", async () => {
+  const saved = globalThis.IntersectionObserver;
+  const observers = [];
+  globalThis.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.disconnected = false;
+      observers.push(this);
+    }
+    observe(element) {
+      this.element = element;
+    }
+    disconnect() {
+      this.disconnected = true;
+    }
+  };
+  const { pass, detail } = syntheticPass({ start: T0 + 1000 });
+  const clock = installClock((pass.start + 30) * 1000);
+  try {
+    const { view } = streetView();
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    assert.equal(observers.length, 1);
+    assert.equal(observers[0].element, view);
+    const run = frameCounter(view, clock);
+    assert.ok(run(1).perSecond >= 6, "drawing while it can be seen");
+    observers[0].callback([{ isIntersecting: false }]);
+    assert.equal(clock.rafs.size, 0, "no animation frame waiting");
+    assert.equal(run(3).perSecond, 0, "no frames out of sight");
+    view._kick();
+    assert.equal(clock.rafs.size, 0, "and nothing starts them");
+    observers[0].callback([{ isIntersecting: true }]);
+    assert.ok(run(1).perSecond >= 6, "back in sight, it draws again");
+    view.dispose();
+    assert.ok(observers[0].disconnected, "dispose() stops watching");
+    assert.equal(clock.rafs.size, 0);
+  } finally {
+    clock.restore();
+    globalThis.IntersectionObserver = saved;
+  }
+});
+
 test("in 3D the HUD names what can hide the satellite: buildings, hills, or either", async () => {
   const clock = installClock(T0 * 1000);
   try {

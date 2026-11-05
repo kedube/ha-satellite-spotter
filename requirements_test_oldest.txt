@@ -3,5 +3,5 @@ pytest-homeassistant-custom-component==0.13.316
 home-assistant-frontend==20260128.6
 # The SGP4 the integration imports, as the manifest pins it (numpy comes with the tools above).
 sgp4==2.27
-# Checks the pre-compressed MapLibre copies (tests/test_frontend.py).
+# Checks the pre-compressed MapLibre copies (tests/test_frontend_files.py).
 Brotli

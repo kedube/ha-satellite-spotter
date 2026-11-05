@@ -9,11 +9,14 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.catalog import async_shared_catalog
 from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import (
@@ -23,27 +26,31 @@ from custom_components.satellite_spotter.const import (
     CONF_STREET_VIEW,
     DOMAIN,
     PASS_TRACK_MAX_STEP,
+    TRACK_EPOCH_RANGE,
 )
 from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
 from custom_components.satellite_spotter.frontend import (
+    _number,
     build_passes_payload,
     is_train,
     pass_json,
     pass_track_payload,
+    starlink_count,
+    track_step,
 )
 
-from .common import FIRST_PASS_ID, HONOLULU, NOW, advance
+from .common import DENVER, FIRST_PASS_ID, HONOLULU, NOW, add_location, advance, cloud_percent
 
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
     "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "sun_up",
-    "limiting_magnitude", "cloud_cover", "satellite_count", "starlink_count", "train", "peak",
+    "cloud_cover", "satellite_count", "starlink_count", "train", "peak",
     "transits",
 }  # fmt: skip
 TRANSIT_KEYS = {
     "norad_id", "name", "kind", "start", "end", "magnitude", "brightest_time", "rise",
-    "brightest", "set", "peak", "start_reason", "end_reason", "intrinsic_magnitude", "model",
+    "brightest", "set", "peak", "start_reason", "end_reason",
     "period_s", "about_url", "confidence",
 }  # fmt: skip
 KINDS = {"iss", "tiangong", "hubble", "starlink", "rocket", "debris", "satellite"}
@@ -96,40 +103,33 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
 
     assert result["generated_at"] == int(NOW.timestamp())
     assert result["server_time"] == NOW.timestamp()
-    assert result["computed_at"] == int(NOW.timestamp())
     assert (result["paused"], result["paused_days"], result["paused_error"]) == (None,) * 3
     assert result["location"] == {
         "entry_id": init_integration.entry_id,
         "title": "Home",
         **HONOLULU,
     }
-    assert result["settings"] == {
-        "max_magnitude": 2.25,
-        "cloud_cover": True,
-        "alert_lead_minutes": 15,
-        "units": "auto",
-        "days": 5,
-        "min_elevation": 10,
-    }
+    assert result["settings"] == {"units": "auto", "days": 5, "min_elevation": 10}
     catalog = result["catalog"]
     assert catalog["updated"] == int(NOW.timestamp())
-    assert catalog["version"] == 1
-    assert catalog["satellites"] == 22
-    assert 0 < catalog["median_epoch_age_days"] < 1
+    assert catalog["version"] == int(NOW.timestamp())
+    assert catalog["satellites"] == 48
 
     passes = result["passes"]
-    assert len(passes) == 28
-    assert len({p["id"] for p in passes}) == 28
+    assert len(passes) == 17
+    assert len({p["id"] for p in passes}) == 17
     assert [p["start"] for p in passes] == sorted(p["start"] for p in passes)
     assert _no_negative_zero(passes)
     first = passes[0]
     assert first.keys() == PASS_KEYS
     assert first["id"] == FIRST_PASS_ID
-    assert first["title"] == "BLUEWALKER-3"
-    assert first["kind"] == "satellite"
-    assert first["start"] == 1793806408
+    assert first["title"] == "ISS"
+    assert first["kind"] == "iss"
+    assert first["start"] == 1793806752
     assert first["duration"] == first["end"] - first["start"]
-    assert (first["magnitude"], first["bright"], first["cloud_cover"]) == (0.2, True, 16)
+    assert (first["magnitude"], first["bright"]) == (-0.9, True)
+    # The forecast for the hour after the pass begins.
+    assert first["cloud_cover"] == cloud_percent(first["start"] + 3600)
     assert (first["satellite_count"], first["train"]) == (1, False)
     for p in passes:
         assert p["start"] < p["end"]
@@ -156,13 +156,12 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
                 assert t[point]["direction"] in DIRECTIONS
                 assert 10 <= t[point]["elevation"] <= 90
     kinds = {t["name"]: t["kind"] for p in passes for t in p["transits"]}
-    assert kinds["SL-16 R/B"] == "rocket"
-    assert kinds["BLUEWALKER-3"] == "satellite"
     assert kinds["ISS"] == "iss"
+    assert kinds["Hubble"] == "hubble"
+    assert kinds["Tiangong"] == "tiangong"
     group = next(p for p in passes if p["title"] == "ISS +1")
     assert group["satellite_count"] == 2
-    # Named after the ISS though the rocket appears first.
-    assert [t["name"] for t in group["transits"]] == ["ISS", "ATLAS 5 CENTAUR R/B"]
+    assert [t["name"] for t in group["transits"]] == ["ISS", "Hubble"]
 
 
 async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
@@ -175,9 +174,9 @@ async def test_pass_track(ws: Any, init_integration: MockConfigEntry) -> None:
     assert result["step"] == 2
     (transit,) = result["transits"]
     t = p.lead
-    assert transit["norad_id"] == 53807
-    assert transit["name"] == "BLUEWALKER-3"
-    assert transit["kind"] == "satellite"
+    assert transit["norad_id"] == 25544
+    assert transit["name"] == "ISS"
+    assert transit["kind"] == "iss"
     assert transit["visible_start"] == int(t.appears.time.timestamp())
     assert transit["visible_end"] == int(t.vanishes.time.timestamp())
 
@@ -225,7 +224,7 @@ async def test_pass_track_of_a_group(ws: Any, init_integration: MockConfigEntry)
     result = msg["result"]
     assert result["step"] == 5
     first, second = result["transits"]
-    assert (first["name"], second["name"]) == ("ISS", "ATLAS 5 CENTAUR R/B")
+    assert (first["name"], second["name"]) == ("ISS", "Hubble")
     for transit in result["transits"]:
         assert transit["rows"]
         assert {
@@ -289,7 +288,7 @@ async def test_a_train_is_a_matter_of_how_many_starlinks(
     init_integration: MockConfigEntry, names: list[str], train: bool
 ) -> None:
     group = _group(init_integration.runtime_data.data.passes[0], names)
-    assert is_train(group) is train
+    assert is_train(starlink_count(group)) is train
     payload = pass_json(group)
     assert payload["train"] is train
     assert payload["satellite_count"] == len(names)
@@ -391,9 +390,10 @@ async def test_positions(hass: HomeAssistant, ws: Any) -> None:
     result = msg["result"]
     catalog = async_shared_catalog(hass)
     assert result["start"] == int(NOW.timestamp()) // 60 * 60
-    assert (result["step"], result["count"], result["catalog_version"]) == (60, 11, 1)
+    assert (result["step"], result["count"]) == (60, 11)
+    assert result["catalog_version"] == int(NOW.timestamp())
     assert result["ids"] == [s.norad_id for s in catalog.satellites]
-    assert len(result["pos"]) == len(result["lit"]) == 22
+    assert len(result["pos"]) == len(result["lit"]) == 48
     for row, lit in zip(result["pos"], result["lit"], strict=True):
         assert len(row) == 33
         assert len(lit) == 11
@@ -401,17 +401,18 @@ async def test_positions(hass: HomeAssistant, ws: Any) -> None:
         for lat, lon, alt in zip(row[::3], row[1::3], row[2::3], strict=True):
             assert -90 <= lat <= 90 and -180 <= lon <= 180
             assert round(lat, 2) == lat and round(lon, 2) == lon
-            assert isinstance(alt, int) and 150 < alt < 40000
+            # The catalog's highest orbit, a Falcon 9 stage's, reaches about 69,000 km.
+            assert isinstance(alt, int) and 150 < alt < 70000
     iss = result["pos"][result["ids"].index(25544)]
     assert 400 < iss[2] < 440
 
     # Pages asking around the same time share one computation, kept as the
     # JSON sent: a fraction of the memory of the lists it was built from.
-    cached = len(catalog.cache)
+    cached = len(catalog._cache)
     msg = await ws("positions", start=(NOW + timedelta(seconds=30)).isoformat())
     assert msg["result"] == result
-    assert len(catalog.cache) == cached
-    assert all(isinstance(value, bytes) for value in catalog.cache.values())
+    assert len(catalog._cache) == cached
+    assert all(isinstance(value, bytes) for value in catalog._cache.values())
 
     msg = await ws("positions", start=NOW.isoformat(), span=0, step=10)
     assert (msg["result"]["count"], msg["result"]["step"]) == (1, 10)
@@ -448,17 +449,18 @@ async def test_catalog(hass: HomeAssistant, ws: Any) -> None:
     assert msg["success"], msg
     result = msg["result"]
     assert result["updated"] == int(NOW.timestamp())
-    assert result["version"] == 1
+    assert result["version"] == int(NOW.timestamp())
     satellites = {s["norad_id"]: s for s in result["satellites"]}
-    assert len(satellites) == 22
+    assert len(satellites) == 48
+    assert satellites[23405]["kind"] == "rocket"
+    assert satellites[31598]["kind"] == "satellite"
+    assert satellites[44725]["kind"] == "starlink"
     iss = satellites[25544]
     assert iss.keys() == {
-        "norad_id", "name", "kind", "magnitude", "model", "epoch", "period_s", "perigee_km",
-        "apogee_km", "inclination", "about_url",
+        "norad_id", "name", "kind", "magnitude", "epoch", "period_s", "inclination", "about_url",
     }  # fmt: skip
-    assert (iss["name"], iss["kind"], iss["magnitude"], iss["model"]) == ("ISS", "iss", -1.8, None)
+    assert (iss["name"], iss["kind"], iss["magnitude"]) == ("ISS", "iss", -0.5)
     assert 5500 < iss["period_s"] < 5600
-    assert 400 < iss["perigee_km"] <= iss["apogee_km"] < 440
     assert iss["inclination"] == 51.6
     assert iss["about_url"] == "https://en.wikipedia.org/wiki/International_Space_Station"
     assert dt_util.utc_from_timestamp(iss["epoch"]) < NOW
@@ -588,7 +590,7 @@ async def test_paused_predictions(
     assert result["paused_days"] == 15
     assert result["paused_error"] == "HTTP 503"
     assert result["passes"] == []
-    assert result["catalog"]["satellites"] == 22
+    assert result["catalog"]["satellites"] == 48
 
     # Nor can a pass be drawn from them; the catalog itself is still described.
     for kind, fields in (
@@ -637,3 +639,185 @@ async def test_the_drawing_uses_the_same_cutoff_as_the_list(
         assert drawn.call_args.args[5] == 3.0
         pass_track_payload(named("SOME SAT"), coordinator.observer, 2.0, 2.25)
         assert drawn.call_args.args[5] == 2.25
+
+
+# --- Why a card has nothing to show --------------------------------------------
+
+
+async def _asked_for_passes(hass: HomeAssistant, hass_ws_client: Any, **fields: Any) -> Any:
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": f"{DOMAIN}/passes", **fields})
+    return await client.receive_json()
+
+
+async def test_a_location_retrying_says_what_it_waits_for_until_it_is_disabled(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], hass_ws_client: Any
+) -> None:
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("HTTP 500")
+    entry = await add_location(hass)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    for fields in ({}, {"entry_id": entry.entry_id}):
+        msg = await _asked_for_passes(hass, hass_ws_client, **fields)
+        assert not msg["success"]
+        assert msg["error"] == {"code": "not_ready", "message": "No satellite catalog: HTTP 500"}
+
+    await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
+    await hass.async_block_till_done()
+    msg = await _asked_for_passes(hass, hass_ws_client)
+    assert msg["error"] == {"code": "location_disabled", "message": "This location is disabled"}
+
+
+async def test_a_card_on_a_disabled_location_is_told_and_recovers_when_it_is_enabled(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    cabin = await add_location(hass, DENVER, title="Cabin", unique_id="39.7400_-104.9900")
+    assert init_integration.state is cabin.state is ConfigEntryState.LOADED
+    await hass.config_entries.async_set_disabled_by(cabin.entry_id, ConfigEntryDisabler.USER)
+    await hass.async_block_till_done()
+    msg = await _asked_for_passes(hass, hass_ws_client, entry_id=cabin.entry_id)
+    assert msg["error"] == {"code": "location_disabled", "message": "This location is disabled"}
+
+    await hass.config_entries.async_set_disabled_by(cabin.entry_id, None)
+    await hass.async_block_till_done()
+    msg = await _asked_for_passes(hass, hass_ws_client, entry_id=cabin.entry_id)
+    assert msg["result"]["location"]["title"] == "Cabin"
+
+
+async def test_a_card_is_not_left_waiting_for_a_setup_that_failed(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], hass_ws_client: Any
+) -> None:
+    with patch(
+        "custom_components.satellite_spotter.SatelliteSpotterCoordinator",
+        side_effect=RuntimeError("boom"),
+    ):
+        entry = await add_location(hass)
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    for fields in ({}, {"entry_id": entry.entry_id}):
+        msg = await _asked_for_passes(hass, hass_ws_client, **fields)
+        assert msg["error"] == {
+            "code": "setup_failed",
+            "message": "Setup failed; see the Home Assistant log",
+        }
+
+    # A card showing whichever location comes first does wait, while another is on its way.
+    cabin = MockConfigEntry(domain=DOMAIN, title="Cabin", data=dict(DENVER))
+    cabin.add_to_hass(hass)
+    cabin.mock_state(hass, ConfigEntryState.SETUP_RETRY, "No satellite catalog: HTTP 500")
+    msg = await _asked_for_passes(hass, hass_ws_client)
+    assert msg["error"] == {"code": "not_ready", "message": "No satellite catalog: HTTP 500"}
+
+
+@pytest.mark.parametrize(
+    ("state", "reason", "code", "message"),
+    [
+        (ConfigEntryState.SETUP_ERROR, "Boom", "setup_failed", "Boom; see the Home Assistant log"),
+        (
+            ConfigEntryState.MIGRATION_ERROR,
+            None,
+            "setup_failed",
+            "Setup failed; see the Home Assistant log",
+        ),
+        (
+            ConfigEntryState.FAILED_UNLOAD,
+            "Unload failed",
+            "setup_failed",
+            "Unload failed; see the Home Assistant log",
+        ),
+        (ConfigEntryState.NOT_LOADED, None, "not_ready", "Starting up"),
+        (ConfigEntryState.SETUP_IN_PROGRESS, None, "not_ready", "Starting up"),
+        (ConfigEntryState.UNLOAD_IN_PROGRESS, None, "not_ready", "Starting up"),
+        (ConfigEntryState.SETUP_RETRY, "Busy", "not_ready", "Busy"),
+    ],
+)
+async def test_each_state_a_location_can_be_in_gets_its_own_answer(
+    hass: HomeAssistant,
+    hass_ws_client: Any,
+    state: ConfigEntryState,
+    reason: str | None,
+    code: str,
+    message: str,
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    entry = MockConfigEntry(domain=DOMAIN, title="Home", data=dict(HONOLULU))
+    entry.add_to_hass(hass)
+    entry.mock_state(hass, state, reason)
+    msg = await _asked_for_passes(hass, hass_ws_client)
+    assert msg["error"] == {"code": code, "message": message}
+
+
+async def test_a_location_added_back_is_told_of_the_catalog_it_has_now(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    hass_ws_client: Any,
+) -> None:
+    """Pages keep a catalog while its version is current: a new one must not reuse the number."""
+
+    async def described() -> Any:
+        await client.send_json_auto_id({"type": f"{DOMAIN}/catalog"})
+        return (await client.receive_json())["result"]
+
+    entry = await add_location(hass)
+    client = await hass_ws_client(hass)
+    first = await described()
+    assert len(first["satellites"]) == 48
+
+    # Long enough after the download for the stored copy to go with the last location.
+    freezer.move_to(NOW + timedelta(hours=3))
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    mock_downloads["fetch_catalog"].return_value = mock_downloads["fetch_catalog"].return_value[:3]
+    await add_location(hass)
+
+    second = await described()
+    assert len(second["satellites"]) == 3
+    assert second["version"] != first["version"]
+
+
+# --- Limits and rounding -------------------------------------------------------
+
+
+async def test_positions_are_those_of_the_times_they_say(hass: HomeAssistant, ws: Any) -> None:
+    result = (await ws("positions"))["result"]
+    catalog = async_shared_catalog(hass)
+    index = result["ids"].index(25544)
+    sample = 5
+    where = track.positions([catalog.satrecs()[index]], [result["start"] + sample * result["step"]])
+    row = result["pos"][index]
+    assert row[3 * sample] == round(float(where.latitude[0, 0]), 2)
+    assert row[3 * sample + 1] == round(float(where.longitude[0, 0]), 2)
+
+
+@pytest.mark.parametrize(("past", "allowed"), [(0, True), (1, False)])
+async def test_positions_are_for_times_within_range_of_now(
+    ws: Any, past: int, allowed: bool
+) -> None:
+    start = NOW + TRACK_EPOCH_RANGE + timedelta(seconds=past)
+    msg = await ws("positions", start=start.isoformat(), span=0)
+    assert msg["success"] is allowed
+
+
+@pytest.mark.parametrize(
+    ("seconds", "asked", "step"),
+    [
+        # Just over 100 s for each of the most points a track can have.
+        pytest.param(5999 * 100 + 1, 1.0, 101, id="widened"),
+        pytest.param(5999 * 100, 1.0, 100, id="just fits at that spacing"),
+        pytest.param(5999 * 100, 200.0, 200.0, id="wider than it need be, as asked"),
+    ],
+)
+def test_a_long_track_is_spaced_to_stay_within_its_points(
+    seconds: int, asked: float, step: float
+) -> None:
+    assert track_step(NOW, NOW + timedelta(seconds=seconds), asked) == step
+
+
+@pytest.mark.parametrize("value", [-0.04, -0.0, 0.04])
+def test_rounded_numbers_are_never_negative_zero(value: float) -> None:
+    assert str(_number(value, 1)) == "0.0"
+
+
+def test_a_number_that_is_not_there_stays_not_there() -> None:
+    assert _number(None, 1) is None
+    assert _number(float("nan"), 1) is None
+    assert _number(float("inf"), 1) is None

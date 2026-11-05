@@ -252,7 +252,8 @@ export function skyModel(sun, { moon = null, lightPollution = "suburban" } = {})
     dome,
     limit: Math.min(palette.limit, lp.limit),
     twilight: palette.twilight,
-    key: [sun.azimuth, sun.elevation].map((v) => v.toFixed(2)).join("|") + `|${lightPollution}|${palette.zenith}`,
+    // What the sky is cached by. A Sun moved by less than a quarter of a degree looks the same.
+    key: [sun.azimuth, sun.elevation].map((v) => (Math.round(v * 4) / 4).toFixed(2)).join("|") + `|${lightPollution}|${palette.zenith}`,
   };
 }
 
@@ -630,6 +631,12 @@ const SKY_STEP_S = 2;
 // …and redraw the cached backdrop when the stars have turned this much (≈ 1 px at 50°).
 const BACKDROP_STEP_S = 20;
 
+/** Where a satellite's dot is at a moment; null while it cannot be drawn, from just below the horizon. */
+function dotAt(track, tS) {
+  const s = sampleAt(track.data, tS);
+  return !s || s.elevation < -0.5 ? null : s;
+}
+
 /**
  * Draws the sky behind the map and the labels in front of it. One instance
  * per view; `draw()` per frame. Cheap when only the time moves: the sky,
@@ -801,6 +808,11 @@ export class Planetarium {
   }
 
   // -- state -----------------------------------------------------------------
+
+  /** Whether any satellite's dot can show at a moment, wherever the camera is looking. */
+  anyDotAt(tS) {
+    return this.tracks.some((track) => dotAt(track, tS));
+  }
 
   /**
    * The satellite to look for now: the primary during its own window. Otherwise, as a
@@ -1402,8 +1414,8 @@ export class Planetarium {
   _paintDots(ctx, P, tS, state) {
     let lowest = -Infinity;
     for (const track of this.tracks) {
-      const s = sampleAt(track.data, tS);
-      if (!s || s.elevation < -0.5) continue;
+      const s = dotAt(track, tS);
+      if (!s) continue;
       const q = projectEnu(P, s.x, s.y, s.z);
       if (!q || q[0] < -40 || q[1] < -40 || q[0] > P.width + 40 || q[1] > P.height + 40) continue;
       if (track.primary) lowest = Math.max(lowest, this._paintTrail(ctx, P, track, tS, s));

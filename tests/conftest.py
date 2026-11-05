@@ -1,12 +1,12 @@
-"""Shared fixtures."""
+"""The fixtures every test module can use."""
 
 from __future__ import annotations
 
-from collections.abc import Generator
-from datetime import datetime
+from collections.abc import Iterator
 import json
+from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
@@ -16,71 +16,75 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.satellite_spotter.const import DOMAIN
 from custom_components.satellite_spotter.predict import Satellite
 
-from .common import FIXTURES, HONOLULU, HONOLULU_ID, NOW, add_location, cloud_cover, satellites
+from .common import HONOLULU, NOW, cloud_forecast, forecast_of, satellites
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
+_REFERENCE = Path(__file__).parent / "fixtures" / "skyfield_reference.json"
+
 
 @pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Allow Home Assistant to load the integration in every test."""
+def _enable_custom_integrations(enable_custom_integrations: None) -> None:
+    """Let Home Assistant find the integration, in every test."""
 
 
-@pytest.fixture(scope="session")
-def reference() -> dict[str, Any]:
-    """Skyfield's look angles and sub-points for the ISS (scripts/validate_against_skyfield.py)."""
-    return json.loads((FIXTURES / "skyfield_reference.json").read_text())
+@pytest.fixture(autouse=True)
+def _storage_in_memory(hass_storage: dict[str, Any]) -> None:
+    """Keep what Home Assistant stores in memory, for every test."""
 
 
 @pytest.fixture
 def catalog() -> list[Satellite]:
-    """The test catalog."""
+    """Return a fresh copy of the fixture's satellites."""
     return satellites()
 
 
+@pytest.fixture(scope="session")
+def reference() -> Any:
+    """Return the Skyfield reference positions; the file is read only if a test asks for it."""
+    return json.loads(_REFERENCE.read_text(encoding="utf-8"))
+
+
 @pytest.fixture
-def mock_downloads(catalog: list[Satellite]) -> Generator[dict[str, AsyncMock]]:
-    """Mock what goes over the network (the catalog and the cloud cover forecast)."""
+def mock_downloads(catalog: list[Satellite]) -> Iterator[dict[str, AsyncMock]]:
+    """Answer the downloads without a network: see ``common.cloud_percent`` for the clouds."""
     with (
         patch(
             "custom_components.satellite_spotter.catalog.async_fetch_catalog",
-            return_value=catalog,
+            AsyncMock(return_value=catalog),
         ) as fetch_catalog,
         patch(
             "custom_components.satellite_spotter.coordinator.async_fetch_forecast",
-            return_value=cloud_cover(),
+            AsyncMock(return_value=cloud_forecast()),
         ) as fetch_forecast,
     ):
         yield {"fetch_catalog": fetch_catalog, "fetch_forecast": fetch_forecast}
 
 
 @pytest.fixture
-def mock_setup_entry() -> Generator[AsyncMock]:
-    """Mock setting up a config entry."""
-    with patch("custom_components.satellite_spotter.async_setup_entry", return_value=True) as mock:
+def predict_passes(mock_downloads: dict[str, AsyncMock]) -> Iterator[MagicMock]:
+    """Replace the search for passes: set ``return_value`` to the passes a test wants.
+
+    The forecast then agrees with their cloud cover, as each refresh applies it to them again.
+    """
+    with patch(
+        "custom_components.satellite_spotter.coordinator.predict_passes",
+        MagicMock(return_value=[]),
+    ) as mock:
+        mock_downloads["fetch_forecast"].side_effect = lambda *_: forecast_of(mock.return_value)
         yield mock
-
-
-@pytest.fixture
-def mock_config_entry() -> MockConfigEntry:
-    """The test location."""
-    return MockConfigEntry(domain=DOMAIN, title="Home", unique_id=HONOLULU_ID, data=HONOLULU)
-
-
-@pytest.fixture
-def now() -> datetime:
-    """When the tests start, minutes before the first pass."""
-    return NOW
 
 
 @pytest.fixture
 async def init_integration(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
-    mock_config_entry: MockConfigEntry,
     mock_downloads: dict[str, AsyncMock],
 ) -> MockConfigEntry:
-    """The test location, running from NOW."""
+    """Set up one location, Home in Honolulu, with the clock at NOW."""
     freezer.move_to(NOW)
-    await add_location(hass, mock_config_entry)
-    return mock_config_entry
+    entry = MockConfigEntry(domain=DOMAIN, title="Home", data=dict(HONOLULU))
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry

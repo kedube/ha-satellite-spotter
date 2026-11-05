@@ -83,16 +83,16 @@ Manual installs don't get update notifications. Repeat these steps to update.
    `custom_components/satellite_spotter` folder instead.
 4. Restart Home Assistant.
 
-If the catalogue was downloaded within the last two hours, its copy stays in
-`.storage/satellite_spotter.catalog`, so that adding a location back doesn't have to ask CelesTrak
-again. It holds public orbital data and nothing about you. If you're removing the integration for
-good, you can delete that file.
+If the catalogue was downloaded within the last two hours, or CelesTrak has just refused a download,
+its copy stays in `.storage/satellite_spotter.catalog`, so that adding a location back doesn't have to
+ask CelesTrak again. It holds public orbital data and nothing about you. If you're removing the
+integration for good, you can delete that file.
 
 ## Setup
 
 Go to **Settings → Devices & services → Add integration → Satellite Spotter**. Name the location,
 check it on the map and give its elevation; a rough value is fine. The name starts its entity ids:
-**Home** gives `sensor.home_next_pass`.
+**Home** gives `sensor.home_next_visible_pass`.
 
 Use **Add location** for more places, such as a cabin; they share one catalogue download.
 **Reconfigure** moves a location and keeps its entities.
@@ -103,9 +103,9 @@ Select **Configure** on a location.
 
 | Option | Default | What it does |
 |---|---|---|
-| Faintest magnitude | 2.25 | Lists only passes at least this bright, from -2 to 4. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb, and 1 keeps the easy ones. Starlinks are listed 0.75 past this. |
-| Cloud cover forecast | On | Adds Open-Meteo's forecast to each pass. |
-| Advance notice | 15 min | **Bright pass soon** turns on this long before the brightest satellite of a bright pass appears. |
+| Brightness cutoff | 2.25 | Lists only passes at least this bright, from -1 to 4. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb, and 1 keeps the easy ones. Starlinks are listed 0.75 past this. |
+| Cloud forecast | On | Adds Open-Meteo's forecast to each pass. |
+| Advance notice | 15 min | **Visible pass soon** and **Bright pass soon** turn on this long before the brightest satellite of the pass appears. |
 | Show Satellite Spotter in the sidebar | On | Adds the page. The cards work either way. |
 | Show the passes in the calendar | On | Adds the location's calendar. |
 | Units | Automatic | Metric or imperial on the page and in the street view. |
@@ -128,18 +128,39 @@ names.
 
 | Entity | What it tells you |
 |---|---|
-| `sensor.home_next_pass` | When the next pass starts, or the one under way |
-| `sensor.home_next_bright_pass` | The same for the next bright pass |
-| `sensor.home_passes_next_24_hours` | How many passes are under way or start within a day; `passes` lists them |
-| `binary_sensor.home_satellite_visible` | On during a pass |
-| `binary_sensor.home_bright_pass_soon` | On from the advance notice before a bright satellite appears until its pass ends |
-| `calendar.home_satellite_passes` | Every pass for five days, with where to look |
-| `sensor.home_catalog_updated` | When the catalogue was downloaded, and how old its orbits are |
+| `sensor.home_next_visible_pass` | When the next visible pass starts, or the one under way, with its details below and `upcoming`, the next passes (up to 20) |
+| `sensor.home_next_visible_pass_peak_elevation` | How high it climbs (90° is straight overhead) |
+| `sensor.home_next_visible_pass_brightness` | Estimated magnitude (lower is brighter) |
+| `sensor.home_next_visible_pass_duration` | How long it is visible |
+| `sensor.home_next_visible_pass_cloud_cover` | Open-Meteo's forecast for it |
+| `sensor.home_next_visible_satellite_name` | The name of the satellite |
+| `sensor.home_next_bright_pass` | When the next bright pass starts, or the one under way, with its details |
+| `sensor.home_satellite_elevation` | That satellite's elevation in your sky right now, with `azimuth`, `direction`, `range_km` and `sunlit` |
+| `sensor.home_visible_passes_next_24_hours` | How many passes are under way or start within a day |
+| `device_tracker.home_satellite_position` | The point on Earth beneath that satellite, for map cards, with `satellite`, `catalog_number`, `altitude_km` and `sunlit` |
+| `binary_sensor.home_satellite_visible_now` | On during a pass |
+| `binary_sensor.home_visible_pass_soon` | On from the advance notice before the pass's brightest satellite appears until the pass ends |
+| `binary_sensor.home_bright_pass_soon` | The same, for bright passes |
+| `calendar.home_visible_passes` | Every pass for about five days, with where to look |
+| `sensor.home_orbital_elements_epoch` | Diagnostic: the middle date of the catalogue's orbital elements, with `downloaded`, `age_days`, `catalog_size`, `stale` and `last_download_error` |
 
-The pass entities carry `pass_id`, `object_name`, `catalog_number`, `about_url`, `object_count`,
-`objects`, `peak_magnitude`, `is_bright`, `sun_up`, `cloud_percent`, `begins`, `ends` and
-`length_seconds` for the pass. For the satellite it is named after, they carry `_time`, `_direction`,
-`_azimuth` and `_elevation` for `appears`, `best_view` and `disappears`.
+The sensors with a pass's details, and the binary sensors while they are on, carry `pass_id`,
+`satellite`, `catalog_number`, `kind`, `about_url`, `satellite_count`, `satellites`, `duration_seconds`,
+`magnitude`, `bright`, `sun_up`, `cloud_cover`, `appears_from_shadow`, `disappears_into_shadow` and
+`confidence`, and the time, `_direction`, `_azimuth` and `_elevation` of `start`, `peak` and `end`.
+When several satellites cross together these describe the brightest, and the sensor's state is when
+the first of them appears.
+
+There is no sensor for the next pass whether visible or not, as there is in
+[ISS Tracker](https://github.com/kedube/ha-iss-tracker): of the catalogue's 970 or so satellites, about
+a hundred are above 10° at any moment.
+
+`sensor.home_satellite_elevation` and `device_tracker.home_satellite_position` are the entities that
+change without a pass beginning or ending: every minute, and every 10 seconds during a pass. Their
+fast-changing details are not recorded, apart from the tracker's latitude and longitude, which draw
+its trail on map cards. To keep your database smaller still, exclude them from the
+[recorder](https://www.home-assistant.io/integrations/recorder/). Both follow the satellite of the pass
+under way or the next, so they jump when it changes. Disable both and nothing is worked out for them.
 
 ## Notifications
 
@@ -160,7 +181,7 @@ triggers:
   - trigger: calendar
     event: start
     offset: "-0:15:0"
-    entity_id: calendar.home_satellite_passes
+    entity_id: calendar.home_visible_passes
 actions:
   - action: notify.mobile_app_your_phone
     data:
@@ -172,7 +193,7 @@ actions:
         clickAction: "/satellite-spotter?pass={{ trigger.calendar_event.uid }}&view=street"
 ```
 
-With several locations, add `&entry_id={{ config_entry_id('calendar.home_satellite_passes') }}` to
+With several locations, add `&entry_id={{ config_entry_id('calendar.home_visible_passes') }}` to
 the links.
 
 ## Dashboard cards
@@ -199,13 +220,13 @@ Both are in the card picker, with visual editors.
    is adjusted for its distance, how much of it is lit as you see it, and the air in the way, which
    depends on your elevation. Starlinks use published models of their own.
 4. **Visibility.** A satellite counts while it is at least 10° up, lit by the Sun, brighter than
-   your **Faintest magnitude**, and bright enough for the sky at that moment.
+   your **Brightness cutoff**, and bright enough for the sky at that moment.
 5. **Passes.** Satellites that overlap or follow within a minute make one pass, named after the
    brightest, and fewer than five Starlinks together are left out. More than five show as a train. A
    pass is **bright** when it beats magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
 
-Passes are predicted again every two hours. In between nothing polls: entities change at the
-moments that matter.
+Passes are searched for again with each new catalogue, as they depend on the orbits, and the clouds
+are refreshed every hour. In between nothing polls: entities change at the moments that matter.
 
 ### How far to trust it
 
@@ -233,7 +254,7 @@ card or the street view is open.
 | What | Goes to | What it learns |
 |---|---|---|
 | Catalogue download | CelesTrak | Nothing about where you are |
-| Cloud forecast (optional) | Open-Meteo | Each location's coordinates to about 10 m, every two hours |
+| Cloud forecast (optional) | Open-Meteo | Each location's coordinates to about 10 m, every hour |
 | Globe imagery | NASA GIBS and EOX, or Esri if you choose it | The area on screen |
 | Place names and street map | OpenStreetMap, through Home Assistant | The area on screen |
 | 3D model | OpenFreeMap and Amazon Web Services, plus Esri for aerial photos | The area around your home |
@@ -243,7 +264,7 @@ card or the street view is open.
 
 - **No passes.** Satellites show for a while after dusk and before dawn, when the Sun lights them but
   your sky is dark. Near midsummer, far from the equator, the sky barely darkens, so few are listed.
-  A **Faintest magnitude** below the default of 2.25 also hides passes.
+  A **Brightness cutoff** below the default of 2.25 also hides passes.
 - **"Satellite predictions are paused" in Repairs.** The orbital elements are over two weeks old and
   no fresh catalogue could be downloaded. Check that Home Assistant can reach `celestrak.org`.
   Predictions resume by themselves.
@@ -275,7 +296,7 @@ The tests need no network. The scripts in `scripts/` build the generated files
 (`validate_against_skyfield.py`) and publish releases (`release.py`). Each explains itself at the
 top.
 
-Update `brightness.csv` about every four months: see
+A workflow proposes an updated `brightness.csv` each week: see
 [Updating the brightness table](docs/updating-brightness.md).
 
 To add a language, copy a JSON file in both `translations/` folders, translate the values, keep each
@@ -283,14 +304,19 @@ To add a language, copy a JSON file in both `translations/` folders, translate t
 
 ## Credits and references
 
-Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
+Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`. It began as a fork of Willem Vooijs's
+[See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite) and
+[see-a-satellite](https://github.com/wildekek/see-a-satellite) library, both under the MIT licence, and
+has been largely rewritten since.
 
 ### The predictions
 
 - **How bright a satellite is:** Karpov et al. 2016,
   [Massive photometry of low-altitude artificial satellites on Mini-Mega-TORTORA](https://ui.adsabs.harvard.edu/abs/2016RMxAC..48..112K/abstract),
-  RMxAA Conf. Ser. 48, 112, for both the values and the formula's definition. Mini-MegaTORTORA belongs
-  to Kazan Federal University.
+  Revista Mexicana de Astronomía y Astrofísica (Serie de Conferencias) Vol. 48, pp. 112-113, for both
+  the values and the formula's definition. The telescope is described by Beskin et al. 2017,
+  [Wide-field optical monitoring with Mini-MegaTORTORA (MMT-9) multichannel high temporal resolution telescope](https://ui.adsabs.harvard.edu/abs/2017AstBu..72...81B/abstract),
+  Astrophysical Bulletin, Volume 72, Issue 1, pp. 81-92.
 - **What the sky lets you see:** Weaver 1947,
   [The Visibility of Stars Without Optical Aid](https://doi.org/10.1086/125956), PASP 59, 232. This
   code departs from its curve on purpose: -4 rather than about -3.2 in full daylight, and stopping
@@ -315,7 +341,7 @@ Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
 | Used for | Source | Licence or terms |
 |---|---|---|
 | Orbits | [CelesTrak](https://celestrak.org), from US Space Force data on Space-Track and, for Starlinks, SpaceX's ephemerides | |
-| Brightness (`brightness.csv` credits each value) | [Mini-MegaTORTORA](http://mmt.favor2.info/satellites), then [Mike McCants's list](https://www.mmccants.org/), [SCORE](https://score.cps.iau.org) (IAU CPS) and [Stellarium](https://stellarium.org), and [Heavens-Above](https://www.heavens-above.com/satinfo.aspx?satid=48274) for Tiangong | MMT: no licence stated, and its page asks research to cite it. SCORE: CC BY 4.0. Stellarium: GPL |
+| Brightness (`brightness.csv` credits each value) | [Mini-MegaTORTORA](http://mmt.favor2.info/satellites), then [Mike McCants's list](https://www.mmccants.org/), [SCORE](https://score.cps.iau.org) (IAU CPS) and [Stellarium](https://stellarium.org), and [Heavens-Above](https://www.heavens-above.com/satinfo.aspx?satid=48274) for Tiangong | MMT: used with its team's permission, citing the papers above. SCORE: CC BY 4.0. Stellarium: GPL |
 | Checking those values | [GCAT](https://planet4589.org/space/gcat) by Jonathan McDowell; Mallama & Cole 2025, [arXiv:2507.00107](https://arxiv.org/abs/2507.00107) | GCAT: CC BY 4.0 |
 | Cloud cover | [Open-Meteo](https://open-meteo.com) | CC BY 4.0, free for non-commercial use |
 | Globe imagery | NASA Blue Marble and Black Marble via GIBS; [Sentinel-2 cloudless](https://s2maps.eu) by EOX IT Services (contains modified Copernicus Sentinel data 2025); Esri World Imagery (Esri, Vantor, Earthstar Geographics and the GIS User Community) | NASA: free with credit. EOX: CC BY-NC-SA 4.0, personal and non-commercial use. Esri: its terms of use |

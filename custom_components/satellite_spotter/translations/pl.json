@@ -47,17 +47,17 @@
       "init": {
         "title": "Które przeloty zgłaszać?",
         "data": {
-          "max_magnitude": "Najsłabsza jasność (mag)",
-          "cloud_cover": "Prognoza zachmurzenia",
+          "brightness_cutoff": "Próg jasności",
+          "cloud_forecast": "Prognoza chmur",
           "alert_lead_minutes": "Wyprzedzenie powiadomienia",
           "show_in_sidebar": "Pokaż Satellite Spotter na pasku bocznym",
           "show_in_calendar": "Pokaż przeloty w kalendarzu",
           "units": "Jednostki"
         },
         "data_description": {
-          "max_magnitude": "Zgłaszaj tylko przeloty co najmniej tak jasne. Mniejsze liczby oznaczają jaśniejsze obiekty: 2,25 to mniej więcej najsłabsze, co da się znaleźć na przedmieściach; 1 zostawia te łatwe, a poniżej 0 zostają tylko olśniewające.",
-          "cloud_cover": "Dodaje do każdego przelotu prognozę zachmurzenia z Open-Meteo. Open-Meteo otrzymuje co dwie godziny współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
-          "alert_lead_minutes": "Sensor „Jasny przelot wkrótce” włącza się z takim wyprzedzeniem przed pojawieniem się najjaśniejszego satelity jasnego przelotu.",
+          "brightness_cutoff": "Przelot pojawia się na liście tylko wtedy, gdy osiąga co najmniej taką jasność. Skala biegnie odwrotnie, więc mniejsza liczba oznacza jaśniejszy obiekt: 2,25 pasuje do nieba na przedmieściach, 1 zostawia te łatwe, a poniżej 0 tylko olśniewające.",
+          "cloud_forecast": "Pokazuje, jakiego zachmurzenia Open-Meteo spodziewa się podczas każdego przelotu. Open-Meteo otrzymuje co godzinę współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
+          "alert_lead_minutes": "Sensory „Widoczny przelot wkrótce” i „Jasny przelot wkrótce” włączają się z takim wyprzedzeniem przed pojawieniem się najjaśniejszego satelity przelotu.",
           "show_in_sidebar": "Dodaje do paska bocznego stronę Satellite Spotter z przelotami, globusem 3D i widokiem nieba z poziomu ulicy. Widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS (a ze zdjęciami lotniczymi także z Esri). Karty dashboardu działają w każdym przypadku.",
           "show_in_calendar": "Dodaje kalendarz przelotów z najbliższych pięciu dni, każdy z informacją, kiedy i gdzie patrzeć. Wyzwalacze kalendarza mogą wtedy uruchamiać automatyzacje przed przelotem.",
           "units": "Dla odległości i prędkości na globusie i w widoku z ulicy. „Automatycznie” stosuje system jednostek Home Assistant."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satelita widoczny"
+      "satellite_visible_now": {
+        "name": "Satelita widoczny teraz"
+      },
+      "visible_pass_soon": {
+        "name": "Widoczny przelot wkrótce"
       },
       "bright_pass_soon": {
         "name": "Jasny przelot wkrótce"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Przeloty satelitów"
+      "visible_passes": {
+        "name": "Widoczne przeloty"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Pozycja satelity"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Następny przelot"
+      "next_visible_pass": {
+        "name": "Następny widoczny przelot"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Maksymalna elewacja następnego widocznego przelotu"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Jasność następnego widocznego przelotu"
+      },
+      "next_visible_pass_duration": {
+        "name": "Czas trwania następnego widocznego przelotu"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Zachmurzenie następnego widocznego przelotu"
+      },
+      "next_visible_satellite_name": {
+        "name": "Nazwa następnego widocznego satelity"
       },
       "next_bright_pass": {
         "name": "Następny jasny przelot"
       },
-      "passes_next_24h": {
-        "name": "Przeloty w ciągu 24 godzin",
+      "satellite_elevation": {
+        "name": "Elewacja satelity"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Widoczne przeloty w ciągu najbliższych 24 godzin",
         "unit_of_measurement": "przeloty"
       },
-      "catalog_updated": {
-        "name": "Aktualizacja katalogu"
+      "orbital_elements_epoch": {
+        "name": "Epoka elementów orbitalnych"
       }
     }
   },

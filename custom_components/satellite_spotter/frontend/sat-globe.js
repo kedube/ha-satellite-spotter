@@ -1308,6 +1308,8 @@ export class SatelliteGlobeView extends BaseElement {
     this._clearApproach();
     this._focus = null;
     this._focusTrack = null;
+    this._focusFailed = null;
+    this._focusDelay = 0;
     this._positions = null;
     this._cloudFor = null;
     this._selectedId = null;
@@ -1521,6 +1523,7 @@ export class SatelliteGlobeView extends BaseElement {
     const now = this._now() / 1000;
     const have = this._focusTrack;
     if (!force && have?.norad === f.norad_id && have.from <= now && have.to >= now + 0.75 * P) return;
+    if (!force && this._focusFailed === f.norad_id && performance.now() < (this._focusRetryAt || 0)) return;
     if (this._focusLoading === f.norad_id) return;
     this._focusLoading = f.norad_id;
     const gen = this._gen;
@@ -1530,11 +1533,19 @@ export class SatelliteGlobeView extends BaseElement {
       const rows = await this._track(f.norad_id, from, to, 30);
       if (gen !== this._gen || this._focusInfo()?.norad_id !== f.norad_id) return;
       this._focusTrack = { norad: f.norad_id, rows, from, to };
+      this._focusFailed = null;
+      this._focusDelay = 0;
       this._staleDelay = this._staleRetryAt = 0;
       this._buildCourse();
       this._tick();
     } catch (err) {
-      if (gen === this._gen && have?.norad !== f.norad_id) this._focusTrack = null;
+      if (gen === this._gen) {
+        if (have?.norad !== f.norad_id) this._focusTrack = null;
+        // Try again later, backing off, rather than on every tick.
+        this._focusFailed = f.norad_id;
+        this._focusDelay = client.nextDelay(this._focusDelay, 30000, CLOUD_MS);
+        this._focusRetryAt = performance.now() + this._focusDelay;
+      }
       console.debug("Satellite Spotter: orbit:", this._errorMessage(err));
     } finally {
       if (this._focusLoading === f.norad_id) this._focusLoading = null;

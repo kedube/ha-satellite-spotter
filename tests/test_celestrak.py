@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import csv
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -20,6 +21,7 @@ from custom_components.satellite_spotter.celestrak import (
     SUPPLEMENTAL_URL,
     CatalogError,
     DownloadRefused,
+    _async_download,
     async_fetch_catalog,
     build_catalog,
 )
@@ -271,17 +273,32 @@ def test_the_table_shipped_can_be_read() -> None:
 
 
 def test_the_entities_credit_where_the_brightness_comes_from() -> None:
-    """Mini-MegaTORTORA asks for the citation and this acknowledgement."""
+    """Mini-MegaTORTORA's team asks for attribution and this citation."""
+    assert "Mini-MegaTORTORA" in ATTRIBUTION
     assert "Karpov et al. 2016" in ATTRIBUTION
-    assert "Kazan Federal University" in ATTRIBUTION
+
+
+def test_the_readme_cites_what_mmts_team_asks_for() -> None:
+    readme = (INTEGRATION.parent.parent / "README.md").read_text(encoding="utf-8")
+    for citation in (
+        "Karpov et al. 2016",
+        "2016RMxAC..48..112K",
+        "Vol. 48, pp. 112-113",
+        "Beskin et al. 2017",
+        "2017AstBu..72...81B",
+        "Volume 72, Issue 1, pp. 81-92",
+    ):
+        assert citation in readme
 
 
 def test_the_table_keeps_the_attribution_its_sources_ask_for() -> None:
     header = (INTEGRATION / "brightness.csv").read_text(encoding="utf-8").split("norad_id")[0]
     for credit in (
         "Mini-MegaTORTORA",
-        "Karpov",
-        "Kazan Federal University",
+        "Karpov et al. 2016",
+        "Vol. 48, pp. 112-113",
+        "Beskin et al. 2017",
+        "Volume 72, Issue 1, pp. 81-92",
         "McCants",
         "SCORE",
         "CC BY 4.0",
@@ -291,3 +308,51 @@ def test_the_table_keeps_the_attribution_its_sources_ask_for() -> None:
         "Mallama",
     ):
         assert credit in header
+
+
+@pytest.mark.parametrize("error", [aiohttp.ClientError(), TimeoutError()], ids=repr)
+async def test_a_download_stopping_partway_is_as_good_as_a_refusal(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, error: Exception
+) -> None:
+    """Trying again soon would repeat a query CelesTrak has only just answered."""
+    first, second, *_ = QUERIES
+    aioclient_mock.get(
+        GP_URL, params={**first, "FORMAT": "csv"}, text=gp_csv([_row(900, "CALSPHERE 1")])
+    )
+    aioclient_mock.get(GP_URL, params={**second, "FORMAT": "csv"}, exc=error)
+    with pytest.raises(DownloadRefused, match="stopped partway"):
+        await async_fetch_catalog(hass)
+    assert aioclient_mock.call_count == 2
+
+
+async def test_a_refusal_partway_keeps_its_own_words(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    first, second, *_ = QUERIES
+    aioclient_mock.get(
+        GP_URL, params={**first, "FORMAT": "csv"}, text=gp_csv([_row(900, "CALSPHERE 1")])
+    )
+    aioclient_mock.get(GP_URL, params={**second, "FORMAT": "csv"}, status=403)
+    with pytest.raises(DownloadRefused, match="HTTP 403"):
+        await async_fetch_catalog(hass)
+
+
+@pytest.mark.parametrize("error", [aiohttp.ClientError(), TimeoutError()], ids=repr)
+async def test_no_answer_at_all_is_only_a_failure(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, error: Exception
+) -> None:
+    """CelesTrak has answered nothing, so a network that is not up yet can try again soon."""
+    _mock_answers(aioclient_mock, exc=error)
+    with pytest.raises(CatalogError) as caught:
+        await async_fetch_catalog(hass)
+    assert not isinstance(caught.value, DownloadRefused)
+
+
+async def test_a_redirect_is_an_answer_rather_than_something_to_follow() -> None:
+    """CelesTrak asks software to stop at any answer but 200, and a redirect is one."""
+    answer = SimpleNamespace(status=200, text=AsyncMock(return_value="NORAD_CAT_ID"))
+    session = MagicMock()
+    session.get.return_value.__aenter__ = AsyncMock(return_value=answer)
+    session.get.return_value.__aexit__ = AsyncMock(return_value=False)
+    await _async_download(session, GP_URL, QUERIES[0])
+    assert session.get.call_args.kwargs["allow_redirects"] is False

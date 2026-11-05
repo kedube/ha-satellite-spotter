@@ -1842,6 +1842,50 @@ test("a simulation the street view's own time bar ends or starts is followed", a
   }
 });
 
+test("an orbit that fails to load is asked for again after a back-off, not every tick", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view, fake } = passView(clock, []);
+    view._focusTrack = null;
+    const asked = () => fake.calls.filter((m) => m.type === "satellite_spotter/track").length;
+    fake.fail["satellite_spotter/track"] = { code: "not_ready", message: "Starting up" };
+    await view._loadFocusTrack();
+    assert.equal(asked(), 1);
+    for (let i = 0; i < 10; i++) {
+      clock.step(1000);
+      await view._loadFocusTrack();
+    }
+    assert.equal(asked(), 1, "it waits for the retry");
+    // Asked for on purpose, it does not wait.
+    await view._loadFocusTrack(true);
+    assert.equal(asked(), 2);
+    delete fake.fail["satellite_spotter/track"];
+    clock.step(60000);
+    await view._loadFocusTrack();
+    assert.equal(asked(), 3);
+    assert.ok(view._focusTrack, "in at last");
+    assert.equal(view._focusDelay, 0);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a new location forgets that an orbit failed to load", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view, fake } = passView(clock, []);
+    view._focusTrack = null;
+    const asked = () => fake.calls.filter((m) => m.type === "satellite_spotter/track").length;
+    fake.fail["satellite_spotter/track"] = { code: "not_ready", message: "Starting up" };
+    await view._loadFocusTrack();
+    view._locationChanged();
+    await view._loadFocusTrack();
+    assert.equal(asked(), 2);
+  } finally {
+    clock.restore();
+  }
+});
+
 test("positions that fail to load are asked for again after a back-off, not every frame", async () => {
   const clock = installClock(T0 * 1000);
   try {

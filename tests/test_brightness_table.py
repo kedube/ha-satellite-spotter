@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import math
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -280,9 +281,9 @@ def test_written_table_carries_its_attribution(tmp_path: Path) -> None:
     text = path.read_text()
     assert text.startswith("# How bright")
     assert "2026-11-04" in text
-    # What MMT asks for.
+    # What MMT's team asks for.
     assert "Karpov et al. 2016" in text
-    assert "Mini-MegaTORTORA belongs to Kazan Federal University" in text
+    assert "Beskin et al. 2017" in text
     assert text.endswith('norad_id,magnitude,source,name\n1,2.50,mccants,"A, B"\n')
 
 
@@ -336,6 +337,12 @@ def _stages(launched: str) -> dict[int, dict[str, str]]:
 
 def test_a_rocket_stage_launched_since_takes_its_familys_median_from_the_list() -> None:
     result = _update(_stages("2027-01-01"), {1: 1.0, 2: 2.0, 3: 3.0}, {})
+    assert result[4] == (2.0, "family")
+
+
+def test_a_rocket_stage_catalogued_after_the_last_update_still_takes_its_familys_median() -> None:
+    """It can reach the catalogue days after its launch, and the table is updated every week."""
+    result = _update(_stages("2026-10-29"), {1: 1.0, 2: 2.0, 3: 3.0}, {})
     assert result[4] == (2.0, "family")
 
 
@@ -412,6 +419,114 @@ def test_the_update_command_rewrites_the_table(
     assert table.read_table(tmp_path / "out.csv") == {n: (1.5, "mmt") for n in range(1, 5)}
     assert "2026-01-01" not in (tmp_path / "out.csv").read_text()
     assert "0 objects added, 0 gone." in capsys.readouterr().out
+
+
+def test_an_update_with_nothing_new_leaves_the_table_and_its_date_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = _files(tmp_path, 4)
+    (tmp_path / "list.txt").write_text(
+        "# Catalogue Id Name StdMag_Clear_Median\n"
+        + "".join(f'NORAD {n} "SAT {n}" 2.0\n' for n in range(1, 5))
+    )
+    before = (tmp_path / "out.csv").read_bytes()
+    monkeypatch.setattr(sys, "argv", args)
+    table.main()
+    assert (tmp_path / "out.csv").read_bytes() == before
+    assert "Nothing has changed" in capsys.readouterr().out
+
+
+def test_the_update_says_how_far_the_values_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", _files(tmp_path, 4))
+    table.main()
+    assert "4 values changed, the largest by 0.50." in capsys.readouterr().out
+
+
+def test_a_list_that_moves_much_of_the_table_stops_the_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _files(tmp_path, 4)
+    (tmp_path / "list.txt").write_text(
+        "# Catalogue Id Name StdMag_Clear_Median\n"
+        + "".join(f'NORAD {n} "SAT {n}" 3.5\n' for n in range(1, 5))
+    )
+    before = (tmp_path / "out.csv").read_text()
+    monkeypatch.setattr(sys, "argv", args)
+    with pytest.raises(SystemExit, match="4 of 4 values would move"):
+        table.main()
+    assert (tmp_path / "out.csv").read_text() == before
+
+
+def _downloading(args: list[str]) -> list[str]:
+    """The same update, downloading MMT's list rather than reading it."""
+    at = args.index("--mmt")
+    return [*args[:at], "--download-mmt", *args[at + 2 :]]
+
+
+def test_the_list_is_downloaded_with_the_referer_mmts_team_gave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _files(tmp_path, 4)
+    answer = (tmp_path / "list.txt").read_bytes()
+    asked: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: Any) -> Any:
+        asked.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=answer)
+
+    monkeypatch.setattr(sys, "argv", _downloading(args))
+    with patch.object(table.subprocess, "run", run):
+        table.main()
+    assert len(asked) == 1, "CelesTrak's files came from disk here"
+    command = asked[0]
+    assert command[-1] == "http://mmt.favor2.info/satellites/download"
+    assert command[command.index("--referer") + 1] == "http://mmt.favor2.info"
+    assert "--fail" in command
+    assert table.USER_AGENT in command
+    assert table.read_table(tmp_path / "out.csv") == {n: (1.5, "mmt") for n in range(1, 5)}
+
+
+def test_a_refused_list_stops_before_celestrak_is_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _downloading(_files(tmp_path, 4))
+    # Without its files, the update would go on to download CelesTrak's.
+    args = args[: args.index("--satcat")] + args[args.index("--out") :]
+    before = (tmp_path / "out.csv").read_text()
+    failure = subprocess.CalledProcessError(22, "curl", stderr=b"curl: (22) error: 403")
+    monkeypatch.setattr(sys, "argv", args)
+    with (
+        patch.object(table.subprocess, "run", side_effect=failure) as run,
+        pytest.raises(SystemExit, match="no list from MMT: curl: \\(22\\) error: 403"),
+    ):
+        table.main()
+    assert run.call_count == 1
+    assert (tmp_path / "out.csv").read_text() == before
+
+
+def test_either_a_saved_list_or_a_download_but_not_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for argv in (["x", "--update"], ["x", "--update", "--download-mmt", "--mmt", "list.txt"]):
+        monkeypatch.setattr(sys, "argv", argv)
+        with pytest.raises(SystemExit):
+            table.main()
+        assert "--mmt" in capsys.readouterr().err
+
+
+def test_the_workflow_asks_about_once_a_week_and_only_from_this_repository() -> None:
+    """As MMT's team agreed. A fork's schedule would ask them as well."""
+    workflow = Path(__file__).parents[1] / ".github/workflows/brightness.yml"
+    text = workflow.read_text(encoding="utf-8")
+    crons = re.findall(r'cron: "([^"]+)"', text)
+    assert len(crons) == 1
+    minute, hour, day, month, weekday = crons[0].split()
+    assert minute.isdigit() and hour.isdigit() and weekday.isdigit()
+    assert day == month == "*"
+    assert "--update --download-mmt" in text
+    assert "github.repository == 'kedube/ha-satellite-spotter'" in text
 
 
 def test_the_update_stops_rather_than_lose_most_of_the_table(

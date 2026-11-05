@@ -47,17 +47,17 @@
       "init": {
         "title": "Welke overkomsten moeten worden gemeld?",
         "data": {
-          "max_magnitude": "Zwakste magnitude",
-          "cloud_cover": "Bewolkingsverwachting",
+          "brightness_cutoff": "Helderheidsgrens",
+          "cloud_forecast": "Wolkenverwachting",
           "alert_lead_minutes": "Vooraankondiging",
           "show_in_sidebar": "Satellite Spotter in de zijbalk tonen",
           "show_in_calendar": "Overkomsten in de agenda tonen",
           "units": "Eenheden"
         },
         "data_description": {
-          "max_magnitude": "Meld alleen overkomsten die minstens zo helder zijn. Lagere getallen zijn helderder: 2,25 is ongeveer het zwakste dat je vanuit een buitenwijk nog vindt; 1 houdt de makkelijke over, en onder 0 blijven alleen de verblindende.",
-          "cloud_cover": "Voegt aan elke overkomst de bewolkingsverwachting van Open-Meteo toe. Open-Meteo ontvangt daarvoor elke twee uur de coördinaten van deze locatie (op vier decimalen).",
-          "alert_lead_minutes": "De sensor \"Heldere overkomst binnenkort\" gaat zo lang voor het verschijnen van de helderste satelliet van een heldere overkomst aan.",
+          "brightness_cutoff": "Een overkomst wordt alleen getoond als die minstens zo helder wordt. De schaal loopt achterstevoren, dus een lager getal is helderder: 2,25 past bij de hemel boven een buitenwijk, 1 laat de makkelijke over, en onder 0 alleen de verblindende.",
+          "cloud_forecast": "Laat zien hoe bewolkt Open-Meteo het bij elke overkomst verwacht. Open-Meteo ontvangt daarvoor elk uur de coördinaten van deze locatie (op vier decimalen).",
+          "alert_lead_minutes": "De sensoren \"Zichtbare overkomst binnenkort\" en \"Heldere overkomst binnenkort\" gaan zo lang voor het verschijnen van de helderste satelliet van de overkomst aan.",
           "show_in_sidebar": "Voegt een Satellite Spotter-pagina toe aan de zijbalk met de overkomsten, een 3D-globe en een weergave van de hemel op straatniveau. De straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS (en van Esri met luchtfoto's). De dashboardkaarten werken hoe dan ook.",
           "show_in_calendar": "Voegt een agenda toe met de overkomsten van de komende vijf dagen, elk met wanneer en waar je moet kijken. Agenda-triggers kunnen dan vóór een overkomst automatiseringen starten.",
           "units": "Voor afstanden en snelheden op de globe en in de straatweergave. \"Automatisch\" volgt het eenhedenstelsel van Home Assistant."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satelliet zichtbaar"
+      "satellite_visible_now": {
+        "name": "Satelliet nu zichtbaar"
+      },
+      "visible_pass_soon": {
+        "name": "Zichtbare overkomst binnenkort"
       },
       "bright_pass_soon": {
         "name": "Heldere overkomst binnenkort"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Satellietoverkomsten"
+      "visible_passes": {
+        "name": "Zichtbare overkomsten"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Satellietpositie"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Volgende overkomst"
+      "next_visible_pass": {
+        "name": "Volgende zichtbare overkomst"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Maximale elevatie volgende zichtbare overkomst"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Helderheid volgende zichtbare overkomst"
+      },
+      "next_visible_pass_duration": {
+        "name": "Duur volgende zichtbare overkomst"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Bewolking volgende zichtbare overkomst"
+      },
+      "next_visible_satellite_name": {
+        "name": "Naam volgende zichtbare satelliet"
       },
       "next_bright_pass": {
         "name": "Volgende heldere overkomst"
       },
-      "passes_next_24h": {
-        "name": "Overkomsten komende 24 uur",
+      "satellite_elevation": {
+        "name": "Satellietelevatie"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Zichtbare overkomsten komende 24 uur",
         "unit_of_measurement": "overkomsten"
       },
-      "catalog_updated": {
-        "name": "Catalogus bijgewerkt"
+      "orbital_elements_epoch": {
+        "name": "Epoche van de baanelementen"
       }
     }
   },

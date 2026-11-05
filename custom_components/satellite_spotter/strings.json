@@ -5,7 +5,7 @@
     },
     "step": {
       "user": {
-        "title": "Where are you watching from?",
+        "title": "Choose where to observe from",
         "description": "Passes are predicted on your Home Assistant, from CelesTrak's orbital data for about 970 bright satellites. The location defaults to your home. Two things reveal it: the cloud cover forecast sends its coordinates to Open-Meteo (you can switch this off in the options), and the street view loads map tiles of the surrounding area from OpenFreeMap and AWS.",
         "data": {
           "name": "Name",
@@ -14,8 +14,8 @@
         },
         "data_description": {
           "name": "Used as the device name, for example \"Home\" or \"Cabin\".",
-          "location": "Where you watch the sky from.",
-          "elevation": "Height of the location in metres. A rough value is fine."
+          "location": "The spot you observe from.",
+          "elevation": "In metres above sea level. A rough value is fine."
         }
       },
       "reconfigure": {
@@ -26,8 +26,8 @@
           "elevation": "Elevation above sea level"
         },
         "data_description": {
-          "location": "Where you watch the sky from.",
-          "elevation": "Height of the location in metres. A rough value is fine."
+          "location": "The spot you observe from.",
+          "elevation": "In metres above sea level. A rough value is fine."
         }
       }
     },
@@ -47,17 +47,17 @@
       "init": {
         "title": "Which passes should be reported?",
         "data": {
-          "max_magnitude": "Faintest magnitude",
-          "cloud_cover": "Cloud cover forecast",
+          "brightness_cutoff": "Brightness cutoff",
+          "cloud_forecast": "Cloud forecast",
           "alert_lead_minutes": "Advance notice",
           "show_in_sidebar": "Show Satellite Spotter in the sidebar",
           "show_in_calendar": "Show the passes in the calendar",
           "units": "Units"
         },
         "data_description": {
-          "max_magnitude": "Only report passes at least this bright. Lower numbers are brighter: 2.25 is about the faintest you can find from a suburb; 1 keeps the easy ones, and below 0 only the dazzling ones remain.",
-          "cloud_cover": "Adds the Open-Meteo cloud cover forecast to each pass. Open-Meteo receives this location's coordinates (to four decimals) every two hours.",
-          "alert_lead_minutes": "The \"Bright pass soon\" sensor turns on this long before the brightest satellite of a bright pass appears.",
+          "brightness_cutoff": "A pass is listed only if it gets at least this bright. Magnitudes run backwards, so a lower number means brighter: 2.25 suits a suburban sky, 1 leaves the easy ones, and below 0 only the dazzling ones.",
+          "cloud_forecast": "Shows how cloudy Open-Meteo expects it to be at each pass. Open-Meteo receives this location's coordinates (to four decimals) every hour.",
+          "alert_lead_minutes": "The \"Visible pass soon\" and \"Bright pass soon\" sensors turn on this long before the brightest satellite of the pass appears.",
           "show_in_sidebar": "Adds a Satellite Spotter page to the sidebar with the passes, a 3D globe and a street-level view of the sky. The street view loads map tiles of the area around the location from OpenFreeMap and AWS (and from Esri with aerial imagery). The dashboard cards work either way.",
           "show_in_calendar": "Adds a calendar of the passes of the next five days, each with when and where to look. Calendar triggers can then start automations before a pass.",
           "units": "For distances and speeds on the globe and in the street view. \"Automatic\" follows Home Assistant's unit system."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satellite visible"
+      "satellite_visible_now": {
+        "name": "Satellite visible now"
+      },
+      "visible_pass_soon": {
+        "name": "Visible pass soon"
       },
       "bright_pass_soon": {
         "name": "Bright pass soon"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Satellite passes"
+      "visible_passes": {
+        "name": "Visible passes"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Satellite position"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Next pass"
+      "next_visible_pass": {
+        "name": "Next visible pass"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Next visible pass peak elevation"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Next visible pass brightness"
+      },
+      "next_visible_pass_duration": {
+        "name": "Next visible pass duration"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Next visible pass cloud cover"
+      },
+      "next_visible_satellite_name": {
+        "name": "Next visible satellite name"
       },
       "next_bright_pass": {
         "name": "Next bright pass"
       },
-      "passes_next_24h": {
-        "name": "Passes next 24 hours",
+      "satellite_elevation": {
+        "name": "Satellite elevation"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Visible passes next 24 hours",
         "unit_of_measurement": "passes"
       },
-      "catalog_updated": {
-        "name": "Catalog updated"
+      "orbital_elements_epoch": {
+        "name": "Orbital elements epoch"
       }
     }
   },

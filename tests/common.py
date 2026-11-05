@@ -1,54 +1,54 @@
-"""Shared test data and helpers (not collected as tests)."""
+"""What the tests share: the places, the moment, the catalog and a way to move the clock."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import csv
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 import io
 import json
 from pathlib import Path
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
-from custom_components.satellite_spotter.const import STORAGE_KEY
-from custom_components.satellite_spotter.predict import Satellite, read_catalog, write_catalog
+from custom_components.satellite_spotter.const import DOMAIN
+from custom_components.satellite_spotter.coordinator import ListedPass
+from custom_components.satellite_spotter.predict import (
+    Flyover,
+    Moment,
+    Satellite,
+    Sighting,
+    read_catalog,
+)
+from custom_components.satellite_spotter.track import SightingShape, SkyPoint
 from custom_components.satellite_spotter.weather import CloudForecast
 
-ROOT = Path(__file__).parents[1]
-FIXTURES = Path(__file__).parent / "fixtures"
-INTEGRATION = ROOT / "custom_components/satellite_spotter"
+ROOT = Path(__file__).resolve().parent.parent
+INTEGRATION = ROOT / "custom_components" / "satellite_spotter"
+_CATALOG_FIXTURE = Path(__file__).parent / "fixtures" / "catalog.json"
 
-# A small catalog: CelesTrak's elements of 22 objects, as read on 2026-11-04, with
-# magnitudes that are test values and do not follow brightness.csv, so a rebuilt table
-# does not move these tests.
-CATALOG_FILE = FIXTURES / "catalog.json"
+# The fixture's orbital elements date from just before this.
 NOW = datetime(2026, 11, 4, 15, 30, tzinfo=UTC)
-# 28 passes in five days, 10 of them bright, and a bright one first.
+
 HONOLULU = {CONF_LATITUDE: 21.3069, CONF_LONGITUDE: -157.8583, CONF_ELEVATION: 5.0}
-HONOLULU_ID = "21.3069_-157.8583"
-# 29 passes, 8 of them bright, and the first not until the next day.
 DENVER = {CONF_LATITUDE: 39.74, CONF_LONGITUDE: -104.99, CONF_ELEVATION: 1609.0}
-DENVER_ID = "39.7400_-104.9900"
-FIRST_PASS = "2026-11-04T15:33:28+00:00"
-FIRST_PASS_ID = "1793806408"
 
+# The first pass predicted for HONOLULU from NOW with the default settings: the moment it begins,
+# as Unix seconds. test_shared_helpers.py checks this against a fresh prediction.
+FIRST_PASS_ID = "1793806752"
 
-def catalog_json() -> list[dict[str, Any]]:
-    """The test catalog, as it is stored."""
-    return json.loads(CATALOG_FILE.read_text())
-
-
-def satellites() -> list[Satellite]:
-    """The test catalog, read."""
-    return read_catalog(catalog_json())
-
-
-# CelesTrak's columns, in its order.
-GP_COLUMNS = (
+# The columns of CelesTrak's CSV answers, in its order.
+_GP_COLUMNS = (
     "OBJECT_NAME",
     "OBJECT_ID",
     "EPOCH",
@@ -68,55 +68,189 @@ GP_COLUMNS = (
     "MEAN_MOTION_DDOT",
 )
 
+_HOUR_S = 3600
+# The mocked cloud forecast covers these hours, either side of NOW: the five days predicted, and
+# room for tests that let the clock run on past a refresh or two.
+_FORECAST_FROM = NOW - timedelta(days=1)
+_FORECAST_TO = NOW + timedelta(days=8)
 
-def gp_csv(entries: list[dict[str, Any]]) -> str:
-    """Orbital data as CelesTrak answers it when asked for CSV."""
+
+def satellites() -> list[Satellite]:
+    """Return a fresh list of the fixture's satellites."""
+    return read_catalog(json.loads(_CATALOG_FIXTURE.read_text(encoding="utf-8")))
+
+
+@lru_cache(maxsize=1)
+def _iss_elements() -> Mapping[str, str]:
+    return next(sat.elements for sat in satellites() if sat.norad_id == 25544)
+
+
+def gp_csv(entries: Iterable[Mapping[str, Any]]) -> str:
+    """Return the CSV CelesTrak answers with: a lacking field is 0, one beyond the set ignored."""
     out = io.StringIO()
-    writer = csv.DictWriter(out, GP_COLUMNS, extrasaction="ignore", restval="0")
+    writer = csv.DictWriter(
+        out, _GP_COLUMNS, restval="0", extrasaction="ignore", lineterminator="\n"
+    )
     writer.writeheader()
     writer.writerows(entries)
     return out.getvalue()
 
 
-async def add_location(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    """Add a location to Home Assistant, and wait until it has settled."""
-    entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(entry.entry_id)
+def cloud_percent(hour: int) -> int:
+    """Return the mocked forecast's value for the hour labelled with these Unix seconds.
+
+    It is the number of hours since the Unix epoch, modulo 101: a value that differs from each
+    hour to the next, and runs through 0 to 100.
+    """
+    return hour // _HOUR_S % 101
+
+
+def cloud_forecast() -> CloudForecast:
+    """Return the mocked forecast: ``cloud_percent`` for every hour around NOW."""
+    first = int(_FORECAST_FROM.timestamp()) // _HOUR_S * _HOUR_S
+    last = int(_FORECAST_TO.timestamp())
+    return CloudForecast({hour: cloud_percent(hour) for hour in range(first, last, _HOUR_S)})
+
+
+def forecast_of(passes: Iterable[ListedPass]) -> CloudForecast:
+    """Return the forecast that gives these passes the cloud cover they already have."""
+    return CloudForecast(
+        {
+            (int(p.start.timestamp()) // _HOUR_S + 1) * _HOUR_S: p.cloud_cover
+            for p in passes
+            if p.cloud_cover is not None
+        }
+    )
+
+
+async def set_options(
+    hass: HomeAssistant, entry: MockConfigEntry, options: Mapping[str, Any]
+) -> None:
+    """Change a location's options and reload it, as the options form does."""
+    hass.config_entries.async_update_entry(entry, options=dict(options))
+    await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
 
 
-def cloud_cover() -> CloudForecast:
-    """Hourly cloud cover from midnight on NOW's day, equal to the hour of the week."""
-    start = int(datetime(2026, 11, 4, tzinfo=UTC).timestamp())
-    return CloudForecast({start + 3600 * i: i % 100 for i in range(168)})
-
-
-def store_catalog(
-    hass_storage: dict[str, Any], updated: datetime, catalog: list[Satellite] | None = None
-) -> None:
-    """Leave a catalog in Home Assistant's storage, as a previous run would have."""
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {
-            "updated": updated.isoformat(),
-            "catalog": write_catalog(satellites() if catalog is None else catalog),
-        },
-    }
-
-
-def aged(catalog: list[Satellite], days: float) -> list[Satellite]:
-    """The catalog with every epoch moved back: the same orbits, older elements."""
-    for sat in catalog:
-        sat.epoch -= timedelta(days=days)
-        sat.elements = {**sat.elements, "EPOCH": sat.epoch.strftime("%Y-%m-%dT%H:%M:%S.%f")}
-    return catalog
-
-
 async def advance(hass: HomeAssistant, freezer: FrozenDateTimeFactory, when: datetime) -> None:
-    """Move the clock and run what falls due, including background refreshes."""
+    """Move the frozen clock to ``when``, and run everything that has fallen due, to the end."""
     freezer.move_to(when)
-    async_fire_time_changed(hass, when)
-    # Scheduled refreshes and setup retries run as background tasks; without
-    # waiting for them the tests race the predictions.
-    await hass.async_block_till_done(wait_background_tasks=True)
+    # Twice, as what runs the first time can set a timer for this very moment.
+    for _ in range(2):
+        async_fire_time_changed(hass, when)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def add_location(
+    hass: HomeAssistant,
+    data: Mapping[str, float] = HONOLULU,
+    *,
+    title: str = "Home",
+    options: Mapping[str, Any] | None = None,
+    disabled_by: ConfigEntryDisabler | None = None,
+    unique_id: str | None = None,
+) -> MockConfigEntry:
+    """Add a location to Home Assistant and set it up, unless it is disabled."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title=title,
+        data=dict(data),
+        options=dict(options or {}),
+        disabled_by=disabled_by,
+        unique_id=unique_id,
+    )
+    entry.add_to_hass(hass)
+    if disabled_by is None and entry.state is ConfigEntryState.NOT_LOADED:
+        await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+def with_epoch(sat: Satellite, epoch: datetime) -> Satellite:
+    """Return the satellite with its elements dated at a moment, also in their stored form."""
+    return replace(sat, epoch=epoch, elements={**sat.elements, "EPOCH": epoch.isoformat()})
+
+
+def aged(catalog: Iterable[Satellite], by: timedelta) -> list[Satellite]:
+    """Return the satellites with their elements' dates moved on (or back) by a time."""
+    return [with_epoch(sat, sat.epoch + by) for sat in catalog]
+
+
+def made_up_satellite(
+    name: str = "ISS",
+    norad_id: int = 25544,
+    *,
+    epoch: datetime = NOW - timedelta(days=1),
+    standard_magnitude: float | None = -1.0,
+) -> Satellite:
+    """Return a satellite by name and number, on the ISS's orbit."""
+    return Satellite(norad_id, name, standard_magnitude, None, _iss_elements(), epoch)
+
+
+def sighting(
+    start: datetime,
+    seconds: float = 300,
+    *,
+    name: str = "ISS",
+    norad_id: int = 25544,
+    peak_magnitude: float = -2.0,
+    sky_limit: float = 4.0,
+    sun_up: bool = False,
+    appears: tuple[float, float] = (270.0, 21.0),
+    best_view: tuple[float, float] = (315.0, 40.0),
+    disappears: tuple[float, float] = (45.0, 10.0),
+    epoch: datetime = NOW - timedelta(days=1),
+) -> Sighting:
+    """Return a sighting, by default of something bright: azimuths and elevations in degrees."""
+    end = start + timedelta(seconds=seconds)
+    return Sighting(
+        satellite=made_up_satellite(name, norad_id, epoch=epoch),
+        appears=Moment(start, *appears),
+        brightest=Moment(start + (end - start) / 2, *best_view),
+        vanishes=Moment(end, *disappears),
+        peak_magnitude=peak_magnitude,
+        sky_limit=sky_limit,
+        sun_up=sun_up,
+    )
+
+
+def listed(
+    *sightings: Sighting,
+    cloud_cover: int | None = None,
+    reasons: tuple[str, str] = ("rise", "set"),
+) -> ListedPass:
+    """Return the pass made of these sightings: each is highest where it is brightest."""
+    flyover = Flyover(list(sightings))
+    shapes = [
+        SightingShape(
+            SkyPoint(
+                sighting.brightest.time.timestamp(),
+                sighting.brightest.azimuth,
+                sighting.brightest.elevation,
+            ),
+            *reasons,
+        )
+        for sighting in flyover.sightings
+    ]
+    return ListedPass(
+        flyover.sightings,
+        id=str(int(flyover.start.timestamp())),
+        cloud_cover=cloud_cover,
+        shapes=shapes,
+        peak=max((shape.peak for shape in shapes), key=lambda peak: peak.elevation),
+    )
+
+
+def bright_pass(
+    start: datetime, seconds: float = 300, *, cloud_cover: int | None = None, **more: Any
+) -> ListedPass:
+    """Return a pass of one satellite that counts as bright: below 0.5, 3 clear of the sky."""
+    return listed(sighting(start, seconds, **more), cloud_cover=cloud_cover)
+
+
+def dim_pass(
+    start: datetime, seconds: float = 300, *, cloud_cover: int | None = None, **more: Any
+) -> ListedPass:
+    """Return a pass of one satellite too faint to count as bright."""
+    more.setdefault("peak_magnitude", 1.5)
+    return listed(sighting(start, seconds, **more), cloud_cover=cloud_cover)

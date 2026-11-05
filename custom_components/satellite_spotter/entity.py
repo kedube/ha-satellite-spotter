@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any, override
 
@@ -23,15 +22,15 @@ from .const import (
 )
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .links import about_url
-from .predict import Moment, Satellite
+from .predict import Satellite
 
 _KIND_BY_ID = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
 _ROCKET_WORDS = ("R/B", "PKM", "AKM")
-_WINDS = (
+_COMPASS_POINTS = (
     "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
 )  # fmt: skip
-_WIND_DEGREES = 360.0 / len(_WINDS)
+_DEGREES_PER_POINT = 360.0 / len(_COMPASS_POINTS)
 
 
 def satellite_kind(norad_id: int, name: str) -> str:
@@ -47,8 +46,9 @@ def satellite_kind(norad_id: int, name: str) -> str:
 
 
 def compass(azimuth: float) -> str:
-    """Return the nearest of the 16 winds; exactly halfway goes clockwise."""
-    return _WINDS[int((azimuth % 360.0 + _WIND_DEGREES / 2) // _WIND_DEGREES) % len(_WINDS)]
+    """Return the nearest of the 16 compass points; exactly halfway goes clockwise."""
+    index = int((azimuth % 360.0 + _DEGREES_PER_POINT / 2) // _DEGREES_PER_POINT)
+    return _COMPASS_POINTS[index % len(_COMPASS_POINTS)]
 
 
 def magnitude(value: float) -> float:
@@ -64,37 +64,65 @@ def confidence(when: datetime, sat: Satellite) -> str:
     return "medium" if days <= CONFIDENCE_MEDIUM_DAYS else "low"
 
 
-def _describe_moment(name: str, moment: Moment) -> dict[str, Any]:
+def local_time(when: datetime) -> datetime:
+    """Return a moment as attributes give it: local, to the second."""
+    return dt_util.as_local(when.replace(microsecond=0))
+
+
+def _point(name: str, when: datetime, azimuth: float, elevation: float) -> dict[str, Any]:
     return {
-        f"{name}_time": moment.time.isoformat(),
-        f"{name}_direction": compass(moment.azimuth),
-        f"{name}_azimuth": moment.azimuth,
-        f"{name}_elevation": moment.elevation,
+        name: local_time(when),
+        f"{name}_direction": compass(azimuth),
+        f"{name}_azimuth": azimuth,
+        f"{name}_elevation": elevation,
     }
 
 
-def describe_pass(p: ListedPass | None) -> dict[str, Any]:
-    """Return a pass's attributes, which automations and cards read; none without a pass."""
-    if p is None:
-        return {}
-    lead = p.lead
+def pass_attributes(p: ListedPass) -> dict[str, Any]:
+    """Describe a pass: its times and places are those of the brightest satellite it brings."""
+    lead, shape = p.lead, p.shapes[0]
+    sat = lead.satellite
+    highest = shape.peak
     return {
         "pass_id": p.id,
-        "object_name": lead.satellite.name,
-        "catalog_number": lead.satellite.norad_id,
-        "about_url": about_url(lead.satellite.norad_id),
-        "object_count": p.count,
-        "objects": [sighting.satellite.name for sighting in p.sightings[:MAX_GROUP_NAMES]],
-        "peak_magnitude": magnitude(p.peak_magnitude),
-        "is_bright": p.bright,
+        "satellite": sat.name,
+        "catalog_number": sat.norad_id,
+        "kind": satellite_kind(sat.norad_id, sat.name),
+        "about_url": about_url(sat.norad_id),
+        "satellite_count": p.count,
+        "satellites": [sighting.satellite.name for sighting in p.sightings[:MAX_GROUP_NAMES]],
+        **_point("start", lead.appears.time, lead.appears.azimuth, lead.appears.elevation),
+        **_point(
+            "peak",
+            dt_util.utc_from_timestamp(highest.time),
+            round(highest.azimuth, 1) % 360.0,
+            round(highest.elevation, 1),
+        ),
+        **_point("end", lead.vanishes.time, lead.vanishes.azimuth, lead.vanishes.elevation),
+        "duration_seconds": lead.duration,
+        "magnitude": magnitude(p.peak_magnitude),
+        "bright": p.bright,
         "sun_up": p.sun_up,
-        "cloud_percent": p.cloud_cover,
-        "begins": p.start.isoformat(),
-        "ends": p.end.isoformat(),
-        "length_seconds": p.duration,
-        **_describe_moment("appears", lead.appears),
-        **_describe_moment("best_view", lead.brightest),
-        **_describe_moment("disappears", lead.vanishes),
+        "cloud_cover": p.cloud_cover,
+        "appears_from_shadow": shape.start_reason == "shadow",
+        "disappears_into_shadow": shape.end_reason == "shadow",
+        "confidence": confidence(lead.appears.time, sat),
+    }
+
+
+def upcoming_pass(p: ListedPass) -> dict[str, Any]:
+    """Describe a whole pass in the list of what is coming, which goes with every state written."""
+    return {
+        "pass_id": p.id,
+        "satellite": p.title,
+        "start": local_time(p.start),
+        "end": local_time(p.end),
+        "peak_elevation": round(p.peak.elevation, 1),
+        "peak_direction": compass(p.peak.azimuth),
+        "duration_seconds": p.duration,
+        "magnitude": magnitude(p.peak_magnitude),
+        "bright": p.bright,
+        "cloud_cover": p.cloud_cover,
     }
 
 
@@ -105,7 +133,7 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
     _attr_attribution = ATTRIBUTION
 
     def __init__(self, coordinator: SatelliteSpotterCoordinator, key: str) -> None:
-        """Name the entity after its key: the keys are unique ids, and must not change."""
+        """Name the entity after its key."""
         super().__init__(coordinator)
         entry = coordinator.config_entry
         self._attr_translation_key = key
@@ -125,27 +153,14 @@ class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):
         )
 
 
-class PassEntity(SatelliteSpotterEntity):
-    """An entity following one pass, and describing it."""
+class LiveEntity(SatelliteSpotterEntity):
+    """An entity saying where the satellite of the pass under way, or the next, is right now.
 
-    _unrecorded_attributes = frozenset({"objects", "about_url"})
+    The ones that change without a pass beginning or ending.
+    """
 
-    def __init__(
-        self,
-        coordinator: SatelliteSpotterCoordinator,
-        key: str,
-        follow: Callable[[datetime], ListedPass | None],
-    ) -> None:
-        """Follow the pass that ``follow(now)`` finds."""
-        super().__init__(coordinator, key)
-        self._follow = follow
-
-    def followed(self) -> ListedPass | None:
-        """Return the pass followed just now."""
-        return self._follow(dt_util.utcnow())
-
-    @property
     @override
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Describe the pass followed."""
-        return describe_pass(self.followed())
+    async def async_added_to_hass(self) -> None:
+        """Follow the satellite."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_live_listener(self.async_write_ha_state))

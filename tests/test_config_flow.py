@@ -1,14 +1,14 @@
-"""Tests for the config, reconfigure and options flows."""
+"""Adding a location: every field, limit, error and abort of the form."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import logging
+import math
 from typing import Any
 from unittest.mock import AsyncMock
 
-from aiohttp import ClientError, RequestInfo, TooManyRedirects
-from freezegun.api import FrozenDateTimeFactory
-from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import (
     CONF_ELEVATION,
     CONF_LATITUDE,
@@ -17,589 +17,359 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType, InvalidData
-from homeassistant.helpers import config_validation as cv
-from multidict import CIMultiDict, CIMultiDictProxy
+from homeassistant.data_entry_flow import FlowResult, FlowResultType, InvalidData
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
-import voluptuous as vol
-from yarl import URL
 
 from custom_components.satellite_spotter.celestrak import CatalogError, DownloadRefused
-from custom_components.satellite_spotter.const import (
-    CATALOG_REFUSED_RETRY,
-    CONF_ALERT_LEAD_MINUTES,
-    CONF_CLOUD_COVER,
-    CONF_GOOGLE_API_KEY,
-    CONF_MAPILLARY_TOKEN,
-    CONF_MAX_MAGNITUDE,
-    CONF_SHOW_CALENDAR,
-    CONF_SHOW_PANEL,
-    CONF_STREET_SOURCE,
-    CONF_STREET_VIEW,
-    CONF_UNITS,
-    DOMAIN,
-)
-from custom_components.satellite_spotter.street import GOOGLE_SESSION_URL, MAPILLARY_IMAGES_URL
+from custom_components.satellite_spotter.const import DOMAIN
 
-from .common import NOW
-
-OPTIONS = {
-    CONF_MAX_MAGNITUDE: 1.5,
-    CONF_CLOUD_COVER: False,
-    CONF_ALERT_LEAD_MINUTES: 30,
-    CONF_SHOW_PANEL: False,
-    CONF_SHOW_CALENDAR: True,
-    CONF_UNITS: "metric",
-    CONF_STREET_VIEW: {CONF_STREET_SOURCE: "panoramax"},
-}
-GOOGLE_KEY = "AIzaSyTestKey0123456789"
-MAPILLARY_TOKEN = "MLY|1234567890|abcdef0123456789"
-
-pytestmark = pytest.mark.usefixtures("mock_setup_entry")
+from .common import HONOLULU
 
 
-def _user_input(lat: float = 42.36012345, lon: float = -71.0589) -> dict[str, Any]:
+def place(latitude: float, longitude: float, elevation: float = 5.0, name: str = "Home") -> Any:
     return {
-        CONF_NAME: "Backyard",
-        CONF_LOCATION: {CONF_LATITUDE: lat, CONF_LONGITUDE: lon},
-        CONF_ELEVATION: 12,
+        CONF_NAME: name,
+        CONF_LOCATION: {CONF_LATITUDE: latitude, CONF_LONGITUDE: longitude},
+        CONF_ELEVATION: elevation,
     }
 
 
-async def _add(hass: HomeAssistant, user_input: dict[str, Any]) -> dict[str, Any]:
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM
-    return await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
+def key_of(result: FlowResult, name: str) -> Any:
+    schema = result["data_schema"]
+    assert schema is not None
+    return next(key for key in schema.schema if key == name)
 
 
-async def test_user_flow(
-    hass: HomeAssistant,
-    mock_downloads: dict[str, AsyncMock],
-    mock_setup_entry: AsyncMock,
-) -> None:
-    """A location is set up once the catalog is reachable; it fetches the catalog for all."""
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+def default_of(result: FlowResult, name: str) -> Any:
+    return key_of(result, name).default()
+
+
+def suggested(result: FlowResult, name: str) -> Any:
+    return key_of(result, name).description["suggested_value"]
+
+
+async def start(hass: HomeAssistant) -> FlowResult:
+    return await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+
+
+async def submit(hass: HomeAssistant, user_input: dict[str, Any]) -> FlowResult:
+    flow = await start(hass)
+    return await hass.config_entries.flow.async_configure(flow["flow_id"], user_input)
+
+
+@pytest.fixture
+def fetch(mock_downloads: dict[str, AsyncMock]) -> Iterator[AsyncMock]:
+    yield mock_downloads["fetch_catalog"]
+
+
+# The form.
+
+
+async def test_the_form_starts_at_home(hass: HomeAssistant) -> None:
+    hass.config.latitude = 12.5
+    hass.config.longitude = -45.25
+    hass.config.elevation = 321
+    result = await start(hass)
     assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
     assert result["errors"] == {}
-    defaults = {str(key): key.default() for key in result["data_schema"].schema}
-    assert defaults[CONF_NAME] == "Home"
-    assert defaults[CONF_LOCATION] == {
-        CONF_LATITUDE: hass.config.latitude,
-        CONF_LONGITUDE: hass.config.longitude,
-    }
+    assert default_of(result, CONF_NAME) == "Home"
+    assert default_of(result, CONF_LOCATION) == {CONF_LATITUDE: 12.5, CONF_LONGITUDE: -45.25}
+    assert default_of(result, CONF_ELEVATION) == 321
 
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], _user_input())
-    await hass.async_block_till_done()
+
+async def test_the_form_asks_for_a_name_a_location_and_an_elevation(hass: HomeAssistant) -> None:
+    result = await start(hass)
+    schema = result["data_schema"]
+    assert schema is not None
+    assert {str(key) for key in schema.schema} == {CONF_NAME, CONF_LOCATION, CONF_ELEVATION}
+    assert all(key.__class__.__name__ == "Required" for key in schema.schema)
+
+
+async def test_the_location_picker_has_no_radius(hass: HomeAssistant) -> None:
+    result = await start(hass)
+    schema = result["data_schema"]
+    assert schema is not None
+    assert schema.schema[key_of(result, CONF_LOCATION)].config["radius"] is False
+
+
+async def test_the_elevation_box_is_in_metres_from_the_dead_sea_to_everest(
+    hass: HomeAssistant,
+) -> None:
+    result = await start(hass)
+    schema = result["data_schema"]
+    assert schema is not None
+    config = schema.schema[key_of(result, CONF_ELEVATION)].config
+    assert config["min"] == -450
+    assert config["max"] == 8900
+    assert config["step"] == 1
+    assert config["unit_of_measurement"] == "m"
+    assert config["mode"] == "box"
+
+
+# A good answer.
+
+
+async def test_a_location_is_created_with_its_name_place_and_elevation(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    result = await submit(hass, place(21.3069, -157.8583, 5.0, name="Cabin"))
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Backyard"
-    assert result["data"] == {
-        CONF_LATITUDE: 42.36012,
-        CONF_LONGITUDE: -71.0589,
-        CONF_ELEVATION: 12.0,
-    }
-    assert result["result"].unique_id == "42.3601_-71.0589"
-    mock_downloads["fetch_catalog"].assert_awaited_once()
-    assert mock_setup_entry.call_count == 1
+    assert result["title"] == "Cabin"
+    assert result["data"] == HONOLULU
+    entry = result["result"]
+    assert entry.unique_id == "21.3069_-157.8583"
+    assert entry.title == "Cabin"
+    assert (entry.version, entry.minor_version) == (1, 1)
+    fetch.assert_awaited_once()
+    await hass.async_block_till_done()
+
+
+async def test_a_second_location_shares_the_catalog_already_there(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    await submit(hass, place(21.3069, -157.8583))
+    await hass.async_block_till_done()
+    result = await submit(hass, place(39.74, -104.99, 1609.0, name="Cabin"))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    fetch.assert_awaited_once()
+
+
+@pytest.mark.parametrize("elevation", [-450, 8900, 0])
+async def test_elevations_at_the_limits_are_taken(
+    hass: HomeAssistant, fetch: AsyncMock, elevation: float
+) -> None:
+    result = await submit(hass, place(21.3, -157.8, elevation))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_ELEVATION] == elevation
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("elevation", [-451, 8901])
+async def test_elevations_past_the_limits_are_refused_by_the_form(
+    hass: HomeAssistant, fetch: AsyncMock, elevation: float
+) -> None:
+    with pytest.raises(InvalidData):
+        await submit(hass, place(21.3, -157.8, elevation))
+    fetch.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
-    ("side_effect", "error"),
-    [(CatalogError("boom"), "cannot_connect"), (RuntimeError("boom"), "unknown")],
+    ("latitude", "longitude", "stored_latitude", "stored_longitude"),
+    [
+        pytest.param(90.0, 0.0, 90.0, 0.0, id="the north pole"),
+        pytest.param(-90.0, 0.0, -90.0, 0.0, id="the south pole"),
+        pytest.param(0.0, 180.0, 0.0, 180.0, id="180 east stays"),
+        pytest.param(0.0, -180.0, 0.0, -180.0, id="180 west stays"),
+        pytest.param(0.0, 180.00001, 0.0, -179.99999, id="just past 180 wraps"),
+        pytest.param(0.0, -180.00001, 0.0, 179.99999, id="just past -180 wraps"),
+        pytest.param(0.0, 202.1417, 0.0, -157.8583, id="written 0 to 360"),
+        pytest.param(0.0, 360.0, 0.0, 0.0, id="a whole turn"),
+        pytest.param(0.0, -190.0, 0.0, 170.0, id="past west"),
+        pytest.param(90.000004, 0.0, 90.0, 0.0, id="rounds onto the pole"),
+        pytest.param(21.3069123, -157.8583456, 21.30691, -157.85835, id="rounded to five digits"),
+    ],
 )
-async def test_user_flow_errors(
+async def test_places_are_rounded_and_wrapped(
     hass: HomeAssistant,
-    mock_downloads: dict[str, AsyncMock],
-    side_effect: Exception,
-    error: str,
+    fetch: AsyncMock,
+    latitude: float,
+    longitude: float,
+    stored_latitude: float,
+    stored_longitude: float,
 ) -> None:
-    """Errors are shown, what was typed is kept, and the form can be sent again."""
-    mock_downloads["fetch_catalog"].side_effect = side_effect
-    result = await _add(hass, _user_input())
+    result = await submit(hass, place(latitude, longitude))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_LATITUDE] == stored_latitude
+    assert result["data"][CONF_LONGITUDE] == stored_longitude
+    await hass.async_block_till_done()
+
+
+async def test_numbers_given_as_text_are_read_as_numbers(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    flow = await start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            CONF_NAME: "Home",
+            CONF_LOCATION: {CONF_LATITUDE: "21.3", CONF_LONGITUDE: "-157.8", "radius": "5"},
+            CONF_ELEVATION: 5,
+        },
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_LATITUDE] == 21.3
+    await hass.async_block_till_done()
+
+
+# A bad answer.
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [
+        pytest.param(90.00001, 0.0, id="just over the north pole"),
+        pytest.param(-90.00001, 0.0, id="just over the south pole"),
+        pytest.param(91.0, 0.0, id="latitude 91"),
+        pytest.param(math.nan, 0.0, id="latitude not a number"),
+        pytest.param(0.0, math.nan, id="longitude not a number"),
+        pytest.param(math.inf, 0.0, id="latitude infinite"),
+        pytest.param(0.0, math.inf, id="longitude infinite"),
+        pytest.param(0.0, -math.inf, id="longitude minus infinity"),
+    ],
+)
+async def test_a_place_that_makes_no_sense_is_explained_on_the_location_field(
+    hass: HomeAssistant, fetch: AsyncMock, latitude: float, longitude: float
+) -> None:
+    result = await submit(hass, place(latitude, longitude))
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert result["errors"] == {CONF_LOCATION: "invalid_location"}
+    fetch.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        pytest.param({CONF_LATITUDE: 1.0}, id="no longitude"),
+        pytest.param({CONF_LONGITUDE: 1.0}, id="no latitude"),
+        pytest.param({CONF_LATITUDE: "north", CONF_LONGITUDE: 1.0}, id="no number"),
+    ],
+)
+async def test_the_location_field_needs_two_numbers(
+    hass: HomeAssistant, fetch: AsyncMock, location: dict[str, Any]
+) -> None:
+    flow = await start(hass)
+    with pytest.raises(InvalidData):
+        await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {CONF_NAME: "Home", CONF_LOCATION: location, CONF_ELEVATION: 5}
+        )
+
+
+async def test_what_was_typed_stays_in_the_form_after_an_error(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    result = await submit(hass, place(91.0, 12.0, 77.0, name="Cabin"))
+    assert suggested(result, CONF_NAME) == "Cabin"
+    assert suggested(result, CONF_ELEVATION) == 77.0
+    assert suggested(result, CONF_LOCATION) == {CONF_LATITUDE: 91.0, CONF_LONGITUDE: 12.0}
+
+
+@pytest.mark.parametrize(
+    ("failure", "error"),
+    [
+        (DownloadRefused("HTTP 403"), "download_limited"),
+        (CatalogError("no route"), "cannot_connect"),
+        (RuntimeError("surprise"), "unknown"),
+    ],
+)
+async def test_a_catalog_that_cannot_be_had_is_explained_and_nothing_is_created(
+    hass: HomeAssistant, fetch: AsyncMock, failure: Exception, error: str
+) -> None:
+    fetch.side_effect = failure
+    result = await submit(hass, place(21.3069, -157.8583, name="Cabin"))
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": error}
-    suggested = {
-        str(key): key.description["suggested_value"]
-        for key in result["data_schema"].schema
-        if key.description and "suggested_value" in key.description
-    }
-    assert suggested[CONF_NAME] == "Backyard"
-
-    mock_downloads["fetch_catalog"].side_effect = None
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], _user_input())
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert suggested(result, CONF_NAME) == "Cabin"
+    assert not hass.config_entries.async_entries(DOMAIN)
 
 
-async def test_user_flow_keeps_to_a_refusal(
-    hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
-    mock_downloads: dict[str, AsyncMock],
-    mock_setup_entry: AsyncMock,
+async def test_only_an_unexpected_error_goes_to_the_log_with_its_traceback(
+    hass: HomeAssistant, fetch: AsyncMock, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Sending the form again does not ask CelesTrak again while it is refusing."""
-    freezer.move_to(NOW)
-    fetch = mock_downloads["fetch_catalog"]
-    fetch.side_effect = DownloadRefused("CelesTrak answered 403")
-    result = await _add(hass, _user_input())
-    assert result["errors"] == {"base": "download_limited"}
+    fetch.side_effect = RuntimeError("surprise")
+    await submit(hass, place(21.3069, -157.8583))
+    records = [r for r in caplog.records if "Unexpected error" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert records[0].exc_info is not None
 
-    flow_id = result["flow_id"]
-    result = await hass.config_entries.flow.async_configure(flow_id, _user_input())
-    assert result["errors"] == {"base": "download_limited"}
-    assert fetch.await_count == 1
+
+async def test_submitting_again_after_a_failed_download_tries_at_once(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    # catalog.py: "retry_now cuts short the wait after a failed download".
+    fetch.side_effect = CatalogError("no route")
+    flow = await start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], place(21.3069, -157.8583)
+    )
+    assert result["errors"] == {"base": "cannot_connect"}
 
     fetch.side_effect = None
-    freezer.move_to(NOW + CATALOG_REFUSED_RETRY)
-    result = await hass.config_entries.flow.async_configure(flow_id, _user_input())
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], place(21.3069, -157.8583)
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert fetch.await_count == 2
-
-
-async def test_catalog_shared_between_flows(
-    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
-) -> None:
-    """Adding another location reuses the catalog instead of downloading it again."""
-    for latitude in (52.0, 60.0):
-        result = await _add(hass, _user_input(lat=latitude))
-        assert result["type"] is FlowResultType.CREATE_ENTRY
-    mock_downloads["fetch_catalog"].assert_awaited_once()
-
-
-async def test_duplicate_location_aborts(
-    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
-) -> None:
-    """The same place (to about 10 m) can only be added once, without asking CelesTrak."""
-    MockConfigEntry(domain=DOMAIN, unique_id="42.3601_-71.0589").add_to_hass(hass)
-    result = await _add(hass, _user_input(42.36011, -71.05894))
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-    mock_downloads["fetch_catalog"].assert_not_awaited()
-
-
-@pytest.mark.usefixtures("mock_downloads")
-@pytest.mark.parametrize("latitude", [423.601, -95.0, 90.0001, float("nan")])
-async def test_out_of_range_latitude_is_refused(hass: HomeAssistant, latitude: float) -> None:
-    result = await _add(hass, _user_input(lat=latitude))
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {CONF_LOCATION: "invalid_location"}
-    # What was typed is kept, so only the location needs correcting.
-    suggested = {
-        str(key): key.description["suggested_value"]
-        for key in result["data_schema"].schema
-        if key.description and "suggested_value" in key.description
-    }
-    assert suggested[CONF_NAME] == "Backyard"
-    assert suggested[CONF_ELEVATION] == 12
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _user_input(lat=42.36)
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_LATITUDE] == 42.36
-
-
-@pytest.mark.usefixtures("mock_downloads")
-@pytest.mark.parametrize(
-    ("longitude", "expected"),
-    [(288.94, -71.06), (-431.06, -71.06), (180.0, 180.0), (-180.0, -180.0), (179.99999, 179.99999)],
-)
-async def test_longitude_is_normalised(
-    hass: HomeAssistant, longitude: float, expected: float
-) -> None:
-    result = await _add(hass, _user_input(lon=longitude))
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_LONGITUDE] == expected
-    assert result["result"].unique_id == f"42.3601_{expected:.4f}"
-
-
-@pytest.mark.usefixtures("mock_downloads")
-@pytest.mark.parametrize("longitude", [288.94, -431.06])
-async def test_wrapped_longitude_is_a_duplicate(hass: HomeAssistant, longitude: float) -> None:
-    MockConfigEntry(domain=DOMAIN, unique_id="42.3601_-71.0600").add_to_hass(hass)
-    result = await _add(hass, _user_input(lon=longitude))
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-
-
-async def test_location_field_leaves_the_range_to_the_flow(hass: HomeAssistant) -> None:
-    """The form shows Home Assistant's location picker, which lets any number through.
-
-    Since Home Assistant 2026.11 its own selector refuses what the flow wraps or explains.
-    """
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    location = next(
-        value for key, value in result["data_schema"].schema.items() if key == CONF_LOCATION
-    )
-    assert cv.custom_serializer(location) == {"selector": {"location": {"radius": False}}}
-    assert location({CONF_LATITUDE: "423.601", CONF_LONGITUDE: 288.94}) == {
-        CONF_LATITUDE: 423.601,
-        CONF_LONGITUDE: 288.94,
-    }
-
-
-def _reconfigure_input(lat: float, lon: float, elevation: float = 40) -> dict[str, Any]:
-    return {CONF_LOCATION: {CONF_LATITUDE: lat, CONF_LONGITUDE: lon}, CONF_ELEVATION: elevation}
-
-
-async def test_reconfigure_moves_the_location(
-    hass: HomeAssistant, mock_setup_entry: AsyncMock
-) -> None:
-    """Correcting the coordinates keeps the entry, so cards bound to it keep working."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        title="Backyard",
-        data={CONF_LATITUDE: 42.36, CONF_LONGITUDE: -71.06, CONF_ELEVATION: 12.0},
-        unique_id="42.3600_-71.0600",
-    )
-    entry.add_to_hass(hass)
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
-    )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "reconfigure"
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _reconfigure_input(95, -71.06)
-    )
-    assert result["errors"] == {CONF_LOCATION: "invalid_location"}
-
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _reconfigure_input(42.35, 288.95)
-    )
     await hass.async_block_till_done()
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
-    assert entry.data == {CONF_LATITUDE: 42.35, CONF_LONGITUDE: -71.05, CONF_ELEVATION: 40.0}
-    assert entry.unique_id == "42.3500_-71.0500"
-    assert entry.title == "Backyard"
-    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
-    # Not loaded, so nothing else would pick the change up: it is set up now.
-    assert mock_setup_entry.call_count == 1
 
 
-async def test_reconfigure_keeps_the_place_or_refuses_a_duplicate(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={CONF_LATITUDE: 42.36, CONF_LONGITUDE: -71.06, CONF_ELEVATION: 12.0},
-        unique_id="42.3600_-71.0600",
-    )
-    entry.add_to_hass(hass)
-    MockConfigEntry(domain=DOMAIN, unique_id="51.5000_-0.1200").add_to_hass(hass)
-
-    # Only the elevation changes: the location is still its own.
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _reconfigure_input(42.36, -71.06, 15)
-    )
-    await hass.async_block_till_done()
-    assert result["reason"] == "reconfigure_successful"
-    assert entry.data[CONF_ELEVATION] == 15.0
-
-    # Moving onto another location is refused.
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
-    )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], _reconfigure_input(51.5, -0.12)
-    )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
-    assert entry.unique_id == "42.3600_-71.0600"
-
-
-def _defaults(schema: Any) -> dict[str, Any]:
-    """The defaults a form offers, the street view section's included."""
-    out: dict[str, Any] = {}
-    for key, value in schema.schema.items():
-        if str(key) == CONF_STREET_VIEW:
-            out[str(key)] = {
-                str(k): k.default() for k in value.schema.schema if k.default is not vol.UNDEFINED
-            }
-        else:
-            out[str(key)] = key.default()
-    return out
-
-
-def _suggested(schema: Any) -> dict[str, Any]:
-    """The street view section's suggested values (what the form shows as typed)."""
-    (section_key,) = [k for k in schema.schema if str(k) == CONF_STREET_VIEW]
-    return {
-        str(k): (k.description or {}).get("suggested_value")
-        for k in schema.schema[section_key].schema.schema
-    }
-
-
-async def _options(hass: HomeAssistant, entry: MockConfigEntry, **street: Any) -> dict[str, Any]:
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    return await hass.config_entries.options.async_configure(
-        result["flow_id"], {**OPTIONS, CONF_STREET_VIEW: street}
-    )
-
-
-async def test_faintest_magnitude_moves_in_quarters(hass: HomeAssistant) -> None:
-    """The default is 2.25."""
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    schema = result["data_schema"].schema
-    assert next(v for k, v in schema.items() if str(k) == CONF_MAX_MAGNITUDE).config["step"] == 0.25
-
-
-async def test_options_flow(hass: HomeAssistant) -> None:
-    """The options are stored on the entry; the form offers the current ones."""
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.FORM
-    assert _defaults(result["data_schema"]) == {
-        CONF_MAX_MAGNITUDE: 2.25,
-        CONF_CLOUD_COVER: True,
-        CONF_ALERT_LEAD_MINUTES: 15,
-        CONF_SHOW_PANEL: True,
-        CONF_SHOW_CALENDAR: True,
-        CONF_UNITS: "auto",
-        CONF_STREET_VIEW: {CONF_STREET_SOURCE: "auto"},
-    }
-
-    result = await hass.config_entries.options.async_configure(result["flow_id"], OPTIONS)
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == OPTIONS
-
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert _defaults(result["data_schema"]) == OPTIONS
-
-
-async def test_street_keys_are_tried_kept_and_removed(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    """New keys are tried once (not with the location), kept trimmed, offered again, removable."""
-    aioclient_mock.post(GOOGLE_SESSION_URL, json={"session": "s", "expiry": "1"})
-    aioclient_mock.get(MAPILLARY_IMAGES_URL, json={"data": []})
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 52.09, CONF_LONGITUDE: 5.12})
-    entry.add_to_hass(hass)
-    result = await _options(
-        hass,
-        entry,
-        **{
-            CONF_STREET_SOURCE: "google",
-            CONF_GOOGLE_API_KEY: f"  {GOOGLE_KEY} ",
-            CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-        },
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_STREET_VIEW] == {
-        CONF_STREET_SOURCE: "google",
-        CONF_GOOGLE_API_KEY: GOOGLE_KEY,
-        CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-    }
-    assert aioclient_mock.call_count == 2
-    (google,) = [c for c in aioclient_mock.mock_calls if c[0] == "POST"]
-    assert google[1].query["key"] == GOOGLE_KEY
-    assert google[2]["mapType"] == "streetview"
-    (mapillary,) = [c for c in aioclient_mock.mock_calls if c[0] == "GET"]
-    assert mapillary[1].query["access_token"] == MAPILLARY_TOKEN
-    for call in aioclient_mock.mock_calls:
-        assert "52.09" not in str(call[1]) and "52.09" not in str(call[2])
-
-    # Offered again; saving them unchanged does not ask again.
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert _suggested(result["data_schema"]) == {
-        CONF_STREET_SOURCE: "google",
-        CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-        CONF_GOOGLE_API_KEY: GOOGLE_KEY,
-    }
-    await _options(
-        hass,
-        entry,
-        **{
-            CONF_STREET_SOURCE: "auto",
-            CONF_GOOGLE_API_KEY: GOOGLE_KEY,
-            CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-        },
-    )
-    assert aioclient_mock.call_count == 2
-
-    # Emptied (or left out), a key is gone.
-    await _options(hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_GOOGLE_API_KEY: " "})
-    assert entry.options[CONF_STREET_VIEW] == {CONF_STREET_SOURCE: "auto"}
+# The same place twice.
 
 
 @pytest.mark.parametrize(
-    ("source", "error"),
-    [("google", "google_key_needed"), ("mapillary", "mapillary_token_needed")],
-)
-async def test_street_source_needs_its_key(hass: HomeAssistant, source: str, error: str) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await _options(hass, entry, **{CONF_STREET_SOURCE: source})
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": error}
-    # What was typed stays in the form.
-    assert _suggested(result["data_schema"])[CONF_STREET_SOURCE] == source
-    assert entry.options == {}
-
-
-async def test_refused_keys_are_explained(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    aioclient_mock.post(
-        GOOGLE_SESSION_URL,
-        status=400,
-        json={
-            "error": {
-                "code": 400,
-                "message": "API key not valid. Please pass a valid API key.",
-                "status": "INVALID_ARGUMENT",
-                "details": [{"reason": "API_KEY_INVALID", "domain": "googleapis.com"}],
-            }
-        },
-    )
-    aioclient_mock.get(
-        MAPILLARY_IMAGES_URL,
-        status=401,
-        json={"error": {"message": "Invalid OAuth access token", "type": "OAuthException"}},
-    )
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await _options(
-        hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_GOOGLE_API_KEY: GOOGLE_KEY}
-    )
-    assert result["errors"] == {"base": "google_refused"}
-    assert (
-        result["description_placeholders"]["error"]
-        == "API key not valid. Please pass a valid API key."
-    )
-    result = await _options(
-        hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN}
-    )
-    assert result["errors"] == {"base": "mapillary_refused"}
-    assert result["description_placeholders"]["error"] == "Invalid OAuth access token"
-    assert entry.options == {}
-
-
-async def test_mapillary_says_a_bad_token_with_a_code(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    """Code 190 is a token Mapillary does not take, even sent as a server error."""
-    aioclient_mock.get(
-        MAPILLARY_IMAGES_URL,
-        status=500,
-        json={"error": {"message": "Invalid OAuth 2.0 Access Token", "code": 190}},
-    )
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await _options(
-        hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN}
-    )
-    assert result["errors"] == {"base": "mapillary_refused"}
-    # A token that is not one is caught before Mapillary is asked (it answers those as if down).
-    result = await _options(
-        hass, entry, **{CONF_STREET_SOURCE: "auto", CONF_MAPILLARY_TOKEN: "pk.eyJ1Ijoi"}
-    )
-    assert result["errors"] == {"base": "mapillary_token_format"}
-    assert aioclient_mock.call_count == 1
-
-
-REFERRER_BLOCKED = {
-    "status": 403,
-    "json": {
-        "error": {
-            "code": 403,
-            "message": "Requests from referer <empty> are blocked.",
-            "details": [{"reason": "API_KEY_HTTP_REFERRER_BLOCKED"}],
-        }
-    },
-}
-
-
-@pytest.mark.parametrize(
-    ("google", "mapillary"),
+    ("latitude", "longitude"),
     [
-        # Restricted to the browser's address: only the browser can use it.
-        (REFERRER_BLOCKED, {"json": {"data": []}}),
-        ({"status": 503, "text": "Service Unavailable"}, {"status": 500, "text": "Oops"}),
-        ({"status": 429, "json": {}}, {"status": 429, "json": {}}),
-        ({"exc": ClientError("offline")}, {"exc": ClientError("offline")}),
-        ({"exc": TimeoutError()}, {"exc": TimeoutError()}),
+        pytest.param(21.3069, -157.8583, id="the same"),
+        pytest.param(21.30691, -157.85834, id="within ten metres"),
+        pytest.param(21.30686, -157.85826, id="within ten metres, the other way"),
+        pytest.param(21.3069, 202.1417, id="written 0 to 360"),
     ],
 )
-async def test_keys_that_cannot_be_told_are_kept(
-    hass: HomeAssistant,
-    aioclient_mock: AiohttpClientMocker,
-    google: dict[str, Any],
-    mapillary: dict[str, Any],
+async def test_the_same_place_is_refused_without_asking_for_anything(
+    hass: HomeAssistant, fetch: AsyncMock, latitude: float, longitude: float
 ) -> None:
-    aioclient_mock.post(GOOGLE_SESSION_URL, **google)
-    aioclient_mock.get(MAPILLARY_IMAGES_URL, **mapillary)
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await _options(
-        hass,
-        entry,
-        **{
-            CONF_STREET_SOURCE: "google",
-            CONF_GOOGLE_API_KEY: GOOGLE_KEY,
-            CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-        },
+    MockConfigEntry(domain=DOMAIN, data=dict(HONOLULU), unique_id="21.3069_-157.8583").add_to_hass(
+        hass
     )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options[CONF_STREET_VIEW][CONF_GOOGLE_API_KEY] == GOOGLE_KEY
-    assert entry.options[CONF_STREET_VIEW][CONF_MAPILLARY_TOKEN] == MAPILLARY_TOKEN
-
-
-def _redirected(url: URL) -> TooManyRedirects:
-    """What aiohttp raises for a redirect loop (a captive portal's, say): its text holds the URL."""
-    info = RequestInfo(url, "GET", CIMultiDictProxy(CIMultiDict()), url)
-    return TooManyRedirects(info, ())
-
-
-async def test_trying_keys_keeps_them_out_of_the_log(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, caplog: pytest.LogCaptureFixture
-) -> None:
-    """An error naming the request's URL is logged without its query, where the key is."""
-    caplog.set_level(logging.DEBUG, logger="custom_components.satellite_spotter")
-    google = URL(GOOGLE_SESSION_URL).with_query(key=GOOGLE_KEY)
-    mapillary = URL(MAPILLARY_IMAGES_URL).with_query(access_token=MAPILLARY_TOKEN, fields="id")
-    assert GOOGLE_KEY in str(_redirected(google))
-    aioclient_mock.post(GOOGLE_SESSION_URL, exc=_redirected(google))
-    aioclient_mock.get(MAPILLARY_IMAGES_URL, exc=_redirected(mapillary))
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await _options(
-        hass,
-        entry,
-        **{
-            CONF_STREET_SOURCE: "auto",
-            CONF_GOOGLE_API_KEY: GOOGLE_KEY,
-            CONF_MAPILLARY_TOKEN: MAPILLARY_TOKEN,
-        },
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    # Each URL is logged, its query gone.
-    assert f"url='{GOOGLE_SESSION_URL}'" in caplog.text
-    assert f"url='{MAPILLARY_IMAGES_URL}'" in caplog.text
-    # The token's secret part, however it is encoded.
-    for secret in (GOOGLE_KEY, MAPILLARY_TOKEN.rsplit("|", 1)[1]):
-        assert secret not in caplog.text
+    result = await submit(hass, place(latitude, longitude))
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    fetch.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
-    "bad",
+    ("latitude", "longitude"),
     [
-        {CONF_UNITS: "nautical"},
-        {CONF_MAX_MAGNITUDE: 4.5},
-        {CONF_MAX_MAGNITUDE: -2.5},
-        {CONF_ALERT_LEAD_MINUTES: 0},
-        {CONF_ALERT_LEAD_MINUTES: 241},
-        {CONF_STREET_VIEW: {CONF_STREET_SOURCE: "bing"}},
+        pytest.param(21.30695, -157.8583, id="north at the fourth decimal"),
+        pytest.param(21.3069, -157.85825, id="east at the fourth decimal"),
     ],
 )
-async def test_options_out_of_range(hass: HomeAssistant, bad: dict[str, Any]) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_LATITUDE: 1, CONF_LONGITUDE: 2})
-    entry.add_to_hass(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    with pytest.raises(InvalidData):
-        await hass.config_entries.options.async_configure(result["flow_id"], {**OPTIONS, **bad})
+async def test_a_place_over_ten_metres_away_is_another_place(
+    hass: HomeAssistant, fetch: AsyncMock, latitude: float, longitude: float
+) -> None:
+    MockConfigEntry(domain=DOMAIN, data=dict(HONOLULU), unique_id="21.3069_-157.8583").add_to_hass(
+        hass
+    )
+    result = await submit(hass, place(latitude, longitude))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude", "unique_id"),
+    [
+        (-0.00001, -0.00001, "0.0000_0.0000"),
+        (0.00001, 0.00001, "0.0000_0.0000"),
+        (0.0, 0.0, "0.0000_0.0000"),
+        (21.3, -157.8, "21.3000_-157.8000"),
+        (-33.86, 151.2, "-33.8600_151.2000"),
+    ],
+)
+async def test_the_unique_id_is_four_decimals_and_never_negative_zero(
+    hass: HomeAssistant, fetch: AsyncMock, latitude: float, longitude: float, unique_id: str
+) -> None:
+    result = await submit(hass, place(latitude, longitude))
+    assert result["result"].unique_id == unique_id
+    await hass.async_block_till_done()
+
+
+async def test_either_side_of_zero_is_the_same_place(hass: HomeAssistant, fetch: AsyncMock) -> None:
+    await submit(hass, place(0.00001, 0.00001))
+    await hass.async_block_till_done()
+    result = await submit(hass, place(-0.00001, -0.00001))
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"

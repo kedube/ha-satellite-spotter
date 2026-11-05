@@ -60,7 +60,7 @@ function makeHass({ passes = PASSES, payload = {}, panel = true, fail = null, se
           generated_at: Date.now() / 1000, server_time: Date.now() / 1000 + serverAheadS, computed_at: BOSTON_NOW,
           paused: null, paused_days: null, paused_error: null,
           location: { entry_id: msg.entry_id ?? "home", title: "Home", latitude: 42.36, longitude: -71.06, elevation: 10 },
-          settings: { max_magnitude: 3, cloud_cover: true, alert_lead_minutes: 15, units: "auto", days: 5, min_elevation: 10 },
+          settings: { units: "auto", days: 5, min_elevation: 10 },
           catalog: { updated: BOSTON_NOW - 3600, version: 3, satellites: 893, median_epoch_age_days: 1.4 },
           passes, ...payload,
         };

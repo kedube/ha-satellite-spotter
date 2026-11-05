@@ -154,6 +154,16 @@ test("the sky's colour follows sat-astro's, plus the town's glow and the haze be
   assert.equal(skyModel({ azimuth: 0, elevation: -1 }, { lightPollution: "city" }).dome, 0);
 });
 
+test("the sky is painted again once the Sun has moved a quarter of a degree, not before", () => {
+  const key = (azimuth, elevation) => skyModel({ azimuth, elevation }).key;
+  const painted = key(120, 30);
+  assert.equal(key(120.1, 30.1), painted);
+  assert.notEqual(key(120.2, 30), painted);
+  assert.notEqual(key(120, 30.2), painted);
+  // The colours it is painted with are the Sun's own, however the key is rounded.
+  assert.equal(skyModel({ azimuth: 120.1, elevation: 30.1 }).sunElevation, 30.1);
+});
+
 test("how faint a star can be: twilight, the Moon, light pollution and the air", () => {
   assert.equal(limitingMagnitude(-30, { lightPollution: "rural" }), 6);
   assert.equal(limitingMagnitude(-30, { lightPollution: "suburban" }), LIGHT_POLLUTION.suburban.limit);

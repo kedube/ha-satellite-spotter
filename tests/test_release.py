@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import io
 import json
@@ -157,6 +158,13 @@ def test_the_package_is_what_hacs_installs(tmp_path: Path) -> None:
         # Already compressed files are stored, the rest deflated.
         infos = {info.filename: info for info in zf.infolist()}
         assert infos["brand/icon.png"].compress_type == zipfile.ZIP_STORED
+        # The page's own files come compressed too, for browsers that accept that.
+        for module in ("frontend/sat-card.js", "frontend/translations/en.js"):
+            assert gzip.decompress(zf.read(f"{module}.gz")) == zf.read(module)
+            assert infos[f"{module}.gz"].compress_type == zipfile.ZIP_STORED
+        # Python and what never changes stay as they are.
+        assert "__init__.py.gz" not in names
+        assert "frontend/img/black-marble-2016-2048.jpg.gz" not in names
         assert infos["__init__.py"].compress_type == zipfile.ZIP_DEFLATED
     # The same files make the same zip, whenever it is built.
     again = tmp_path / "again.zip"

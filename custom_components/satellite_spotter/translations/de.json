@@ -47,17 +47,17 @@
       "init": {
         "title": "Welche Überflüge sollen gemeldet werden?",
         "data": {
-          "max_magnitude": "Schwächste Helligkeit",
-          "cloud_cover": "Bewölkungsvorhersage",
+          "brightness_cutoff": "Helligkeitsgrenze",
+          "cloud_forecast": "Wolkenvorhersage",
           "alert_lead_minutes": "Vorwarnzeit",
           "show_in_sidebar": "Satellite Spotter in der Seitenleiste anzeigen",
           "show_in_calendar": "Überflüge im Kalender anzeigen",
           "units": "Einheiten"
         },
         "data_description": {
-          "max_magnitude": "Nur Überflüge melden, die mindestens so hell sind. Kleinere Zahlen sind heller: 2,25 ist etwa das Schwächste, was man in einem Vorort noch findet; 1 lässt die leicht sichtbaren übrig, unter 0 bleiben nur die strahlend hellen.",
-          "cloud_cover": "Ergänzt jeden Überflug um die Bewölkungsvorhersage von Open-Meteo. Open-Meteo erhält dafür alle zwei Stunden die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
-          "alert_lead_minutes": "Der Sensor „Heller Überflug in Kürze“ schaltet sich so lange vor dem Erscheinen des hellsten Satelliten eines hellen Überflugs ein.",
+          "brightness_cutoff": "Ein Überflug wird nur aufgeführt, wenn er mindestens so hell wird. Die Skala läuft rückwärts, kleinere Zahlen sind also heller: 2,25 passt zum Himmel eines Vororts, 1 lässt die leichten übrig, unter 0 bleiben nur die strahlend hellen.",
+          "cloud_forecast": "Zeigt, wie bewölkt es laut Open-Meteo bei jedem Überflug sein wird. Open-Meteo erhält dafür jede Stunde die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
+          "alert_lead_minutes": "Die Sensoren „Sichtbarer Überflug in Kürze“ und „Heller Überflug in Kürze“ schalten sich so lange vor dem Erscheinen des hellsten Satelliten des Überflugs ein.",
           "show_in_sidebar": "Fügt der Seitenleiste eine Satellite-Spotter-Seite mit den Überflügen, einem 3D-Globus und einer Ansicht des Himmels auf Straßenhöhe hinzu. Die Straßenansicht lädt Kartenkacheln der Umgebung des Standorts von OpenFreeMap und AWS (mit Luftbildern auch von Esri). Die Dashboard-Karten funktionieren in jedem Fall.",
           "show_in_calendar": "Fügt einen Kalender mit den Überflügen der nächsten fünf Tage hinzu, jeweils mit Zeit und Blickrichtung. Kalender-Auslöser können damit vor einem Überflug Automationen starten.",
           "units": "Für Entfernungen und Geschwindigkeiten auf dem Globus und in der Straßenansicht. „Automatisch“ folgt dem Einheitensystem von Home Assistant."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satellit sichtbar"
+      "satellite_visible_now": {
+        "name": "Satellit jetzt sichtbar"
+      },
+      "visible_pass_soon": {
+        "name": "Sichtbarer Überflug in Kürze"
       },
       "bright_pass_soon": {
         "name": "Heller Überflug in Kürze"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Satellitenüberflüge"
+      "visible_passes": {
+        "name": "Sichtbare Überflüge"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Satelliten-Position"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Nächster Überflug"
+      "next_visible_pass": {
+        "name": "Nächster sichtbarer Überflug"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Maximaler Höhenwinkel des nächsten sichtbaren Überflugs"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Helligkeit des nächsten sichtbaren Überflugs"
+      },
+      "next_visible_pass_duration": {
+        "name": "Dauer des nächsten sichtbaren Überflugs"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Bewölkung des nächsten sichtbaren Überflugs"
+      },
+      "next_visible_satellite_name": {
+        "name": "Name des nächsten sichtbaren Satelliten"
       },
       "next_bright_pass": {
         "name": "Nächster heller Überflug"
       },
-      "passes_next_24h": {
-        "name": "Überflüge in den nächsten 24 Stunden",
+      "satellite_elevation": {
+        "name": "Satelliten-Höhenwinkel"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Sichtbare Überflüge in den nächsten 24 Stunden",
         "unit_of_measurement": "Überflüge"
       },
-      "catalog_updated": {
-        "name": "Katalog aktualisiert"
+      "orbital_elements_epoch": {
+        "name": "Epoche der Bahnelemente"
       }
     }
   },

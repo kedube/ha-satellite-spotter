@@ -38,15 +38,15 @@ async def test_what_open_meteo_is_asked(
         FORECAST_URL,
         json={"hourly": {"time": [HOUR, HOUR + 3600, HOUR + 7200], "cloud_cover": [5, None, 100]}},
     )
-    forecast = await async_fetch_forecast(async_get_clientsession(hass), 52.090737, 5.121420)
+    forecast = await async_fetch_forecast(async_get_clientsession(hass), -41.286460, 174.776236)
     # An hour left blank is an hour without a forecast.
     assert forecast.percent_by_hour == {HOUR: 5, HOUR + 7200: 100}
 
     ((_, url, _, headers),) = aioclient_mock.mock_calls
     assert dict(url.query) == {
         # The position to about 10 m, as the README says.
-        "latitude": "52.0907",
-        "longitude": "5.1214",
+        "latitude": "-41.2865",
+        "longitude": "174.7762",
         "hourly": "cloud_cover",
         # Up to the hour after the last pass that can be predicted, and no further.
         "forecast_hours": str(PREDICTION_DAYS * 24 + 2),
@@ -73,4 +73,4 @@ async def test_anything_else_is_no_forecast(
 ) -> None:
     aioclient_mock.get(FORECAST_URL, **answer)
     with pytest.raises(CloudCoverError):
-        await async_fetch_forecast(async_get_clientsession(hass), 52.09, 5.12)
+        await async_fetch_forecast(async_get_clientsession(hass), -41.29, 174.78)

@@ -1,0 +1,80 @@
+name: Brightness
+
+# Once a week: brings brightness.csv up to date with Mini-MegaTORTORA's satellite list, and
+# proposes the result in a pull request. Merging that releases nothing: the next release takes
+# it along. A week with nothing new proposes nothing.
+#
+# MMT's team agreed to a script fetching the list about once a week, so keep it to that. Anything
+# but a 200 from MMT or CelesTrak stops the run and leaves the table as it is, and next week's
+# run tries again. See docs/updating-brightness.md.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" in the repository's settings
+# (Actions, General).
+
+on:
+  schedule:
+    - cron: "41 5 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brightness
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update the table
+    # Not on forks, whose schedules would ask MMT and CelesTrak as well.
+    if: github.repository == 'kedube/ha-satellite-spotter' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      # To push the branch, start CI on it and open its pull request.
+      contents: write
+      actions: write
+      pull-requests: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      BRANCH: brightness-update
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Update the table
+        run: >-
+          python -I scripts/make_brightness_table.py --update --download-mmt
+          --out custom_components/satellite_spotter/brightness.csv
+          | tee "$RUNNER_TEMP/summary.txt" "$GITHUB_STEP_SUMMARY"
+      - name: Propose it
+        run: |
+          if git diff --quiet; then
+            echo "Nothing to propose."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$BRANCH"
+          git commit --all --message "Update the brightness table from Mini-MegaTORTORA's list"
+          git push --force origin "$BRANCH"
+          # A pull request opened with this workflow's own token starts no CI by itself.
+          gh workflow run ci.yml --ref "$BRANCH"
+          {
+            echo "This week's update from Mini-MegaTORTORA's list and CelesTrak's catalogue."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/summary.txt"
+            echo '```'
+            echo
+            echo "Merging this releases nothing by itself: the next release takes it along."
+          } > "$RUNNER_TEMP/body.md"
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr edit "$BRANCH" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --title "Update the brightness table" \
+              --body-file "$RUNNER_TEMP/body.md"
+          fi

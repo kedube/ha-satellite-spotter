@@ -47,17 +47,17 @@
       "init": {
         "title": "Vilka passager ska rapporteras?",
         "data": {
-          "max_magnitude": "Svagaste magnitud",
-          "cloud_cover": "Molnprognos",
+          "brightness_cutoff": "Ljusstyrkegräns",
+          "cloud_forecast": "Molnprognos",
           "alert_lead_minutes": "Förvarning",
           "show_in_sidebar": "Visa Satellite Spotter i sidofältet",
           "show_in_calendar": "Visa passagerna i kalendern",
           "units": "Enheter"
         },
         "data_description": {
-          "max_magnitude": "Rapportera bara passager som är minst så här ljusstarka. Lägre tal är ljusare: 2,25 är ungefär det svagaste man hittar från en förort; 1 behåller de lätta, och under 0 återstår bara de bländande.",
-          "cloud_cover": "Lägger till Open-Meteos molnprognos för varje passage. Open-Meteo får den här platsens koordinater (med fyra decimaler) varannan timme.",
-          "alert_lead_minutes": "Sensorn ”Ljusstark passage snart” slås på så här lång tid innan den ljusstarkaste satelliten i en ljusstark passage syns.",
+          "brightness_cutoff": "En passage visas bara om den blir minst så här ljusstark. Skalan går baklänges, så ett lägre tal är ljusare: 2,25 passar himlen i en förort, 1 lämnar de lätta, och under 0 bara de bländande.",
+          "cloud_forecast": "Visar hur molnigt Open-Meteo väntar sig vid varje passage. Open-Meteo får den här platsens koordinater (med fyra decimaler) varje timme.",
+          "alert_lead_minutes": "Sensorerna ”Synlig passage snart” och ”Ljusstark passage snart” slås på så här lång tid innan passagens ljusstarkaste satellit syns.",
           "show_in_sidebar": "Lägger till en Satellite Spotter-sida i sidofältet med passagerna, en 3D-glob och en vy av himlen från gatunivå. Gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS (och från Esri med flygbilder). Instrumentpanelskorten fungerar oavsett.",
           "show_in_calendar": "Lägger till en kalender med passagerna de kommande fem dagarna, var och en med när och vart du ska titta. Kalenderutlösare kan då starta automationer före en passage.",
           "units": "För avstånd och hastigheter på globen och i gatuvyn. ”Automatiskt” följer Home Assistants enhetssystem."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satellit synlig"
+      "satellite_visible_now": {
+        "name": "Satellit synlig nu"
+      },
+      "visible_pass_soon": {
+        "name": "Synlig passage snart"
       },
       "bright_pass_soon": {
         "name": "Ljusstark passage snart"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Satellitpassager"
+      "visible_passes": {
+        "name": "Synliga passager"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Satellitposition"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Nästa passage"
+      "next_visible_pass": {
+        "name": "Nästa synliga passage"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Högsta elevation för nästa synliga passage"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Ljusstyrka för nästa synliga passage"
+      },
+      "next_visible_pass_duration": {
+        "name": "Varaktighet för nästa synliga passage"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Molnighet för nästa synliga passage"
+      },
+      "next_visible_satellite_name": {
+        "name": "Namn på nästa synliga satellit"
       },
       "next_bright_pass": {
         "name": "Nästa ljusstarka passage"
       },
-      "passes_next_24h": {
-        "name": "Passager kommande 24 timmar",
+      "satellite_elevation": {
+        "name": "Satellitelevation"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Synliga passager kommande 24 timmar",
         "unit_of_measurement": "passager"
       },
-      "catalog_updated": {
-        "name": "Katalog uppdaterad"
+      "orbital_elements_epoch": {
+        "name": "Epok för banelementen"
       }
     }
   },

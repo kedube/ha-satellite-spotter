@@ -9,10 +9,9 @@ from typing import Any, override
 
 from homeassistant.config_entries import (
     ConfigEntry,
-    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.const import (
     CONF_ELEVATION,
@@ -46,22 +45,27 @@ from .catalog import async_shared_catalog
 from .celestrak import CatalogError, DownloadRefused
 from .const import (
     CONF_ALERT_LEAD_MINUTES,
-    CONF_CLOUD_COVER,
+    CONF_BRIGHTNESS_CUTOFF,
+    CONF_CLOUD_FORECAST,
     CONF_GOOGLE_API_KEY,
     CONF_MAPILLARY_TOKEN,
-    CONF_MAX_MAGNITUDE,
     CONF_SHOW_CALENDAR,
     CONF_SHOW_PANEL,
     CONF_STREET_SOURCE,
     CONF_STREET_VIEW,
     CONF_UNITS,
+    CUTOFF_MAX,
+    CUTOFF_MIN,
+    CUTOFF_STEP,
     DEFAULT_ALERT_LEAD_MINUTES,
-    DEFAULT_CLOUD_COVER,
-    DEFAULT_MAX_MAGNITUDE,
+    DEFAULT_BRIGHTNESS_CUTOFF,
+    DEFAULT_CLOUD_FORECAST,
     DEFAULT_SHOW_CALENDAR,
     DEFAULT_SHOW_PANEL,
     DEFAULT_UNITS,
     DOMAIN,
+    ELEVATION_MAX_M,
+    ELEVATION_MIN_M,
     STREET_SOURCES,
     UNITS,
 )
@@ -81,8 +85,8 @@ _MAX_LONGITUDE = 180.0
 
 _ELEVATION_SELECTOR = NumberSelector(
     NumberSelectorConfig(
-        min=-500,
-        max=9000,
+        min=ELEVATION_MIN_M,
+        max=ELEVATION_MAX_M,
         step=1,
         mode=NumberSelectorMode.BOX,
         unit_of_measurement=UnitOfLength.METERS,
@@ -212,7 +216,7 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
                 if unique_id != entry.unique_id:
                     await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
-                changed = self.hass.config_entries.async_update_entry(
+                return self.async_update_reload_and_abort(
                     entry,
                     unique_id=unique_id,
                     data={
@@ -220,11 +224,9 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_LONGITUDE: place[1],
                         CONF_ELEVATION: user_input[CONF_ELEVATION],
                     },
+                    reason="reconfigure_successful",
+                    reload_even_if_entry_is_unchanged=False,
                 )
-                # Once loaded, the update listener reloads it.
-                if changed and entry.state is not ConfigEntryState.LOADED:
-                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
-                return self.async_abort(reason="reconfigure_successful")
         schema = vol.Schema(
             {
                 vol.Required(
@@ -252,13 +254,16 @@ def _options_schema(options: Mapping[str, Any]) -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(
-                CONF_MAX_MAGNITUDE,
-                default=options.get(CONF_MAX_MAGNITUDE, DEFAULT_MAX_MAGNITUDE),
+                CONF_BRIGHTNESS_CUTOFF,
+                default=options.get(CONF_BRIGHTNESS_CUTOFF, DEFAULT_BRIGHTNESS_CUTOFF),
             ): NumberSelector(
-                NumberSelectorConfig(min=-2, max=4, step=0.25, mode=NumberSelectorMode.SLIDER)
+                NumberSelectorConfig(
+                    min=CUTOFF_MIN, max=CUTOFF_MAX, step=CUTOFF_STEP, mode=NumberSelectorMode.SLIDER
+                )
             ),
             vol.Required(
-                CONF_CLOUD_COVER, default=options.get(CONF_CLOUD_COVER, DEFAULT_CLOUD_COVER)
+                CONF_CLOUD_FORECAST,
+                default=options.get(CONF_CLOUD_FORECAST, DEFAULT_CLOUD_FORECAST),
             ): BooleanSelector(),
             vol.Required(
                 CONF_ALERT_LEAD_MINUTES,
@@ -310,7 +315,7 @@ def _options_schema(options: Mapping[str, Any]) -> vol.Schema:
     )
 
 
-class SatelliteSpotterOptionsFlow(OptionsFlow):
+class SatelliteSpotterOptionsFlow(OptionsFlowWithReload):
     """Which passes are reported, how, and where the street view's photos come from."""
 
     async def _async_street_error(

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import io
 import math
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -321,3 +322,28 @@ def test_sunlight_for_many_satellites_at_many_times() -> None:
     points = np.array([[[BEHIND, 0.0, 0.0], [7_000_000.0, 0.0, 0.0]]] * 3)
     assert track.sunlit(points, SUN - points).shape == (3, 2)
     assert not track.sunlit(np.array([[np.nan, 0.0, 0.0]]), SUN).any()
+
+
+def test_satellite_position_says_where_a_satellite_is() -> None:
+    sat = next(s for s in satellites() if s.norad_id == 25544)
+    observer = track.Observer(*HONOLULU.values())
+    when = NOW.timestamp()
+    place = track.propagate([sat.sgp4_record()], [when])[0]
+    azimuth, elevation, distance = track.look(observer, place)
+    position = track.satellite_position(sat, observer, when)
+    assert position is not None
+    latitude, longitude, altitude = track.geodetic(place[0])
+    assert position.latitude == pytest.approx(float(latitude))
+    assert position.longitude == pytest.approx(float(longitude))
+    assert position.altitude_km == pytest.approx(float(altitude))
+    assert position.azimuth == pytest.approx(float(azimuth[0]))
+    assert position.elevation == pytest.approx(float(elevation[0]))
+    assert position.range_km == pytest.approx(float(distance[0]) / 1000.0)
+    assert isinstance(position.sunlit, bool)
+
+
+def test_the_position_of_a_satellite_sgp4_cannot_place_is_none() -> None:
+    sat = next(s for s in satellites() if s.norad_id == 25544)
+    observer = track.Observer(*HONOLULU.values())
+    with patch.object(track, "propagate", return_value=np.full((1, 1, 3), np.nan)):
+        assert track.satellite_position(sat, observer, NOW.timestamp()) is None

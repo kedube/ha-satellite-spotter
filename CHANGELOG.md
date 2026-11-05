@@ -4,6 +4,61 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.13
+
+- **Automations and dashboards that use this integration's entities need updating.** The entities are
+  new, modelled on [ISS Tracker](https://github.com/kedube/ha-iss-tracker)'s, and the old ones are
+  removed by themselves when the update starts. A location keeps its name and place, but the new
+  entities' history starts afresh. **Next bright pass** and **Bright pass soon** carry on as they are.
+
+  | Was | Now |
+  |---|---|
+  | `sensor.home_next_pass` | `sensor.home_next_visible_pass` |
+  | `sensor.home_next_bright_pass` | `sensor.home_next_bright_pass` |
+  | `sensor.home_passes_next_24h` | `sensor.home_visible_passes_next_24_hours`, and the list is now `upcoming` on the first sensor |
+  | `binary_sensor.home_pass_in_progress` | `binary_sensor.home_satellite_visible_now` |
+  | `binary_sensor.home_bright_pass_soon` | `binary_sensor.home_bright_pass_soon` |
+  | `calendar.home_passes` | `calendar.home_visible_passes` |
+  | `sensor.home_catalog_updated` | `sensor.home_orbital_elements_epoch`, with `downloaded` as an attribute |
+
+- **New entities:** the next visible pass's peak elevation, brightness, duration, cloud cover and
+  satellite name, **Visible pass soon**, **Satellite elevation**, where that satellite is in your sky
+  right now, and **Satellite position**, the point on Earth beneath it, for map cards.
+- **Pass attributes have new names.** `object_name` is now `satellite`, `object_count` is
+  `satellite_count`, `objects` is `satellites`, `peak_magnitude` is `magnitude`, `is_bright` is
+  `bright`, `cloud_percent` is `cloud_cover` and `length_seconds` is `duration_seconds`. `appears`,
+  `best_view` and `disappears` are now `start`, `peak` and `end`, and `peak` is now the highest point
+  rather than the brightest. `confidence`, `kind`, `appears_from_shadow` and `disappears_into_shadow` are
+  new. Times are now in local time.
+- **Set your Brightness cutoff and Cloud forecast again if you changed them.** Their names changed, so
+  they go back to their defaults. **Faintest magnitude** is now **Brightness cutoff**, from -1 to 4, and
+  **Cloud cover forecast** is **Cloud forecast**.
+- **Updating from 1.10 or earlier? Import the notification blueprint again**, or it will stop
+  notifying by default. An imported copy does not update itself.
+- **Passes are searched for only when the orbits change,** every 12 hours rather than every 2, so
+  Home Assistant does a sixth of the work. Cloud forecasts now refresh every hour rather than every 2,
+  and a forecast that briefly can't be reached no longer takes the clouds off every pass.
+- **Home Assistant stays more responsive during that search.** The work now comes in smaller pieces,
+  so on a fast computer the longest pause fell from about 50 ms to about 10 ms. The same passes are
+  predicted.
+- **CelesTrak's two-hour limit now holds in more cases.** A clock stepping back just after a refusal
+  asked CelesTrak again at once, as did a restart with the clock behind, a download that stopped partway
+  and one interrupted by a reload. Each now waits the two hours.
+- **Fixed: moving a location reloaded it twice,** asking Open-Meteo twice.
+- **Fixed: removing the last location and adding it back could leave the page showing old satellite
+  details** until the next download.
+- **The street view does less when there is nothing to see.** With no satellite up, a live view
+  redraws once a second instead of about ten times. It stops when scrolled out of sight, and repaints
+  its sky far less often.
+- **"Look at the satellite" no longer keeps the street view busy.** Pressed with no satellite up, it
+  left the view redrawing on every frame.
+- **Mini-MegaTORTORA's team has given permission** to use its measurements and to download them once a
+  week, so the brightness table can be updated more often. The README and the table now cite both
+  papers the team asks for, and each entity's attribution no longer names Kazan Federal University,
+  which the team does not ask for.
+- **Credit.** Satellite Spotter began as a fork of Willem Vooijs's See A Satellite Tonight integration
+  and see-a-satellite library, and the README now says so.
+
 ## 1.12
 
 - **The integration's Python code is rewritten.** Its prediction, catalogue, entity and setup modules were

@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
+from .const import CALENDAR_KEY
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import SatelliteSpotterEntity, compass, magnitude
 from .links import about_url
@@ -116,7 +117,7 @@ class SatellitePassCalendar(SatelliteSpotterEntity, CalendarEntity):
 
     def __init__(self, coordinator: SatelliteSpotterCoordinator, text: PassText) -> None:
         """Remember what has been written, to tell a new prediction run from a wake-up."""
-        super().__init__(coordinator, "passes")
+        super().__init__(coordinator, CALENDAR_KEY)
         self._text = text
         self._written = self._what_to_write()
 

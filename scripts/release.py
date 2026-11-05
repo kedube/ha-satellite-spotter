@@ -25,6 +25,7 @@ fails.
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 import re
@@ -42,6 +43,10 @@ VERSION_RE = re.compile(r"(\d+)\.(\d{2})")
 LEFT_OUT = re.compile(r"(^|/)(__pycache__|\.DS_Store)(/|$)|\.py[co]$")
 # Already compressed: stored as they are rather than deflated again.
 STORED = (".br", ".gz", ".jpg", ".png", ".woff2")
+# The page's own files, which the zip also holds compressed for browsers that accept that. Only the
+# zip has these copies: in the repository they would soon go stale, as they are served in place of
+# their sources.
+SERVED_COMPRESSED = re.compile(r"^frontend/(translations/)?[^/]+\.js$")
 # Every entry gets this time, so the same files always make the same zip.
 ZIP_TIME = (2026, 1, 1, 0, 0, 0)
 
@@ -155,16 +160,20 @@ def package(out: Path, source: Path = INTEGRATION) -> list[str]:
     )
     if "manifest.json" not in names:
         raise ValueError(f"{source} has no manifest.json")
+    files = {name: (source / name).read_bytes() for name in names}
+    for name in names:
+        if SERVED_COMPRESSED.match(name):
+            files[f"{name}.gz"] = gzip.compress(files[name], compresslevel=9, mtime=0)
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w") as zf:
-        for name in names:
+        for name in sorted(files):
             info = zipfile.ZipInfo(name, ZIP_TIME)
             info.compress_type = (
                 zipfile.ZIP_STORED if name.endswith(STORED) else zipfile.ZIP_DEFLATED
             )
             info.external_attr = 0o644 << 16
-            zf.writestr(info, (source / name).read_bytes(), compresslevel=9)
-    return names
+            zf.writestr(info, files[name], compresslevel=9)
+    return sorted(files)
 
 
 def _remote_tags() -> list[str]:

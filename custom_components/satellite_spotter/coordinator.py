@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import partial
 import logging
@@ -27,21 +27,25 @@ from .const import (
     CATALOG_STALE_UPSTREAM,
     CATALOG_UNREACHABLE_RETRY,
     CONF_ALERT_LEAD_MINUTES,
-    CONF_CLOUD_COVER,
-    CONF_MAX_MAGNITUDE,
+    CONF_BRIGHTNESS_CUTOFF,
+    CONF_CLOUD_FORECAST,
     CONF_SHOW_CALENDAR,
     CONF_UNITS,
     DEFAULT_ALERT_LEAD_MINUTES,
-    DEFAULT_CLOUD_COVER,
-    DEFAULT_MAX_MAGNITUDE,
+    DEFAULT_BRIGHTNESS_CUTOFF,
+    DEFAULT_CLOUD_FORECAST,
     DEFAULT_SHOW_CALENDAR,
     DEFAULT_UNITS,
     DOMAIN,
+    FORECAST_MAX_AGE,
     ISSUE_CATALOG_STALE,
+    LIVE_EVERY,
+    LIVE_EVERY_DURING_PASS,
     MAX_SIGHTINGS,
     PASS_ID_TOLERANCE,
     PREDICTION_LOOKBACK,
-    PREDICTION_REFRESH,
+    REFRESH_EVERY,
+    SEARCH_EVERY,
     UPCOMING_WINDOW,
 )
 from .predict import Flyover, Satellite, find_sightings, group_sightings
@@ -66,8 +70,8 @@ def scrub(err: BaseException) -> str:
 class PredictionSettings:
     """What a location's options ask for."""
 
-    max_magnitude: float
-    cloud_cover: bool
+    brightness_cutoff: float
+    cloud_forecast: bool
     alert_lead: timedelta
     show_in_calendar: bool
     units: str
@@ -76,8 +80,8 @@ class PredictionSettings:
     def from_options(cls, options: Mapping[str, Any]) -> Self:
         """Read the options, filling in the defaults."""
         return cls(
-            max_magnitude=options.get(CONF_MAX_MAGNITUDE, DEFAULT_MAX_MAGNITUDE),
-            cloud_cover=options.get(CONF_CLOUD_COVER, DEFAULT_CLOUD_COVER),
+            brightness_cutoff=options.get(CONF_BRIGHTNESS_CUTOFF, DEFAULT_BRIGHTNESS_CUTOFF),
+            cloud_forecast=options.get(CONF_CLOUD_FORECAST, DEFAULT_CLOUD_FORECAST),
             alert_lead=timedelta(
                 minutes=options.get(CONF_ALERT_LEAD_MINUTES, DEFAULT_ALERT_LEAD_MINUTES)
             ),
@@ -96,26 +100,34 @@ class ListedPass(Flyover):
     peak: track.SkyPoint
 
     def notice_at(self, alert_lead: timedelta) -> datetime:
-        """Return when a bright pass's advance notice starts: that long before the lead appears."""
+        """Return when a pass's advance notice starts: that long before the lead appears."""
         return self.lead.appears.time - alert_lead
+
+
+@dataclass(frozen=True)
+class LiveSatellite:
+    """The satellite of the pass under way, or the next, and where it is now."""
+
+    satellite: Satellite
+    position: track.SatellitePosition
 
 
 @dataclass
 class Predictions:
-    """The passes predicted by one run, and what they were predicted from."""
+    """The passes of the latest search, and what they were found from."""
 
     passes: list[ListedPass]
-    computed_at: datetime
+    searched_at: datetime
     catalog_version: int
     satellites: Mapping[int, Satellite]
-    cloud_cover: bool | None
+    cloud_forecast: bool | None
     by_id: dict[str, ListedPass] = field(init=False)
 
     def __post_init__(self) -> None:
         """Index the passes."""
         self.by_id = {p.id: p for p in self.passes}
 
-    def next_pass(self, now: datetime) -> ListedPass | None:
+    def next_visible_pass(self, now: datetime) -> ListedPass | None:
         """Return the pass under way, or else the next."""
         return next((p for p in self.passes if p.end > now), None)
 
@@ -135,9 +147,7 @@ class Predictions:
         """Return the next moment after now when what the entities say could change."""
         moments = []
         for p in self.passes:
-            moments += [p.start, p.end, p.start - UPCOMING_WINDOW]
-            if p.bright:
-                moments.append(p.notice_at(alert_lead))
+            moments += [p.start, p.end, p.start - UPCOMING_WINDOW, p.notice_at(alert_lead)]
         return min((moment for moment in moments if moment > now), default=None)
 
     def find(self, pass_id: str) -> ListedPass | None:
@@ -195,6 +205,23 @@ def predict_passes(
     return [_listed(flyover, observer, forecast) for flyover in group_sightings(sightings)]
 
 
+def _with_clouds(
+    data: Predictions, now: datetime, forecast: CloudForecast | None, enabled: bool
+) -> Predictions:
+    """Return the same search with the latest clouds, and without what is long over."""
+    return Predictions(
+        passes=[
+            replace(p, cloud_cover=None if forecast is None else forecast.after(p.start))
+            for p in data.passes
+            if p.end > now - PREDICTION_LOOKBACK
+        ],
+        searched_at=data.searched_at,
+        catalog_version=data.catalog_version,
+        satellites=data.satellites,
+        cloud_forecast=forecast is not None if enabled else None,
+    )
+
+
 def _nothing_to_stop() -> None:
     """Stand in for the timer's stopper while no timer is set."""
 
@@ -211,7 +238,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} {entry.title}",
-            update_interval=PREDICTION_REFRESH,
+            update_interval=REFRESH_EVERY,
         )
         self.catalog = catalog
         self.observer = track.Observer(
@@ -220,6 +247,15 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             entry.data.get(CONF_ELEVATION, 0.0),
         )
         self.settings = PredictionSettings.from_options(entry.options)
+        self.title = entry.title
+        self.live: LiveSatellite | None = None
+        self._live_listeners: list[CALLBACK_TYPE] = []
+        self._stop_live_timer: CALLBACK_TYPE = _nothing_to_stop
+        self._live_job = HassJob(
+            self._async_live_tick, f"{self.name} live", cancel_on_shutdown=True
+        )
+        self._forecast: CloudForecast | None = None
+        self._forecast_at: datetime | None = None
         self._updating = False
         self._stopped = False
         self._stop_waiting: CALLBACK_TYPE = _nothing_to_stop
@@ -253,16 +289,15 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         now = dt_util.utcnow()
         self._async_check_age(now)
 
-        forecast = None
-        if self.settings.cloud_cover:
-            try:
-                forecast = await async_fetch_forecast(
-                    async_get_clientsession(self.hass),
-                    self.observer.latitude,
-                    self.observer.longitude,
-                )
-            except CloudCoverError as err:
-                _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
+        forecast = await self._async_forecast(now)
+        enabled = self.settings.cloud_forecast
+        data = self.predictions
+        if (
+            data is not None
+            and data.catalog_version == version
+            and timedelta(0) <= now - data.searched_at < SEARCH_EVERY
+        ):
+            return _with_clouds(data, now, forecast, enabled)
 
         passes = await self.hass.async_add_executor_job(
             partial(
@@ -271,17 +306,34 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
                 self.observer,
                 # A whole minute, so that passes keep their times and ids from run to run.
                 start=(now - PREDICTION_LOOKBACK).replace(second=0, microsecond=0),
-                faintest=self.settings.max_magnitude,
+                faintest=self.settings.brightness_cutoff,
                 forecast=forecast,
             )
         )
         return Predictions(
             passes=passes,
-            computed_at=now,
+            searched_at=now,
             catalog_version=version,
             satellites=by_id,
-            cloud_cover=forecast is not None if self.settings.cloud_cover else None,
+            cloud_forecast=forecast is not None if enabled else None,
         )
+
+    async def _async_forecast(self, now: datetime) -> CloudForecast | None:
+        """Return the latest forecast, or the last one while it is fresh enough; None without."""
+        if not self.settings.cloud_forecast:
+            return None
+        try:
+            self._forecast = await async_fetch_forecast(
+                async_get_clientsession(self.hass),
+                self.observer.latitude,
+                self.observer.longitude,
+            )
+            self._forecast_at = now
+        except CloudCoverError as err:
+            _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
+            if self._forecast_at is None or abs(now - self._forecast_at) > FORECAST_MAX_AGE:
+                self._forecast = None
+        return self._forecast
 
     @callback
     def _async_check_age(self, now: datetime) -> None:
@@ -326,6 +378,11 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
     @override
     def _async_refresh_finished(self) -> None:
         self._async_set_timer()
+        self._async_look_up()
+        # Home Assistant tells listeners only of the first failure in a row, and the epoch sensor
+        # goes on saying how old the orbits are and why they could not be refreshed.
+        if not self.last_update_success:
+            self.async_update_listeners()
 
     @callback
     def _async_set_timer(self) -> None:
@@ -343,22 +400,74 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
     @callback
     def _async_wake(self, _now: datetime) -> None:
         self._stop_waiting = _nothing_to_stop
+        self._async_look_up()
         self.async_update_listeners()
         self._async_set_timer()
 
+    @callback
+    def async_add_live_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
+        """Call ``listener`` with each new position, until the function returned is called.
+
+        Nothing is worked out while nothing listens.
+        """
+        self._live_listeners.append(listener)
+        if len(self._live_listeners) == 1:
+            self._async_look_up()
+
+        @callback
+        def remove() -> None:
+            self._live_listeners.remove(listener)
+            if not self._live_listeners:
+                self._stop_live_timer()
+                self._stop_live_timer = _nothing_to_stop
+                self.live = None
+
+        return remove
+
+    @callback
+    def _async_look_up(self) -> None:
+        """Work out where the satellite is, and when to look again.
+
+        For one satellite, this is little enough for the event loop.
+        """
+        self._stop_live_timer()
+        self._stop_live_timer = _nothing_to_stop
+        if self._stopped or not self._live_listeners:
+            return
+        now = dt_util.utcnow()
+        p = self.next_visible_pass(now)
+        sat = None if p is None else p.lead.satellite
+        position = (
+            None if sat is None else track.satellite_position(sat, self.observer, now.timestamp())
+        )
+        self.live = None if sat is None or position is None else LiveSatellite(sat, position)
+        every = LIVE_EVERY_DURING_PASS if self.pass_under_way(now) is not None else LIVE_EVERY
+        self._stop_live_timer = async_track_point_in_utc_time(
+            self.hass, self._live_job, now + every
+        )
+
+    @callback
+    def _async_live_tick(self, _now: datetime) -> None:
+        self._stop_live_timer = _nothing_to_stop
+        self._async_look_up()
+        for listener in list(self._live_listeners):
+            listener()
+
     @override
     async def async_shutdown(self) -> None:
-        """Stop the timer and the catalog listener, and ignore new runs."""
+        """Stop the timers and the catalog listener, and ignore new runs."""
         self._stopped = True
         self._stop_waiting()
         self._stop_waiting = _nothing_to_stop
+        self._stop_live_timer()
+        self._stop_live_timer = _nothing_to_stop
         self._stop_listening()
         await super().async_shutdown()
 
-    def next_pass(self, now: datetime) -> ListedPass | None:
+    def next_visible_pass(self, now: datetime) -> ListedPass | None:
         """Return the pass under way, or else the next."""
         data = self.predictions
-        return None if data is None else data.next_pass(now)
+        return None if data is None else data.next_visible_pass(now)
 
     def next_bright_pass(self, now: datetime) -> ListedPass | None:
         """Return the bright pass under way, or else the next."""
@@ -370,10 +479,25 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         data = self.predictions
         return None if data is None else data.under_way(now)
 
+    def visible_pass_soon(self, now: datetime) -> ListedPass | None:
+        """Return the next pass, from its advance notice until it ends."""
+        p = self.next_visible_pass(now)
+        return p if p is not None and p.notice_at(self.settings.alert_lead) <= now else None
+
     def bright_pass_soon(self, now: datetime) -> ListedPass | None:
         """Return the next bright pass, from its advance notice until it ends."""
         p = self.next_bright_pass(now)
         return p if p is not None and p.notice_at(self.settings.alert_lead) <= now else None
+
+    def passes_from(self, now: datetime) -> list[ListedPass]:
+        """Return the passes under way or to come."""
+        data = self.predictions
+        return [] if data is None else [p for p in data.passes if p.end > now]
+
+    def upcoming_count(self, now: datetime) -> int:
+        """Return how many passes are under way or start within a day."""
+        data = self.predictions
+        return 0 if data is None else len(data.upcoming(now))
 
     def stale_age(self, now: datetime) -> timedelta | None:
         """Return how old the orbits are, if that is too old to trust."""

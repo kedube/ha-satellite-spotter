@@ -160,7 +160,7 @@ def _every_visible_second(sat: Satellite, observer: track.Observer, days: float)
         return ts[track.visible(track.photometry(sat, observer, pos, track.sun_at(ts)), 3.0)]
 
 
-@pytest.mark.parametrize("norad_id", [25544, 39679, 53807])
+@pytest.mark.parametrize("norad_id", [25544, 694, 20580])
 def test_finds_what_checking_every_second_finds(norad_id: int) -> None:
     """The once-a-minute search misses nothing worth listing, and the passes are exact."""
     sat = next(s for s in satellites() if s.norad_id == norad_id)
@@ -196,6 +196,17 @@ def test_pass_times_do_not_depend_on_when_the_search_began() -> None:
 
     since = START + timedelta(minutes=20)
     assert times(first, since) - times(later, since) == set()
+
+
+@pytest.mark.parametrize("size", [1, 3, 100])
+def test_the_batch_size_only_changes_how_the_work_is_divided(
+    size: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = satellites()
+    expected = find_sightings(catalog, DENVER_SKY, start=START, days=2)
+    assert expected
+    monkeypatch.setattr("custom_components.satellite_spotter.predict._BATCH_SIZE", size)
+    assert find_sightings(catalog, DENVER_SKY, start=START, days=2) == expected
 
 
 def test_sorted_with_the_catalogs_order_breaking_ties() -> None:
@@ -257,11 +268,14 @@ def test_fainter_cutoff_finds_more() -> None:
     strict = find_sightings(catalog, DENVER_SKY, start=START, faintest=1.0)
     relaxed = find_sightings(catalog, DENVER_SKY, start=START, faintest=4.0)
     assert len(strict) < len(relaxed)
-    assert all(t.peak_magnitude < 1.0 for t in strict)
+    assert all(t.peak_magnitude < cutoff_for(t.satellite, 1.0) for t in strict)
+    # A Starlink's allowance, which only applies to Starlinks.
+    assert any(t.peak_magnitude >= 1.0 for t in strict)
+    assert all(t.satellite.curve for t in strict if t.peak_magnitude >= 1.0)
 
 
 def test_a_pass_cut_off_by_the_end_of_the_search_is_left_for_the_next_run() -> None:
-    sat = next(s for s in satellites() if s.norad_id == 53807)
+    sat = next(s for s in satellites() if s.norad_id == 48274)
     first = find_sightings([sat], DENVER_SKY, start=START)[0]
     during = (
         first.appears.time + (first.vanishes.time - first.appears.time) / 2 - START
@@ -271,7 +285,7 @@ def test_a_pass_cut_off_by_the_end_of_the_search_is_left_for_the_next_run() -> N
 
 
 def test_a_pass_under_way_begins_at_the_start_of_the_search() -> None:
-    sat = next(s for s in satellites() if s.norad_id == 53807)
+    sat = next(s for s in satellites() if s.norad_id == 48274)
     long = next(
         t
         for t in find_sightings([sat], DENVER_SKY, start=START)
@@ -450,8 +464,7 @@ def test_starlinks_are_listed_past_the_cutoff() -> None:
 
 def test_the_search_keeps_to_the_starlink_cutoff() -> None:
     """A Starlink's sightings at a cutoff are those of anything else at 0.75 fainter."""
-    elements = next(s for s in satellites() if s.norad_id == 53807).elements
-    starlink = Satellite.from_elements(elements, curve="starlink-raising", name="STARLINK-1")
+    starlink = next(s for s in satellites() if s.norad_id == 55487)
     found = find_sightings([starlink], DENVER_SKY, start=START, faintest=2.25)
     assert found
     assert all(t.peak_magnitude < 3.0 for t in found)

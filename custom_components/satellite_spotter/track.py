@@ -407,6 +407,36 @@ def apsides_km(sat: Satellite) -> tuple[float, float]:
     )
 
 
+class SatellitePosition(NamedTuple):
+    """Where a satellite is at a moment: in the sky, over the Earth, and in the Sun or not."""
+
+    azimuth: float
+    elevation: float
+    range_km: float
+    latitude: float
+    longitude: float
+    altitude_km: float
+    sunlit: bool
+
+
+def satellite_position(sat: Satellite, observer: Observer, when: float) -> SatellitePosition | None:
+    """Return where a satellite is at a moment (Unix seconds); None if SGP4 cannot place it."""
+    place = propagate([sat.sgp4_record()], [when])[0, 0]
+    if not np.isfinite(place).all():
+        return None
+    azimuth, elevation, distance = look(observer, place)
+    latitude, longitude, altitude = geodetic(place)
+    return SatellitePosition(
+        float(azimuth),
+        float(elevation),
+        float(distance) / 1000.0,
+        float(latitude),
+        float(longitude),
+        float(altitude),
+        bool(sunlit(place, sun_at(when) - place)),
+    )
+
+
 @dataclass(frozen=True)
 class SkyPoint:
     """Where a satellite is at a moment (Unix seconds)."""

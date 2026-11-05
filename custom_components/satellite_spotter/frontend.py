@@ -8,7 +8,7 @@ degrees with azimuths clockwise from north, magnitudes to one decimal.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from functools import partial
 import hashlib
@@ -70,7 +70,7 @@ from .const import (
     TRACK_MAX_STEP,
     TRACK_STEP,
 )
-from .coordinator import ListedPass, PredictionSettings, SatelliteSpotterCoordinator
+from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, satellite_kind
 from .links import about_url
 from .predict import Moment, Satellite, Sighting, cutoff_for
@@ -171,12 +171,17 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
 
     @callback
     def _async_entry_changed(change: ConfigEntryChange, entry: ConfigEntry) -> None:
+        if entry.domain != DOMAIN:
+            return
         # Disabling a location that is not loaded (one still retrying setup,
         # say) runs none of the integration's hooks, so look at the panel and
         # the repair issue here.
-        if entry.domain == DOMAIN and entry.disabled_by is not None:
+        if entry.disabled_by is not None:
             hass.async_create_task(async_update_panel(hass))
             async_clear_stale_issue(hass)
+        # Its device and its entities' names follow the location's name when they are added.
+        elif entry.state is ConfigEntryState.LOADED and entry.title != entry.runtime_data.title:
+            hass.config_entries.async_schedule_reload(entry.entry_id)
 
     async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, _async_entry_changed)
 
@@ -318,7 +323,7 @@ def _number(value: float | None, digits: int) -> float | None:
     return None if value is None or not math.isfinite(value) else round(value, digits) + 0.0
 
 
-def look_json(angle: Moment) -> dict[str, Any]:
+def look_json(angle: Moment | track.SkyPoint) -> dict[str, Any]:
     """Where to look: azimuth, elevation and compass direction."""
     return {
         "azimuth": _number(angle.azimuth, 1),
@@ -329,12 +334,7 @@ def look_json(angle: Moment) -> dict[str, Any]:
 
 def peak_json(point: track.SkyPoint) -> dict[str, Any]:
     """Describe the highest point of a visible window."""
-    return {
-        "time": unix(point.time),
-        "azimuth": _number(point.azimuth, 1),
-        "elevation": _number(point.elevation, 1),
-        "direction": compass(point.azimuth),
-    }
+    return {"time": unix(point.time), **look_json(point)}
 
 
 def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
@@ -354,8 +354,6 @@ def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
         "peak": peak_json(shape.peak),
         "start_reason": shape.start_reason,
         "end_reason": shape.end_reason,
-        "intrinsic_magnitude": _number(sat.standard_magnitude, 1),
-        "model": sat.curve,
         "period_s": round(track.period_s(sat)),
         "about_url": about_url(sat.norad_id),
         "confidence": confidence(t.appears.time, sat),
@@ -368,77 +366,34 @@ def starlink_count(p: ListedPass) -> int:
     return sum(kind == "starlink" for kind in kinds)
 
 
-def is_train(p: ListedPass) -> bool:
-    """Whether a pass is a Starlink train: more than five Starlinks, whichever is brightest."""
-    return starlink_count(p) > 5
+def is_train(starlinks: int) -> bool:
+    """Whether so many Starlinks are a train: more than five, whichever is brightest."""
+    return starlinks > 5
 
 
 def pass_json(p: ListedPass) -> dict[str, Any]:
     """Describe a pass, with its satellites (up to MAX_SIGHTINGS)."""
     primary = p.lead.satellite
-    kind = satellite_kind(primary.norad_id, primary.name)
-    count = p.count
+    starlinks = starlink_count(p)
     return {
         "id": p.id,
         "title": p.title,
-        "kind": kind,
+        "kind": satellite_kind(primary.norad_id, primary.name),
         "start": unix(p.start),
         "end": unix(p.end),
         "duration": p.duration,
         "magnitude": magnitude(p.peak_magnitude),
         "bright": p.bright,
         "sun_up": p.sun_up,
-        "limiting_magnitude": _number(p.sky_limit, 1),
         "cloud_cover": p.cloud_cover,
-        "satellite_count": count,
-        "starlink_count": starlink_count(p),
-        "train": is_train(p),
+        "satellite_count": p.count,
+        "starlink_count": starlinks,
+        "train": is_train(starlinks),
         "peak": peak_json(p.peak),
         "transits": [
             sighting_json(t, shape)
             for t, shape in zip(p.sightings[:MAX_SIGHTINGS], p.shapes, strict=False)
         ],
-    }
-
-
-def passes_payload(
-    passes: Iterable[ListedPass] | None,
-    *,
-    now: datetime,
-    location: dict[str, Any],
-    settings: PredictionSettings,
-    catalog: dict[str, Any],
-    computed_at: datetime | None,
-    paused: str | None = None,
-    paused_days: int | None = None,
-    paused_error: str | None = None,
-) -> dict[str, Any]:
-    """Everything the pass list, mission card and sky chart need for a location.
-
-    While predictions are paused there are no passes; ``paused`` says why,
-    and ``paused_days``/``paused_error`` give the numbers for a translated
-    message when the orbit data is too old.
-    """
-    lead = settings.alert_lead.total_seconds() / 60
-    return {
-        "generated_at": int(now.timestamp()),
-        # Precise, so the page can allow for a browser clock that is off.
-        "server_time": round(now.timestamp(), 3),
-        "computed_at": None if computed_at is None else unix(computed_at),
-        "paused": paused,
-        "paused_days": paused_days,
-        "paused_error": paused_error,
-        "location": location,
-        "settings": {
-            "max_magnitude": settings.max_magnitude,
-            "cloud_cover": settings.cloud_cover,
-            "alert_lead_minutes": int(lead) if lead.is_integer() else lead,
-            "units": settings.units,
-            "days": PREDICTION_DAYS,
-            "min_elevation": MIN_ELEVATION,
-        },
-        "catalog": catalog,
-        "passes": [] if paused is not None or passes is None else [pass_json(p) for p in passes],
     }
 
 
@@ -454,35 +409,43 @@ def location_json(coordinator: SatelliteSpotterCoordinator) -> dict[str, Any]:
     }
 
 
-def catalog_json(catalog: CatalogManager, now: datetime) -> dict[str, Any]:
+def catalog_json(catalog: CatalogManager) -> dict[str, Any]:
     """Which catalog is current, so the page knows when to fetch it again."""
-    age = catalog.median_epoch_age(now)
     return {
         "updated": None if catalog.updated is None else unix(catalog.updated),
         "version": catalog.version,
         "satellites": len(catalog.satellites or ()),
-        "median_epoch_age_days": None if age is None else round(age.total_seconds() / 86400, 2),
     }
 
 
 def build_passes_payload(coordinator: SatelliteSpotterCoordinator, now: datetime) -> dict[str, Any]:
-    """Build the passes payload of a location from its current predictions."""
+    """Everything the pass list, mission card and sky chart need for a location.
+
+    While predictions are paused there are no passes, and ``paused`` says why.
+    """
     data = coordinator.data
     paused = coordinator.paused_reason(now)
     stale = coordinator.stale_age(now) if paused is not None else None
-    return passes_payload(
-        None if data is None else data.passes,
-        now=now,
-        location=location_json(coordinator),
-        settings=coordinator.settings,
-        catalog=catalog_json(coordinator.catalog, now),
-        computed_at=None if data is None else data.computed_at,
-        paused=paused,
-        # Paused because the orbit data is too old: the page words that
-        # itself, in the user's language, from these.
-        paused_days=None if stale is None else stale.days,
-        paused_error=None if stale is None else coordinator.catalog.last_error,
-    )
+    return {
+        "generated_at": int(now.timestamp()),
+        # Precise, so the page can allow for a browser clock that is off.
+        "server_time": round(now.timestamp(), 3),
+        "paused": paused,
+        # Paused because the orbit data is too old: the page words that itself, in the user's
+        # language, from these.
+        "paused_days": None if stale is None else stale.days,
+        "paused_error": None if stale is None else coordinator.catalog.last_error,
+        "location": location_json(coordinator),
+        "settings": {
+            "units": coordinator.settings.units,
+            "days": PREDICTION_DAYS,
+            "min_elevation": MIN_ELEVATION,
+        },
+        "catalog": catalog_json(coordinator.catalog),
+        "passes": (
+            [] if paused is not None or data is None else [pass_json(p) for p in data.passes]
+        ),
+    }
 
 
 def pass_track_payload(
@@ -599,24 +562,19 @@ def catalog_payload(
     satellites: Sequence[Satellite], updated: datetime | None, version: int
 ) -> dict[str, Any]:
     """Describe every satellite of the catalog, as the globe needs it."""
-    items = []
-    for sat in satellites:
-        perigee, apogee = track.apsides_km(sat)
-        items.append(
-            {
-                "norad_id": sat.norad_id,
-                "name": sat.name,
-                "kind": satellite_kind(sat.norad_id, sat.name),
-                "magnitude": _number(sat.standard_magnitude, 1),
-                "model": sat.curve,
-                "epoch": unix(sat.epoch),
-                "period_s": round(track.period_s(sat)),
-                "perigee_km": round(perigee),
-                "apogee_km": round(apogee),
-                "inclination": _number(float(sat.elements.get("INCLINATION", "nan")), 1),
-                "about_url": about_url(sat.norad_id),
-            }
-        )
+    items = [
+        {
+            "norad_id": sat.norad_id,
+            "name": sat.name,
+            "kind": satellite_kind(sat.norad_id, sat.name),
+            "magnitude": _number(sat.standard_magnitude, 1),
+            "epoch": unix(sat.epoch),
+            "period_s": round(track.period_s(sat)),
+            "inclination": _number(float(sat.elements.get("INCLINATION", "nan")), 1),
+            "about_url": about_url(sat.norad_id),
+        }
+        for sat in satellites
+    ]
     return {
         "updated": None if updated is None else unix(updated),
         "version": version,
@@ -685,7 +643,7 @@ async def ws_pass_track(
         p,
         coordinator.observer,
         msg["step"],
-        coordinator.settings.max_magnitude,
+        coordinator.settings.brightness_cutoff,
     )
     connection.send_result(msg["id"], payload)
 

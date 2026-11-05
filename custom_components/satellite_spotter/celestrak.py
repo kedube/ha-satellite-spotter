@@ -163,6 +163,19 @@ async def _async_download_supplement(session: aiohttp.ClientSession) -> list[str
 async def async_fetch_catalog(hass: HomeAssistant) -> list[Satellite]:
     """Download the orbital data, one request at a time, and build the catalog."""
     session = async_get_clientsession(hass)
-    responses = [await _async_download(session, GP_URL, query) for query in QUERIES]
+    responses: list[str] = []
+    for query in QUERIES:
+        try:
+            responses.append(await _async_download(session, GP_URL, query))
+        except DownloadRefused:
+            raise
+        except CatalogError as err:
+            if not responses:
+                raise
+            # Trying again soon would ask for what CelesTrak has only just answered.
+            raise DownloadRefused(
+                f"The download stopped partway ({err}). CelesTrak allows one download every two "
+                "hours, so the integration waits two hours, then tries again by itself."
+            ) from err
     responses += await _async_download_supplement(session)
     return await hass.async_add_executor_job(build_catalog, responses)

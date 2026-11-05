@@ -13,8 +13,8 @@ blueprint:
   source_url: https://github.com/kedube/ha-satellite-spotter/blob/main/blueprints/automation/satellite_spotter/notify_satellite_pass.yaml
   input:
     calendar:
-      name: Satellite passes calendar
-      description: The "Satellite passes" calendar of the location you watch from.
+      name: Calendar of passes
+      description: The "Visible passes" calendar of the location you watch from.
       selector:
         entity:
           filter:
@@ -55,7 +55,7 @@ blueprint:
       name: Maximum cloud cover
       description: >-
         Skip passes with more forecast cloud cover than this. Passes without a
-        forecast (the integration's cloud cover option is off, or Open-Meteo
+        forecast (the integration's Cloud forecast option is off, or Open-Meteo
         did not answer) are always announced.
       default: 60
       selector:

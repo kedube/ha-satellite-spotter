@@ -1,13 +1,36 @@
 # Updating the brightness table
 
 `custom_components/satellite_spotter/brightness.csv` says how bright each satellite is. Most of its
-values come from the satellite list of Mini-MegaTORTORA (MMT-9). That list has to be downloaded by
-hand, so the table needs updating by hand too.
+values come from the satellite list of Mini-MegaTORTORA (MMT-9), used with its team's permission.
 
-## How often
+## The weekly update
 
-About every four months. A list misses what has been launched since it was saved, so it ages slowly
-at first:
+The **Brightness** workflow (`.github/workflows/brightness.yml`) runs every Wednesday. It downloads
+MMT's list and what it needs from CelesTrak, updates the table, and proposes the result in a pull
+request, which it keeps up to date until you merge or close it. A week with nothing new proposes
+nothing.
+
+To review one, read the summary in the pull request and wait for CI, which the workflow starts. A
+normal result adds a few objects and loses few or none:
+
+```
+1 objects added, 0 gone.
+12 values changed, the largest by 0.31.
+custom_components/satellite_spotter/brightness.csv: 723 objects, {'family': 43, 'mccants': 97, 'mmt': 554, 'override': 1, 'score': 28}
+```
+
+Merging releases nothing: the table reaches people with the next release (`scripts/release.py`
+explains releases).
+
+The workflow needs **Allow GitHub Actions to create and approve pull requests** turned on in the
+repository's settings, under Actions, General. If a run fails, the table is left as it was and next
+week's run tries again, or you can run it from the Actions tab. Please keep it weekly: that is what
+MMT's team agreed to, and their server is not a strong one.
+
+## How long a table lasts
+
+There is no hurry to merge. A list misses what has been launched since it was saved, so a table ages
+slowly at first:
 
 | Age of the list | Sightings lost |
 |---:|---:|
@@ -20,36 +43,38 @@ at first:
 That is from one simulated five-day window at eight places, so treat it as a guide. A single bright
 new launch is a good reason to update sooner.
 
-## The usual update
+## Updating by hand
 
-You only need MMT's list. Python's standard library and `curl` are enough to run the command.
+The same update, for when you want one sooner. Python's standard library and `curl` are enough to run
+the command.
 
-1. Open <http://mmt.favor2.info/satellites> in your browser and select **Download list of
-   satellites**. Do this by hand: the site's `robots.txt` asks automated tools to stay away.
-2. From the repository's folder, run:
+1. From the repository's folder, run:
 
    ```bash
-   python3 -I scripts/make_brightness_table.py --update --mmt ~/Downloads/satellites_list.txt
+   python3 -I scripts/make_brightness_table.py --update --download-mmt
    ```
 
-3. Read the summary it prints. A normal result adds a few objects and loses few or none:
-
-   ```
-   1 objects added, 0 gone.
-   .../brightness.csv: 723 objects, {'family': 43, 'mccants': 97, 'mmt': 554, 'override': 1, 'score': 28}
-   ```
-
-4. Run the tests, then commit and release as usual (`scripts/release.py` explains releases):
+2. Read the summary it prints, as above.
+3. Run the tests, then commit and release as usual:
 
    ```bash
    pytest tests/test_brightness_table.py tests/test_celestrak.py
    ```
 
+MMT's server only answers scripts that send a referer, which keeps scrapers out. Its team gave us the
+one the script sends. To save the list yourself, select **Download list of satellites** on
+<http://mmt.favor2.info/satellites> in a browser, or run the command below, then pass the file to the
+update with `--mmt satellites_list.txt` in place of `--download-mmt`.
+
+```bash
+curl --referer http://mmt.favor2.info -o satellites_list.txt http://mmt.favor2.info/satellites/download
+```
+
 ### What the update changes
 
-The command downloads CelesTrak's catalogue and the orbit lists the integration uses. It never
-contacts MMT. A Home Assistant on the same connection may then be refused its next download of those
-lists, and it tries again by itself two hours later.
+The command downloads the orbit lists the integration uses and CelesTrak's catalogue. A Home
+Assistant on the same connection may then be refused its next download of those lists, and it tries
+again by itself two hours later.
 
 | Object | What happens |
 |---|---|
@@ -57,7 +82,7 @@ lists, and it tries again by itself two hours later.
 | Has a value added by hand | Keeps it |
 | BlueWalker or SpaceMobile with an observed value | Keeps it, because MMT has seen them too little |
 | From McCants, SCORE or Stellarium | Keeps its value, because those sources are not read again |
-| Launched since the last build, not on the list | Takes the median of its family on the list, if there is one |
+| Launched since the last update or in the 30 days before it, not on the list | Takes the median of its family on the list, if there is one |
 | New, with no value and no family | Left out until a full rebuild |
 | CelesTrak no longer has an orbit for it | Removed, because the integration could not use it |
 
@@ -70,10 +95,14 @@ The table is left as it was in each of these cases.
 
 | Message | What to do |
 |---|---|
+| `Stopped, and the table is unchanged: no list from MMT` | MMT's server did not answer, or refused. Try again later. If it keeps answering 403, ask its team whether the referer has changed |
 | `Stopped, and the table is unchanged`, with a 403 | CelesTrak refuses repeat downloads. Wait two hours and try again |
 | `Stopped, and the table is unchanged`, for another reason | Check the network connection and that `curl` is installed |
 | `This is not MMT's satellite list` | The wrong file, or an error page saved by the browser. Download it again |
 | `Stopped: only N objects` | The result would lose over half the table, so something is wrong with the list or the download. Do not force it |
+| `Stopped: N of M values would move` | Over a quarter of the table's values would move by more than a magnitude, so the list is more likely wrong than new. Look at it before going any further |
+
+If nothing has changed, the command says so and leaves the file alone, including its date.
 
 ## A full rebuild
 
@@ -83,7 +112,7 @@ raw file names observers and where they stood.
 
 | Source | Where to get it | File to pass |
 |---|---|---|
-| MMT's list | By hand, as above | `satellites_list.txt` |
+| MMT's list | As above | `satellites_list.txt` |
 | Mike McCants's list | <https://www.mmccants.org/programs/qsmag.zip> | `quicksat.mag`, inside the zip |
 | SCORE observations | The all-observations download on <https://score.cps.iau.org> | `satellite_observations_all.csv`, inside the zip |
 | Stellarium's list | <https://raw.githubusercontent.com/Stellarium/stellarium/master/plugins/Satellites/resources/satellites.json> | `satellites.json` |
@@ -127,6 +156,16 @@ The top of `scripts/make_brightness_table.py` explains the order in which the so
 
 ## Credit
 
-The table's header, the README and the integration's attribution all carry the citation MMT asks for
-(Karpov et al. 2016) and its acknowledgement (Mini-MegaTORTORA belongs to Kazan Federal University).
-The script writes the table's header, and a test checks it, so keep them when changing any of this.
+MMT's team gave permission by email in November 2026, including for a script to fetch the list about
+once a week. They ask for attribution and these citations, which the table's header and the README
+both carry in full:
+
+- Karpov et al. 2016, "Massive photometry of low-altitude artificial satellites on
+  Mini-Mega-TORTORA", Revista Mexicana de Astronomía y Astrofísica (Serie de Conferencias) Vol. 48,
+  pp. 112-113, for the database.
+- Beskin et al. 2017, "Wide-field optical monitoring with Mini-MegaTORTORA (MMT-9) multichannel high
+  temporal resolution telescope", Astrophysical Bulletin, Volume 72, Issue 1, pp. 81-92, for the
+  telescope.
+
+The integration's attribution names Mini-MegaTORTORA and Karpov et al. 2016. The script writes the
+table's header, and tests check all three, so keep them when changing any of this.

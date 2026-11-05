@@ -75,16 +75,28 @@ def test_entities_have_names_and_icons() -> None:
     strings = _load(INTEGRATION / "strings.json")["entity"]
     icons = _load(INTEGRATION / "icons.json")["entity"]
     keys = {
-        "sensor": {"next_pass", "next_bright_pass", "passes_next_24h", "catalog_updated"},
-        "binary_sensor": {"pass_in_progress", "bright_pass_soon"},
-        "calendar": {"passes"},
+        "sensor": {
+            "next_visible_pass",
+            "next_visible_pass_peak_elevation",
+            "next_visible_pass_brightness",
+            "next_visible_pass_duration",
+            "next_visible_pass_cloud_cover",
+            "next_visible_satellite_name",
+            "next_bright_pass",
+            "satellite_elevation",
+            "visible_passes_next_24_hours",
+            "orbital_elements_epoch",
+        },
+        "binary_sensor": {"satellite_visible_now", "visible_pass_soon", "bright_pass_soon"},
+        "calendar": {"visible_passes"},
+        "device_tracker": {"satellite_position"},
     }
     assert {platform: set(names) for platform, names in strings.items()} == keys
     assert {platform: set(names) for platform, names in icons.items()} == keys
     for platform, names in icons.items():
         for key, icon in names.items():
             assert icon["default"].startswith("mdi:"), (platform, key)
-    assert strings["sensor"]["passes_next_24h"]["unit_of_measurement"] == "passes"
+    assert strings["sensor"]["visible_passes_next_24_hours"]["unit_of_measurement"] == "passes"
 
 
 def test_the_code_uses_only_defined_strings() -> None:
@@ -123,7 +135,8 @@ def test_privacy_is_described_honestly() -> None:
     assert "Open-Meteo" in user and "map tiles" in user
     assert "never" not in user
     options = strings["options"]["step"]["init"]["data_description"]
-    assert "Open-Meteo" in options["cloud_cover"]
+    assert "Open-Meteo" in options["cloud_forecast"]
+    assert "every hour" in options["cloud_forecast"]
     assert "OpenFreeMap" in options["show_in_sidebar"]
     # The keys go to administrators' browsers only, and Mapillary sees the area around home.
     street = strings["options"]["step"]["init"]["sections"]["street_view"]

@@ -12,11 +12,10 @@ Starlinks are left out: their brightness comes from a published model instead
             the citation it came from.
   score     For BlueWalker and SpaceMobile only, at this point: MMT has seen them
             too little since they unfolded. See below.
-  mmt       Mini-MegaTORTORA's satellite list: each object's median standard magnitude.
-            Karpov et al. 2016, RMxAA Conf. Ser. 48, 112. Save it from
-            http://mmt.favor2.info/satellites in a browser ("Download list of
-            satellites"): the site's robots.txt asks automated tools to stay away.
-  mccants   Mike McCants's qs.mag file, plus 0.75, which is 2.5 log10(2): it gives
+  mmt       Mini-MegaTORTORA's satellite list: each object's median standard magnitude,
+            used with its team's permission. HEADER below has the citations.
+            http://mmt.favor2.info/satellites/download
+  mccants  Mike McCants's qs.mag file, plus 0.75, which is 2.5 log10(2): it gives
             magnitudes at 100% illumination. Then a small offset by kind of object
             (see MCCANTS_TO_MMT). https://www.mmccants.org/programs/qsmag.zip
   score     The IAU CPS SCORE repository of observations (CC BY 4.0): the median
@@ -45,14 +44,13 @@ so their values would be published for nothing.
 
 docs/updating-brightness.md has the steps for both of the commands below.
 
-To bring the table up to date with a newer list from MMT, which is worth doing about
-every four months to keep up with what has been launched, save the list in a browser and:
+To bring the table up to date with MMT's list, as the Brightness workflow does each week:
 
-  python -I scripts/make_brightness_table.py --update --mmt satellites_list.txt
+  python -I scripts/make_brightness_table.py --update --download-mmt
 
-That needs no other source. It downloads SATCAT and CelesTrak's answers (once, so not
-twice in two hours, as CelesTrak refuses that), takes every value it can from the list,
-and keeps the table's other values as they are.
+That needs no other source. It downloads the list, SATCAT and CelesTrak's answers (once, so
+not twice in two hours, as CelesTrak refuses that), takes every value it can from the list,
+and keeps the table's other values as they are. --mmt reads a list saved earlier instead.
 
 To build the table from all its sources, from files you downloaded (keep them out of the
 repository: SCORE's raw file names observers and where they stood):
@@ -70,7 +68,8 @@ from collections import defaultdict
 from collections.abc import Iterable
 import csv
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+import io
 import json
 import math
 from pathlib import Path
@@ -89,6 +88,16 @@ GP_URL = "https://celestrak.org/NORAD/elements/gp.php"
 # The queries the integration makes (QUERIES in celestrak.py).
 ELEMENT_QUERIES = ({"GROUP": "visual"}, {"NAME": "R/B"}, {"GROUP": "active"})
 USER_AGENT = "SatelliteSpotter-table-builder (+https://github.com/kedube/ha-satellite-spotter)"
+MMT_URL = "http://mmt.favor2.info/satellites/download"
+# Its server only answers requests with a referer, to keep scrapers out. MMT's team gave us
+# this one, and agreed to a script fetching the list about once a week.
+MMT_REFERER = "http://mmt.favor2.info"
+# A list that moves this share of the table's values by this many magnitudes is more likely
+# wrong than new.
+LARGE_CHANGE = 1.0
+MOST_LARGE_CHANGES = 0.25
+# An object can reach the catalogue days after its launch, with the table updated in between.
+CATALOGUING_DAYS = 30
 
 # From McCants's 100% illumination to the half illumination of a standard magnitude.
 # ResolveSky documents the same conversion, https://resolvesky.com.
@@ -131,9 +140,13 @@ HEADER = """\
 #
 # Sources, in the "source" column:
 #   mmt      The median standard magnitude in the satellite list of Mini-MegaTORTORA (MMT-9),
-#            http://mmt.favor2.info/satellites. Karpov et al. 2016, Massive photometry of
-#            low-altitude artificial satellites on Mini-Mega-TORTORA, RMxAA Conf. Ser. 48, 112.
-#            Mini-MegaTORTORA belongs to Kazan Federal University.
+#            http://mmt.favor2.info/satellites, used with its team's permission.
+#            Karpov et al. 2016, "Massive photometry of low-altitude artificial satellites on
+#            Mini-Mega-TORTORA", Revista Mexicana de Astronomía y Astrofísica (Serie de
+#            Conferencias) Vol. 48, pp. 112-113.
+#            The telescope: Beskin et al. 2017, "Wide-field optical monitoring with
+#            Mini-MegaTORTORA (MMT-9) multichannel high temporal resolution telescope",
+#            Astrophysical Bulletin, Volume 72, Issue 1, pp. 81-92.
 #   mccants  qs.mag by Mike McCants, plus 0.75 and an offset by kind of object.
 #            https://www.mmccants.org/
 #   score    Medians computed from SCORE, IAU CPS, CC BY 4.0, changed by being turned into
@@ -426,9 +439,10 @@ def update(
     The other sources' values stay as they are, and an object MMT has dropped keeps
     its last value. An object new to orbit needs a value in the list, or a family there.
     An older object without a row was left out for being faint, so only one launched
-    since the table was built (``built``, a date) can take its family's value.
+    since the table was built (``built``, a date), or just before, can take its family's value.
     """
     families = family_medians(mmt, satcat)
+    since = (datetime.fromisoformat(built) - timedelta(days=CATALOGUING_DAYS)).date().isoformat()
     rows = []
     for norad, record in sorted(satcat.items()):
         name = record.get("OBJECT_NAME", "")
@@ -438,7 +452,7 @@ def update(
         if norad not in elements:
             continue
         known = table.get(norad)
-        new = record.get("LAUNCH_DATE", "") >= built
+        new = record.get("LAUNCH_DATE", "") >= since
         family = None
         if (new or known) and record.get("OBJECT_TYPE") != "DEB":
             family = families.get(family_of(name))
@@ -479,16 +493,15 @@ def read_built(path: Path) -> str:
     return found.group(1)
 
 
-def download(url: str) -> str:
-    """Download a file from CelesTrak, naming this script. Any error stops everything.
+def download(url: str, *, referer: str | None = None) -> str:
+    """Download a file, naming this script. Any error stops everything.
 
     With curl, as Python installed on a Mac often cannot verify secure connections.
     """
-    result = subprocess.run(
-        ["curl", "--fail", "--silent", "--show-error", "--max-time", "120", "-A", USER_AGENT, url],
-        capture_output=True,
-        check=True,
-    )
+    command = ["curl", "--fail", "--silent", "--show-error", "--max-time", "120", "-A", USER_AGENT]
+    if referer is not None:
+        command += ["--referer", referer]
+    result = subprocess.run([*command, url], capture_output=True, check=True)
     return result.stdout.decode("utf-8", errors="replace")
 
 
@@ -512,14 +525,20 @@ def read_elements(text: str) -> set[int]:
     return {int(row["NORAD_CAT_ID"]) for row in csv.DictReader(text.splitlines())}
 
 
+def table_text(rows: Iterable[Row], date: str) -> str:
+    """Return the table, with the attribution its sources ask for at the top."""
+    out = io.StringIO(newline="")
+    out.write(HEADER.format(date=date))
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(("norad_id", "magnitude", "source", "name"))
+    for row in rows:
+        writer.writerow((row.norad_id, f"{row.magnitude:.2f}", row.source, row.name))
+    return out.getvalue()
+
+
 def write_table(rows: Iterable[Row], path: Path, date: str) -> None:
-    """Write the table, with the attribution its sources ask for at the top."""
-    with path.open("w", encoding="utf-8", newline="") as out:
-        out.write(HEADER.format(date=date))
-        writer = csv.writer(out, lineterminator="\n")
-        writer.writerow(("norad_id", "magnitude", "source", "name"))
-        for row in rows:
-            writer.writerow((row.norad_id, f"{row.magnitude:.2f}", row.source, row.name))
+    """Write the table."""
+    path.write_text(table_text(rows, date), encoding="utf-8", newline="")
 
 
 def read_overrides(path: Path) -> dict[int, float]:
@@ -543,9 +562,23 @@ def report(rows: list[Row], path: Path) -> None:
     print(f"{path}: {len(rows)} objects, {dict(sorted(counts.items()))}")
 
 
+def mmt_list(args: argparse.Namespace) -> str:
+    """Return MMT's list: downloaded, or from the file given."""
+    return download(MMT_URL, referer=MMT_REFERER) if args.download_mmt else read_text(args.mmt)
+
+
+def _reason(err: Exception) -> object:
+    detail = getattr(err, "stderr", None)
+    return detail.decode(errors="replace").strip() if detail else err
+
+
 def run_update(args: argparse.Namespace) -> None:
-    """Bring the table at args.out up to date with args.mmt."""
-    mmt = read_mmt(read_text(args.mmt))
+    """Bring the table at args.out up to date with MMT's list."""
+    # First, so that a refusal here uses up none of CelesTrak's allowance.
+    try:
+        mmt = read_mmt(mmt_list(args))
+    except (OSError, subprocess.CalledProcessError) as err:
+        sys.exit(f"Stopped, and the table is unchanged: no list from MMT: {_reason(err)}")
     table = read_table(args.out)
     try:
         if args.satcat:
@@ -558,30 +591,45 @@ def run_update(args: argparse.Namespace) -> None:
         else:
             elements = download_elements()
     except (OSError, subprocess.CalledProcessError) as err:
-        detail = getattr(err, "stderr", None)
-        reason = detail.decode(errors="replace").strip() if detail else err
         sys.exit(
-            f"Stopped, and the table is unchanged: {reason}\n"
+            f"Stopped, and the table is unchanged: {_reason(err)}\n"
             "CelesTrak refuses a repeat download: if it answered 403, wait two hours."
         )
-    rows = update(mmt, table, satcat, elements, read_built(args.out))
+    built = read_built(args.out)
+    rows = update(mmt, table, satcat, elements, built)
     # A list that went wrong should not cost the table what it has.
     if len(rows) < len(table) / 2:
         sys.exit(f"Stopped: only {len(rows)} objects, where the table has {len(table)}.")
+    moves = [abs(row.magnitude - table[row.norad_id][0]) for row in rows if row.norad_id in table]
+    large = sum(move > LARGE_CHANGE for move in moves)
+    if large > len(table) * MOST_LARGE_CHANGES:
+        sys.exit(f"Stopped: {large} of {len(table)} values would move by over {LARGE_CHANGE}.")
+    # Not even the date, so that a week with nothing new has nothing to propose.
+    if table_text(rows, built) == read_text(args.out):
+        print("Nothing has changed, so the table stays as it is.")
+        return
     write_table(rows, args.out, datetime.now(UTC).date().isoformat())
     added = {row.norad_id for row in rows} - set(table)
     gone = set(table) - {row.norad_id for row in rows}
     print(f"{len(added)} objects added, {len(gone)} gone.")
+    changed = sum(move > 0.005 for move in moves)
+    print(f"{changed} values changed, the largest by {max(moves, default=0.0):.2f}.")
     report(rows, args.out)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--mmt", type=Path, required=True, help="MMT's satellites_list.txt")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--mmt", type=Path, help="MMT's satellites_list.txt, saved earlier")
+    source.add_argument(
+        "--download-mmt",
+        action="store_true",
+        help="download MMT's list: about once a week at most, as its team agreed",
+    )
     parser.add_argument(
         "--update",
         action="store_true",
-        help="bring the table up to date with --mmt alone, keeping its other values",
+        help="bring the table up to date with MMT's list alone, keeping its other values",
     )
     parser.add_argument("--qsmag", type=Path, help="McCants's qs.mag")
     parser.add_argument("--score", type=Path, help="SCORE's observations as CSV")
@@ -618,7 +666,7 @@ def main() -> None:
     for path in args.gcat:
         gcat.update(read_gcat(read_text(path)))
 
-    mmt = read_mmt(read_text(args.mmt))
+    mmt = read_mmt(mmt_list(args))
     mccants = read_mccants(read_text(args.qsmag))
     stellarium = read_stellarium(read_text(args.stellarium), mccants)
     elements = {norad for path in args.elements for norad in read_elements(read_text(path))}

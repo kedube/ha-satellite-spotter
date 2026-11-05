@@ -47,17 +47,17 @@
       "init": {
         "title": "Quais passagens devem ser informadas?",
         "data": {
-          "max_magnitude": "Magnitude mais fraca",
-          "cloud_cover": "Previsão de nebulosidade",
+          "brightness_cutoff": "Limite de brilho",
+          "cloud_forecast": "Previsão de nuvens",
           "alert_lead_minutes": "Aviso antecipado",
           "show_in_sidebar": "Mostrar o Satellite Spotter na barra lateral",
           "show_in_calendar": "Mostrar as passagens no calendário",
           "units": "Unidades"
         },
         "data_description": {
-          "max_magnitude": "Informa só as passagens pelo menos tão brilhantes. Números menores são mais brilhantes: 2,25 é mais ou menos o mais fraco que se encontra num bairro residencial; 1 mantém as fáceis, e abaixo de 0 só restam as deslumbrantes.",
-          "cloud_cover": "Adiciona a cada passagem a previsão de nebulosidade do Open-Meteo. O Open-Meteo recebe as coordenadas deste local (com quatro casas decimais) a cada duas horas.",
-          "alert_lead_minutes": "O sensor \"Passagem brilhante em breve\" liga com essa antecedência antes de aparecer o satélite mais brilhante de uma passagem brilhante.",
+          "brightness_cutoff": "Uma passagem só aparece se ficar pelo menos tão brilhante. A escala é invertida, então um número menor é mais brilhante: 2,25 serve para o céu de um bairro residencial, 1 deixa as fáceis e, abaixo de 0, só as deslumbrantes.",
+          "cloud_forecast": "Mostra quantas nuvens o Open-Meteo prevê em cada passagem. O Open-Meteo recebe as coordenadas deste local (com quatro casas decimais) a cada hora.",
+          "alert_lead_minutes": "Os sensores \"Passagem visível em breve\" e \"Passagem brilhante em breve\" ligam com essa antecedência antes de aparecer o satélite mais brilhante da passagem.",
           "show_in_sidebar": "Adiciona à barra lateral uma página do Satellite Spotter com as passagens, um globo 3D e uma vista do céu ao nível da rua. A vista de rua carrega blocos de mapa dos arredores do OpenFreeMap e da AWS (e da Esri com imagens aéreas). Os cartões do painel funcionam de qualquer forma.",
           "show_in_calendar": "Adiciona um calendário com as passagens dos próximos cinco dias, cada uma com quando e para onde olhar. Os gatilhos de calendário podem então iniciar automações antes de uma passagem.",
           "units": "Para distâncias e velocidades no globo e na vista de rua. \"Automático\" segue o sistema de unidades do Home Assistant."
@@ -108,31 +108,57 @@
   },
   "entity": {
     "binary_sensor": {
-      "pass_in_progress": {
-        "name": "Satélite visível"
+      "satellite_visible_now": {
+        "name": "Satélite visível agora"
+      },
+      "visible_pass_soon": {
+        "name": "Passagem visível em breve"
       },
       "bright_pass_soon": {
         "name": "Passagem brilhante em breve"
       }
     },
     "calendar": {
-      "passes": {
-        "name": "Passagens de satélites"
+      "visible_passes": {
+        "name": "Passagens visíveis"
+      }
+    },
+    "device_tracker": {
+      "satellite_position": {
+        "name": "Posição do satélite"
       }
     },
     "sensor": {
-      "next_pass": {
-        "name": "Próxima passagem"
+      "next_visible_pass": {
+        "name": "Próxima passagem visível"
+      },
+      "next_visible_pass_peak_elevation": {
+        "name": "Elevação máxima da próxima passagem visível"
+      },
+      "next_visible_pass_brightness": {
+        "name": "Brilho da próxima passagem visível"
+      },
+      "next_visible_pass_duration": {
+        "name": "Duração da próxima passagem visível"
+      },
+      "next_visible_pass_cloud_cover": {
+        "name": "Cobertura de nuvens da próxima passagem visível"
+      },
+      "next_visible_satellite_name": {
+        "name": "Nome do próximo satélite visível"
       },
       "next_bright_pass": {
         "name": "Próxima passagem brilhante"
       },
-      "passes_next_24h": {
-        "name": "Passagens nas próximas 24 horas",
+      "satellite_elevation": {
+        "name": "Elevação do satélite"
+      },
+      "visible_passes_next_24_hours": {
+        "name": "Passagens visíveis nas próximas 24 horas",
         "unit_of_measurement": "passagens"
       },
-      "catalog_updated": {
-        "name": "Catálogo atualizado"
+      "orbital_elements_epoch": {
+        "name": "Época dos elementos orbitais"
       }
     }
   },
