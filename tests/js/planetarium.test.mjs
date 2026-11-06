@@ -18,7 +18,6 @@ import {
   frameView,
   hiddenStretches,
   horizonGlowPenalty,
-  limitingMagnitude,
   magnitudeWidth,
   makeProjector,
   occlusionFromBand,
@@ -27,9 +26,7 @@ import {
   sampleAt,
   skyColorAt,
   skyModel,
-  skylineAt,
   spacedLabels,
-  starVisible,
   tickTimes,
   timeToEntry,
   trackFromRows,
@@ -37,6 +34,8 @@ import {
 } from "../../custom_components/satellite_spotter/frontend/sat-planetarium.js";
 import { fakeCanvas, fakeFormatter, syntheticPass } from "./helpers/street-fakes.mjs";
 import { maplibreCamera, maplibrePixel } from "./helpers/street-math.mjs";
+
+import { horizonAt } from "../../custom_components/satellite_spotter/frontend/sat-horizon.js";
 
 const DEG = Math.PI / 180;
 const close = (actual, expected, tolerance, label = "") =>
@@ -164,21 +163,10 @@ test("the sky is painted again once the Sun has moved a quarter of a degree, not
   assert.equal(skyModel({ azimuth: 120.1, elevation: 30.1 }).sunElevation, 30.1);
 });
 
-test("how faint a star can be: twilight, the Moon, light pollution and the air", () => {
-  assert.equal(limitingMagnitude(-30, { lightPollution: "rural" }), 6);
-  assert.equal(limitingMagnitude(-30, { lightPollution: "suburban" }), LIGHT_POLLUTION.suburban.limit);
-  assert.equal(limitingMagnitude(-30, { lightPollution: "city" }), 4);
-  assert.ok(limitingMagnitude(-8) < 3, "nautical twilight shows the brightest stars only");
-  assert.ok(limitingMagnitude(5) < 0, "day: none");
-  assert.ok(limitingMagnitude(-30, { lightPollution: "rural", moon: { elevation: 50, fraction: 1 } }) < 4.5, "full Moon");
+test("how the air dims a star, and a city's glow over the horizon", () => {
   // Extinction: a magnitude 2 star at the zenith, but not near the horizon.
   close(apparentMagnitude(2, 90), 2, 1e-9);
   assert.ok(apparentMagnitude(2, 5) > 4);
-  assert.ok(starVisible(2, 60, 4));
-  assert.ok(!starVisible(2, 3, 4), "lost in the murk low down");
-  assert.ok(!starVisible(-1, -0.5, 6), "below the horizon");
-  assert.ok(starVisible(3.5, 40, 4.5));
-  assert.ok(!starVisible(3.5, 10, 4.5, 1), "a city's glow over the horizon");
   assert.ok(horizonGlowPenalty(5, 1) > horizonGlowPenalty(45, 1));
   assert.equal(horizonGlowPenalty(10, 0), 0);
 });
@@ -350,9 +338,9 @@ test("hidden stretches merge neighbouring samples within the visible window", ()
 
 test("skyline lookups interpolate and wrap around north", () => {
   const skyline = { stepDeg: 90, profile: [0, 1, 2, 3].map((i) => ({ azimuth: i * 90, elevation: [2, 4, 6, 8][i] })) };
-  close(skylineAt(skyline, 45), 3, 1e-9);
-  close(skylineAt(skyline, 315), 5, 1e-9, "between 270 and 360 = 0");
-  close(skylineAt(skyline, -45), 5, 1e-9);
+  close(horizonAt(skyline, 45), 3, 1e-9);
+  close(horizonAt(skyline, 315), 5, 1e-9, "between 270 and 360 = 0");
+  close(horizonAt(skyline, -45), 5, 1e-9);
 });
 
 test("the dot and the path grow with brightness", () => {

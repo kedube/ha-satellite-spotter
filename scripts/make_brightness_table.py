@@ -199,7 +199,12 @@ def read_mmt(text: str) -> dict[int, float]:
         if len(fields) != len(header) or fields[header.index("Catalogue")] != "NORAD":
             continue
         magnitude = number(fields[header.index(median)])
-        if magnitude is not None and fields[header.index("Id")].isdigit():
+        # The list comes over plain HTTP: nothing in orbit is this bright, whoever says so.
+        if (
+            magnitude is not None
+            and magnitude >= BRIGHTEST_PLAUSIBLE
+            and fields[header.index("Id")].isdigit()
+        ):
             values[int(fields[header.index("Id")])] = magnitude
     return values
 

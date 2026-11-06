@@ -468,7 +468,7 @@ test("open() starts once and asks for the path; dispose() frees the map and leav
     // The map settles: the veil goes, the GPU is timed, the eye re-seated.
     map.fire("idle");
     await clock.settle(30, 16);
-    assert.ok(view._settled);
+    assert.ok(view._life.settled);
     assert.equal(view._mode, "3d", "a GPU that keeps up keeps the 3D street");
     assert.ok(map.jumps.length >= 2);
     view.dispose();
@@ -1209,7 +1209,7 @@ test("the next photo is remembered for the place, and a photo that does not load
     view._stepPhoto(1);
     await clock.settle(4);
     assert.equal(view._scene.photo.id, "far");
-    assert.deepEqual(JSON.parse(storage.store.get("satellite-spotter:street-photo")), { [placeKey(BOSTON)]: "far" });
+    assert.deepEqual(JSON.parse(storage.store.get("satellite-spotter:street-photo")), { default: "far" });
     assert.equal(searched, 1, "the place's photos are asked for once");
     view.dispose();
     // Opened again, the choice stands.
@@ -1463,6 +1463,240 @@ test("closed while a photo is still loading, the view frees it at once", async (
     await clock.settle(3);
     view.location = { ...BOSTON, latitude: BOSTON.latitude + 0.01 };
     assert.ok(made[1].removed);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+// ---- starting: nothing may keep the veil up, and a restart starts from nothing ------------
+
+/** As a browser: taking a scene away gives up its WebGL context, which is heard as a loss. */
+function losingContextOnRemoval(factory) {
+  return (container, options) => {
+    const scene = factory(container, options);
+    const remove = scene.remove;
+    scene.remove = () => {
+      remove();
+      options.onContextLost();
+    };
+    return scene;
+  };
+}
+
+test("stepping to another photo restarts once, not every five seconds from then on", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory, made } = fakePhotoScenes();
+    const { view } = streetView({ photos: PHOTOS, photoScene: losingContextOnRemoval(factory) });
+    const { pass, detail } = syntheticPass({ start: T0 + 100 });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(4);
+    assert.equal(made.length, 1);
+    view._stepPhoto(1);
+    await clock.settle(4);
+    assert.equal(made.length, 2, "the next photo");
+    assert.equal(view._mode, "photo");
+    assert.ok(view._els.veil.classList.contains("gone"), "and it shows");
+    // Well past the five seconds a lost context has to come back.
+    await clock.settle(1, 60000);
+    await clock.settle(4);
+    assert.equal(made.length, 2, "and nothing starts over");
+    assert.equal(made[1].scene.removed, false, "the good photo stays");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a photo that is rejected moves on to the next without restarting anything afterwards", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory, made } = fakePhotoScenes({ fail: ["near"] });
+    const { view } = streetView({ photos: PHOTOS, photoScene: losingContextOnRemoval(factory) });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(made.length, 2, "the nearest was refused");
+    await clock.settle(1, 60000);
+    await clock.settle(4);
+    assert.equal(made.length, 2);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a real loss of the showing scene still starts over if the context does not come back", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory, made } = fakePhotoScenes();
+    const { view } = streetView({ photos: PHOTOS, photoScene: factory });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    made[0].options.onContextLost();
+    assert.ok(!view._els.veil.classList.contains("gone"), "it says so");
+    await clock.settle(1, 5100);
+    await clock.settle(4);
+    assert.equal(made.length, 2);
+    assert.equal(made[0].scene.removed, true);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a photo that never finishes loading gives way to the next, and the last to the 3D model", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory, made } = fakePhotoScenes();
+    const stalling = (container, options) => {
+      const scene = factory(container, options);
+      scene.load = () => new Promise(() => {});
+      return scene;
+    };
+    const { view, ml } = streetView({ photos: PHOTOS, photoScene: stalling });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(made.length, 1);
+    await clock.settle(1, 20100);
+    await clock.settle(4);
+    assert.equal(made.length, 2, "the next is tried");
+    assert.equal(made[0].scene.removed, true, "and the first is freed, with its downloads");
+    await clock.settle(1, 20100);
+    await clock.settle(4);
+    await clock.settle(1, 20100);
+    await clock.settle(4);
+    assert.equal(ml.maps.length, 1, "after them all, the model");
+    assert.equal(view._mode, "3d");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a ground height that never comes leaves the 3D model standing on what it knows", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view, ml } = streetView({ settings: { source: "model" } });
+    view._groundElevation = () => new Promise(() => {});
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(ml.maps.length, 0, "it waits a while");
+    await clock.settle(1, 8100);
+    await clock.settle(4);
+    assert.equal(ml.maps.length, 1);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a map library that never loads leaves the sky", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView({ settings: { source: "model" } });
+    view._loadMapLibre = () => new Promise(() => {});
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(view._mode, null);
+    await clock.settle(1, 20100);
+    await clock.settle(4);
+    assert.equal(view._mode, "2d");
+    assert.ok(view._els.veil.classList.contains("gone"));
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a photo that loads while the screen turns is fitted to the screen as it now is", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory } = fakePhotoScenes();
+    let scene;
+    let resizes = 0;
+    const counting = (container, options) => {
+      scene = factory(container, options);
+      scene.resize = () => resizes++;
+      return scene;
+    };
+    const { view } = streetView({ photos: PHOTOS, photoScene: counting });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(view._scene, scene);
+    assert.ok(resizes >= 1, "fitted once it shows");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a restart in the middle of a search asks again rather than reporting the stopped one", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory } = fakePhotoScenes();
+    const asked = [];
+    const photos = (options) =>
+      new Promise((resolve, reject) => {
+        asked.push(options.source);
+        if (asked.length === 1) options.signal.addEventListener("abort", () => reject(Object.assign(new Error("stopped"), { name: "AbortError" })));
+        else resolve(PHOTOS);
+      });
+    const { view } = streetView({ photos, photoScene: factory });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(asked.length, 1, "searching");
+    view._restartScene();
+    await clock.settle(4);
+    assert.equal(asked.length, 2, "asked again");
+    assert.equal(view._mode, "photo", "and it found them");
+    assert.equal(view._photoNote, null, "with nothing to explain");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a search that ran out of time is reported, where a stopped one is not", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView({
+      photos: async () => {
+        throw Object.assign(new Error("no answer in 8000 ms"), { name: "TimeoutError" });
+      },
+    });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    assert.equal(view._photoNote, "street.photo_unavailable");
+    assert.equal(view._mode, "3d");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a search that is done is not asked again by a restart", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { factory } = fakePhotoScenes();
+    let searched = 0;
+    const { view } = streetView({ photos: () => (searched++, PHOTOS), photoScene: factory });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.open();
+    await clock.settle(4);
+    view._restartScene();
+    await clock.settle(4);
+    assert.equal(searched, 1);
     view.dispose();
   } finally {
     clock.restore();

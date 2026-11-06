@@ -25,8 +25,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import track
-from .const import USER_AGENT
-from .predict import Satellite
+from .const import MAX_CATALOG_BYTES, USER_AGENT
+from .download import TooMuchData, async_read_capped
+from .predict import Satellite, is_starlink
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,10 +74,10 @@ def brightness_table() -> dict[int, float]:
 
 def _satellite(row: Mapping[str, str], table: Mapping[int, float]) -> Satellite | None:
     """Return the satellite a row of orbital data describes, if it is one we predict."""
-    name = row["OBJECT_NAME"].upper()
-    if name.startswith("STARLINK"):
+    name = row["OBJECT_NAME"]
+    if is_starlink(name):
         # Direct-to-cell satellites have a brightness curve of their own.
-        curve = "starlink-dtc" if "[DTC]" in name else "starlink-raising"
+        curve = "starlink-dtc" if "[DTC]" in name.upper() else "starlink-raising"
         satellite = Satellite.from_elements(row, curve=curve)
         return satellite if track.apsides_km(satellite)[0] < STARLINK_MAX_PERIGEE_KM else None
     norad_id = int(row["NORAD_CAT_ID"])
@@ -89,23 +90,38 @@ def _is_orbital_data(text: str) -> bool:
     return "NORAD_CAT_ID" in text.partition("\n")[0]
 
 
-def build_catalog(responses: Iterable[str]) -> list[Satellite]:
+def _take_newest(rows: dict[str, dict[str, str]], text: str) -> None:
+    """Add an answer's rows, keeping the newest elements of each object."""
+    for row in csv.DictReader(io.StringIO(text)):
+        # The last line of an answer cut short has no value in the last columns.
+        if None in row.values():
+            continue
+        norad_id = row["NORAD_CAT_ID"]
+        if norad_id not in rows or row["EPOCH"] > rows[norad_id]["EPOCH"]:
+            rows[norad_id] = row
+
+
+def build_catalog(responses: Iterable[str], supplements: Iterable[str] = ()) -> list[Satellite]:
     """Join CelesTrak's answers with the brightness table (in the executor).
 
-    An object can be in several answers; the newest elements win.
+    An object can be in several answers; the newest elements win. An answer that is not orbital
+    data counts as a refusal, as asking again soon would be asking for the same thing, unless it
+    is a supplement, which the catalog can do without.
     """
     table = brightness_table()
     rows: dict[str, dict[str, str]] = {}
     for text in responses:
         if not _is_orbital_data(text):
             raise DownloadRefused(f"CelesTrak did not send orbital data: {text[:80]!r}")
-        for row in csv.DictReader(io.StringIO(text)):
-            # The last line of an answer cut short has no value in the last columns.
-            if None in row.values():
-                continue
-            norad_id = row["NORAD_CAT_ID"]
-            if norad_id not in rows or row["EPOCH"] > rows[norad_id]["EPOCH"]:
-                rows[norad_id] = row
+        try:
+            _take_newest(rows, text)
+        except (csv.Error, KeyError) as err:
+            raise DownloadRefused(f"CelesTrak's orbital data could not be read: {err!r}") from err
+    for text in supplements:
+        try:
+            _take_newest(rows, text)
+        except (csv.Error, KeyError) as err:
+            _LOGGER.debug("Going without the rest of the supplemental elements: %r", err)
     satellites = []
     for row in rows.values():
         try:
@@ -142,9 +158,12 @@ async def _async_download(
         ) as response:
             if response.status != 200:
                 raise DownloadRefused(_refusal(response.status, query))
-            return await response.text(encoding="utf-8", errors="replace")
+            body = await async_read_capped(response, MAX_CATALOG_BYTES)
+            return body.decode("utf-8", errors="replace")
+    except TooMuchData as err:
+        raise DownloadRefused(f"CelesTrak sent too much: {err}") from err
     except (aiohttp.ClientError, TimeoutError) as err:
-        raise CatalogError(f"Could not reach CelesTrak: {err}") from err
+        raise CatalogError(f"Could not reach CelesTrak: {str(err) or type(err).__name__}") from err
 
 
 async def _async_download_supplement(session: aiohttp.ClientSession) -> list[str]:
@@ -177,5 +196,5 @@ async def async_fetch_catalog(hass: HomeAssistant) -> list[Satellite]:
                 f"The download stopped partway ({err}). CelesTrak allows one download every two "
                 "hours, so the integration waits two hours, then tries again by itself."
             ) from err
-    responses += await _async_download_supplement(session)
-    return await hass.async_add_executor_job(build_catalog, responses)
+    supplements = await _async_download_supplement(session)
+    return await hass.async_add_executor_job(build_catalog, responses, supplements)

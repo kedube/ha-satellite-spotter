@@ -20,8 +20,9 @@ export const COMPLETION_STATUS_KHR = 0x91b1;
  * function of the program's shader sources), and their uniforms are the ones
  * their sources declare. Every other method is a stub that records the call
  * and returns a new {id}; objects made by create*() are kept in `created`.
+ * WEBGL_lose_context calls `onLoseContext`.
  */
-export function fakeGL({ linkOk = true, parallel = null, drawingBufferWidth = 1600, drawingBufferHeight = 900 } = {}) {
+export function fakeGL({ linkOk = true, parallel = null, drawingBufferWidth = 1600, drawingBufferHeight = 900, onLoseContext = null } = {}) {
   const calls = [];
   const created = [];
   let next = 0;
@@ -30,7 +31,8 @@ export function fakeGL({ linkOk = true, parallel = null, drawingBufferWidth = 16
     drawingBufferWidth,
     drawingBufferHeight,
     isContextLost: () => false,
-    getExtension: (name) => (name === "KHR_parallel_shader_compile" ? parallel : null),
+    // Giving up a context is heard as "webglcontextlost" on its canvas, whoever asked for it.
+    getExtension: (name) => (name === "KHR_parallel_shader_compile" ? parallel : name === "WEBGL_lose_context" ? { loseContext: () => onLoseContext?.() } : null),
     createShader: (type) => ({ id: ++next, type, source: "" }),
     shaderSource: (shader, source) => (shader.source = source),
     createProgram: () => {

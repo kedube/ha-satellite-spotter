@@ -575,3 +575,143 @@ test("the card knows a light theme even before Home Assistant says which theme i
   assert.equal(darkTheme({ themes: {} }, () => ({ matches: true })), true);
   assert.equal(darkTheme(undefined, undefined), true, "with nothing to go on, the dark night-sky look");
 });
+
+// ---- the theme ----------------------------------------------------------------------
+
+test("how light a colour is, in the forms a theme gives it", () => {
+  const { luminanceOf } = card;
+  assert.equal(luminanceOf("#000"), 0);
+  assert.ok(Math.abs(luminanceOf("#ffffff") - 1) < 1e-9);
+  assert.ok(luminanceOf("#1c1c1c") < 0.02);
+  assert.ok(luminanceOf("rgb(250, 250, 250)") > 0.9);
+  assert.ok(luminanceOf("rgba(28 28 28 / 0.9)") < 0.02);
+  assert.ok(luminanceOf("#fffc") > 0.9, "see-through, but not much");
+  assert.equal(luminanceOf("rgba(0,0,0,.2)"), null, "mostly see-through says nothing");
+  assert.equal(luminanceOf("#0000"), null);
+  assert.equal(luminanceOf("var(--nothing)"), null);
+  assert.equal(luminanceOf("hotpink"), null);
+  assert.equal(luminanceOf(""), null);
+  assert.equal(luminanceOf(undefined), null);
+});
+
+test("a card's text goes by the colour it is on, whatever the theme calls itself", () => {
+  const { cardIsLight } = card;
+  const style = (vars) => () => ({ getPropertyValue: (name) => vars[name] ?? "" });
+  const notDark = { themes: { darkMode: false } };
+  const dark = { themes: { darkMode: true } };
+  // A classic dark theme: Home Assistant says it is not dark.
+  assert.equal(cardIsLight({}, notDark, style({ "--card-background-color": "#1c1c1c" })), false);
+  // A light theme on one view while the rest is dark.
+  assert.equal(cardIsLight({}, dark, style({ "--card-background-color": "#fafafa" })), true);
+  // A card's own background goes first.
+  assert.equal(cardIsLight({}, dark, style({ "--ha-card-background": "#ffffff", "--card-background-color": "#000000" })), true);
+  // See through, or a gradient: on to the next, and at last what Home Assistant says.
+  assert.equal(cardIsLight({}, dark, style({ "--ha-card-background": "linear-gradient(red, blue)", "--card-background-color": "#ffffff" })), true);
+  assert.equal(cardIsLight({}, notDark, style({})), true);
+  assert.equal(cardIsLight({}, dark, style({})), false);
+  assert.equal(cardIsLight({}, dark, undefined), false, "with no way of telling");
+});
+
+// ---- when things go wrong ---------------------------------------------------------------
+
+test("a pass's chart that failed during a pass is asked for again within the minute, and at once on a reconnect", async () => {
+  const live = makePass({ id: "25544-live", title: "ISS", kind: "iss", start: BOSTON_NOW - 60, duration: 900, magnitude: -2 });
+  const c = await mount({ passes: [live], fail: (msg) => msg.type === "satellite_spotter/pass_track" });
+  const asked = () => c.asked.filter((m) => m.type === "satellite_spotter/pass_track").length;
+  assert.equal(asked(), 1);
+  await c.clock.advance(30000);
+  assert.equal(asked(), 1, "not on every tick");
+  await c.clock.advance(31000);
+  assert.equal(asked(), 2, "a minute on, with nothing else having drawn the card");
+  c.view._onReconnect();
+  await c.clock.advance(1000);
+  assert.equal(asked(), 3);
+  await c.unmount();
+});
+
+test("a location that has gone is said at once, not counted down to the passes it had", async () => {
+  const c = await mount();
+  assert.equal(c.text(".state .label"), "Next pass");
+  c.hass.callWS = async () => {
+    throw { code: "unknown_location", message: "gone" };
+  };
+  await c.view._refresh();
+  await c.clock.advance(0);
+  assert.equal(c.root.querySelector(".name").hidden, true);
+  assert.match(c.text(".text"), /no longer|location/i);
+  await c.unmount();
+});
+
+test("a passing failure leaves the passes there are on the card", async () => {
+  const c = await mount();
+  c.hass.callWS = async () => {
+    throw { code: 3, message: "connection lost" };
+  };
+  await c.view._refresh();
+  await c.clock.advance(0);
+  assert.equal(c.root.querySelector(".name").hidden, false);
+  assert.equal(c.text(".name .title"), "BlueWalker 3");
+  await c.unmount();
+});
+
+test("a translation that did not download does not redraw the card on every update", async () => {
+  const saved = globalThis.fetch;
+  let downloads = 0;
+  globalThis.fetch = async () => {
+    downloads++;
+    throw new Error("offline");
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const c = await mount({ payload: {} });
+    let drawn = 0;
+    const render = c.view._render;
+    c.view._render = function () {
+      drawn++;
+      return render.call(this);
+    };
+    for (let i = 0; i < 5; i++) c.view.hass = { ...c.hass, language: "sv" };
+    await c.clock.advance(10);
+    assert.ok(downloads <= 1, `${downloads} downloads`);
+    assert.ok(drawn <= 1, `${drawn} redraws`);
+    await c.unmount();
+  } finally {
+    globalThis.fetch = saved;
+    console.warn = warn;
+  }
+});
+
+test("without the panel a row offers only the street view, as simulating takes the globe", async () => {
+  const c = await mount({ panel: false });
+  const row = c.root.querySelector(".list").shadowRoot.querySelector("li.row");
+  assert.equal(row.querySelectorAll('[data-action="sim"]').length, 0);
+  assert.equal(row.querySelectorAll('[data-action="street"]').length, 1);
+  await c.unmount();
+  const d = await mount({ panel: true });
+  assert.equal(d.root.querySelector(".list").shadowRoot.querySelector("li.row").querySelectorAll('[data-action="sim"]').length, 1);
+  await d.unmount();
+});
+
+test("a pass with no path still opens in the street view, which asks again", async () => {
+  const c = await mount({ panel: false, fail: (msg) => msg.type === "satellite_spotter/pass_track" });
+  await c.view._openStreet(PASSES[0], null);
+  await c.clock.advance(0);
+  const street = c.root.querySelector("satellite-street-view");
+  assert.ok(street, "it opens");
+  assert.equal(street.detail, null);
+  c.view._closeStreet();
+  await c.unmount();
+});
+
+test("the keyboard that wanders out of the street view goes back to its scene", async () => {
+  const c = await mount({ panel: false });
+  await c.view._openStreet(PASSES[0], null);
+  await c.clock.advance(0);
+  let focused = 0;
+  c.view._focusOverlay = () => focused++;
+  c.view._focusIn({ composedPath: () => [] });
+  assert.equal(focused, 1);
+  c.view._closeStreet();
+  await c.unmount();
+});

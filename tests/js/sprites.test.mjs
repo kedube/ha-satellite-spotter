@@ -11,7 +11,6 @@ import {
   drawGlow,
   drawSprite,
   drawStation,
-  spriteIcon,
   spriteKind,
 } from "../../custom_components/satellite_spotter/frontend/sat-sprites.js";
 import { recordingCanvas, withDocument } from "./helpers/gl-fake.mjs";
@@ -121,36 +120,3 @@ test("a glow fades from the centre to the edge", () => {
   assert.deepEqual(log.at(-1), ["fillRect", 0, 0, 64, 64]);
 });
 
-test("icons for the UI: PNG data URLs drawn for the screen's pixel ratio, made once per kind and size", () => {
-  const saved = globalThis.devicePixelRatio;
-  try {
-    globalThis.devicePixelRatio = 2;
-    const sizes = [];
-    const made = () => {
-      const canvas = recordingCanvas([]);
-      return new Proxy(canvas, {
-        set: (target, key, value) => {
-          if (key === "width") sizes.push(value);
-          target[key] = value;
-          return true;
-        },
-      });
-    };
-    withDocument(made, () => {
-      const url = spriteIcon("starlink", 20);
-      assert.match(url, /^data:image\/png;base64,/);
-      assert.equal(spriteIcon("starlink", 20), url, "cached");
-      assert.deepEqual(sizes, [40], "20 CSS px at 2x");
-      spriteIcon("starlink", 32);
-      spriteIcon("iss", 20);
-      spriteIcon("payload", 20); // a satellite
-      spriteIcon("satellite", 20); // the same icon
-      assert.deepEqual(sizes, [40, 64, 40, 40]);
-      globalThis.devicePixelRatio = 7;
-      spriteIcon("rocket", 10);
-      assert.equal(sizes.at(-1), 30, "at most 3x");
-    });
-  } finally {
-    globalThis.devicePixelRatio = saved;
-  }
-});

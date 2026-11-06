@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Ange en latitud mellan -90° och 90° och en giltig longitud.",
+      "name_required": "Ange ett namn på den här platsen.",
+      "invalid_elevation": "Ange höjden som ett antal meter.",
       "cannot_connect": "Satellitkatalogen kunde inte laddas ned. Kontrollera att Home Assistant når internet och försök igen.",
       "download_limited": "CelesTrak, där bandatan kommer från, tillåter inte någon ny nedladdning än. Försök igen om två timmar.",
       "unknown": "Oväntat fel när satellitkatalogen lästes in. Loggen har detaljerna."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Ljusstyrkegräns",
           "cloud_forecast": "Molnprognos",
+          "weather_entity": "Väderentitet för molnen",
           "alert_lead_minutes": "Förvarning",
+          "min_elevation": "Minsta höjd",
+          "follow_entity": "Följ en person eller spårare",
           "show_in_sidebar": "Visa Satellite Spotter i sidofältet",
           "show_in_calendar": "Visa passagerna i kalendern",
           "units": "Enheter"
         },
         "data_description": {
           "brightness_cutoff": "En passage visas bara om den blir minst så här ljusstark. Skalan går baklänges, så ett lägre tal är ljusare: 2,25 passar himlen i en förort, 1 lämnar de lätta, och under 0 bara de bländande.",
-          "cloud_forecast": "Visar hur molnigt Open-Meteo väntar sig vid varje passage. Open-Meteo får den här platsens koordinater (med fyra decimaler) varje timme.",
+          "cloud_forecast": "Visar hur molnigt det väntas bli vid varje passage. Om du inte väljer en väderentitet nedan får Open-Meteo varje timme platsens koordinater, avrundade till ungefär en kilometer.",
+          "weather_entity": "Valfritt. Hämtar molnen från den här entitetens timprognos, och Open-Meteo tillfrågas inte. Saknar prognosen molntäcke visar passagerna inget.",
           "alert_lead_minutes": "Sensorerna ”Synlig passage snart” och ”Ljusstark passage snart” slås på så här lång tid innan passagens ljusstarkaste satellit syns.",
+          "min_elevation": "En satellit räknas bara så länge den står minst så här högt. Höj värdet om träd eller byggnader skymmer horisonten.",
+          "follow_entity": "Valfritt, för resor. Passager beräknas för platsen där den här personen eller spåraren befinner sig, när den är mer än 25 km bort, och högst varje halvtimme. Open-Meteo får då ungefär veta var den är, om du inte använder en väderentitet, och alla som kan öppna sidan kan se det.",
           "show_in_sidebar": "Lägger till en Satellite Spotter-sida i sidofältet med passagerna, en 3D-glob och en vy av himlen från gatunivå. Gatuvyn hämtar kartrutor över omgivningen från OpenFreeMap och AWS (och från Esri med flygbilder). Instrumentpanelskorten fungerar oavsett.",
           "show_in_calendar": "Lägger till en kalender med passagerna de kommande fem dagarna, var och en med när och vart du ska titta. Kalenderutlösare kan då starta automationer före en passage.",
           "units": "För avstånd och hastigheter på globen och i gatuvyn. ”Automatiskt” följer Home Assistants enhetssystem."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Ange ett tal inom det angivna intervallet.",
       "google_key_needed": "Ange en API-nyckel för Google Cloud för att visa foton från Google Street View.",
       "mapillary_token_needed": "Ange en åtkomsttoken för Mapillary för att visa foton från Mapillary.",
       "mapillary_token_format": "En åtkomsttoken för Mapillary ser ut så här: MLY|1234…|abcd…. Kopiera klienttoken för din applikation på mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Inga foton: 3D-modellen"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Utmärkt",
+        "good": "Bra",
+        "fair": "Okej",
+        "poor": "Dålig"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Raketsteg",
+        "debris": "Rymdskrot",
+        "satellite": "Andra satelliter"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Molnighet för nästa synliga passage"
       },
+      "next_visible_pass_rating": {
+        "name": "Betyg för nästa synliga passage",
+        "state": {
+          "great": "Utmärkt",
+          "good": "Bra",
+          "fair": "Okej",
+          "poor": "Dålig"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Namn på nästa synliga satellit"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "Banelementen i satellitkatalogen är {age} dagar gamla, och CelesTraks data är lika gamla; förutsägelserna är pausade tills en ny katalog har laddats ned"
+    },
+    "unknown_location": {
+      "message": "Den här Satellite Spotter-platsen finns inte."
+    },
+    "location_not_loaded": {
+      "message": "Den här Satellite Spotter-platsen är inte klar än."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellitförutsägelserna är pausade",
       "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och ingen nyare katalog kunde laddas ned ({error}). Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills en nedladdning lyckas. Kontrollera att Home Assistant når internet: bandatan kommer från CelesTrak. Meddelandet försvinner av sig självt när en ny katalog kommer in."
-    },
-    "catalog_stale_upstream": {
-      "title": "Satellitförutsägelserna är pausade",
-      "description": "Banelementen i satellitkatalogen är {age} dagar gamla (medianen över alla satelliter), och CelesTraks egna data är lika gamla: det finns inget nyare att ladda ned. Förutsägelser från så gamla element skulle vara missvisande, så Satellite Spotters entiteter är otillgängliga tills CelesTrak publicerar nya data. Det finns inget att åtgärda i Home Assistant: meddelandet försvinner av sig självt när en ny katalog kommer in."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Bäst sikt kl. {time}: {direction}, {elevation}° högt, magnitud {magnitude}.",
     "calendar_disappears": "Senast synlig kl. {time} mot {direction}, {elevation}° högt.",
     "calendar_together": "Den här passagen omfattar {count} satelliter.",
+    "calendar_rating": "Betyg: {rating}.",
+    "rating_great": "Utmärkt",
+    "rating_good": "Bra",
+    "rating_fair": "Okej",
+    "rating_poor": "Dålig",
     "calendar_cloud_cover": "Molntäcke under passagen: {cloud_cover} %.",
     "calendar_about": "Objekt: {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "VNV",
     "compass_nw": "NV",
     "compass_nnw": "NNV"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Hämta passager",
+      "description": "Listar en plats förutspådda passager, de närmaste först, med valfria filter.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Plats",
+          "description": "Platsen vars passager listas."
+        },
+        "pass_id": {
+          "name": "Passage",
+          "description": "Bara den här passagen, efter dess id: en kalenderhändelses uid eller en sensors pass_id."
+        },
+        "start": {
+          "name": "Från",
+          "description": "Bara passager som fortfarande pågår efter den här tidpunkten. Som standard de som inte är över."
+        },
+        "end": {
+          "name": "Till",
+          "description": "Bara passager som börjar före den här tidpunkten."
+        },
+        "min_rating": {
+          "name": "Lägsta betyg",
+          "description": "Bara passager med minst det här betyget."
+        },
+        "max_cloud_cover": {
+          "name": "Högsta molntäcke",
+          "description": "Utelämnar passager med mer väntat molntäcke. Passager utan prognos behålls."
+        },
+        "bright_only": {
+          "name": "Bara ljusa passager",
+          "description": "Bara passager som räknas som ljusa."
+        },
+        "kinds": {
+          "name": "Satellittyper",
+          "description": "Bara passager som innehåller någon av dessa."
+        },
+        "satellite": {
+          "name": "Satellitnamn",
+          "description": "Bara passager med en satellit vars namn innehåller detta."
+        },
+        "limit": {
+          "name": "Gräns",
+          "description": "Högsta antal passager att lista."
+        }
+      }
+    }
   }
 }

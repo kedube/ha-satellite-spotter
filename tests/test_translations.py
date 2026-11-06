@@ -66,7 +66,11 @@ def test_every_language_is_complete(language: str) -> None:
         assert "[%key:" not in text, key
     if language != "en":
         # Translated, not copied (names and units excepted).
-        same = {k for k, v in local.items() if v == english[k] and not k.startswith("common.")}
+        same = {
+            k
+            for k, v in local.items()
+            if v == english[k] and not k.startswith(("common.", "selector.kind."))
+        }
         assert len(same) <= 6, sorted(same)
 
 
@@ -81,6 +85,7 @@ def test_entities_have_names_and_icons() -> None:
             "next_visible_pass_brightness",
             "next_visible_pass_duration",
             "next_visible_pass_cloud_cover",
+            "next_visible_pass_rating",
             "next_visible_satellite_name",
             "next_bright_pass",
             "satellite_elevation",
@@ -106,13 +111,24 @@ def test_the_code_uses_only_defined_strings() -> None:
     # The repair, and the setup errors, each worded for failing downloads or for
     # data at CelesTrak just as old.
     issues = {key: _placeholders(issue["description"]) for key, issue in strings["issues"].items()}
-    assert issues == {ISSUE_CATALOG_STALE: {"age", "error"}, CATALOG_STALE_UPSTREAM: {"age"}}
+    assert issues == {ISSUE_CATALOG_STALE: {"age", "error"}}
     errors = {key: _placeholders(error["message"]) for key, error in strings["exceptions"].items()}
-    assert errors == {"catalog_unavailable": {"error"}, **issues}
+    assert errors == {
+        "catalog_unavailable": {"error"},
+        CATALOG_STALE_UPSTREAM: {"age"},
+        "unknown_location": set(),
+        "location_not_loaded": set(),
+        **issues,
+    }
+    services = (INTEGRATION / "services.py").read_text()
+    assert {"unknown_location", "location_not_loaded"} <= set(
+        re.findall(r'translation_key="(\w+)"', services)
+    )
     assert 'translation_key="catalog_unavailable"' in (INTEGRATION / "coordinator.py").read_text()
     errors = set(strings["config"]["error"]) | set(strings["options"]["error"])
     source = (INTEGRATION / "config_flow.py").read_text()
     used = set(re.findall(r'errors\[[^\]]+\] = "(\w+)"', source))
+    used |= set(re.findall(r'return "(\w+)"', source))
     assert used == errors
     section = strings["options"]["step"]["init"]["sections"]["street_view"]
     assert set(section["data"]) == set(section["data_description"]) == {

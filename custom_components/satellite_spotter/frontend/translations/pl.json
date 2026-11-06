@@ -318,6 +318,13 @@
     "easy": "dobrze widoczny",
     "faint": "słabo widoczny"
   },
+  "rating": {
+    "says": "Ocena: {rating}",
+    "great": "Świetny",
+    "good": "Dobry",
+    "fair": "Przeciętny",
+    "poor": "Słaby"
+  },
   "timebar": {
     "name": "Sterowanie symulacją",
     "simulation": "Symulacja",

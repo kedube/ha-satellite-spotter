@@ -20,6 +20,7 @@ import {
   photoDirection,
   photoLook,
   photoRotation,
+  photoScore,
   photoSearchUrl,
   photoShowsSky,
   photoUV,
@@ -165,7 +166,7 @@ test("findPhotos asks Panoramax without cookies or referrer, falls back without 
         init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
       }),
   });
-  await assert.rejects(slow, /aborted/);
+  await assert.rejects(slow, (err) => err.name === "TimeoutError" && /no answer/.test(err.message));
 });
 
 // ---- orientation ------------------------------------------------------------------
@@ -398,9 +399,10 @@ test("the photo is darkened, cooled and faded for the night, less so in twilight
 // ---- the scene ------------------------------------------------------------------------
 
 /** A PhotoScene on a fake canvas and WebGL, with fake pictures. */
-function photoScene({ picture = streetPicture(512), status = 200, large = true, photo: extra = {}, sunAt = null } = {}) {
-  const { gl, calls } = fakeGL();
+function photoScene({ picture = streetPicture(512), status = 200, large = true, photo: extra = {}, sunAt = null, onContextLost = () => {} } = {}) {
   const listeners = new Map();
+  // Heard on the canvas like any other loss, as a browser does.
+  const { gl, calls } = fakeGL({ onLoseContext: () => listeners.get("webglcontextlost")?.({ preventDefault() {} }) });
   const canvas = {
     width: 0,
     height: 0,
@@ -438,7 +440,7 @@ function photoScene({ picture = streetPicture(512), status = 200, large = true, 
     return { ok: status === 200, status, blob: async () => ({ width: big ? 5760 : 2048, height: big ? 2880 : 1024 }) };
   };
   const photo = { id: "p", heading: 0, pitch: 0, roll: 0, sd: "https://pics.example/p/sd.jpg", hd: large ? "https://pics.example/p/hd.jpg" : "https://pics.example/p/sd.jpg", ...extra };
-  const scene = new PhotoScene(container, { photo, view: { bearing: 0, pitch: 100, fov: 60 }, fetch, sunAt });
+  const scene = new PhotoScene(container, { photo, view: { bearing: 0, pitch: 100, fov: 60 }, fetch, sunAt, onContextLost });
   const restore = () => Object.assign(globalThis, saved);
   return { scene, gl, calls, fetched, decoded, canvas, container, listeners, restore };
 }
@@ -570,5 +572,72 @@ test("the scene turns a photo to match the Sun in it, when it knows when and whe
     assert.equal(unknown.scene.turned, 0);
   } finally {
     unknown.restore();
+  }
+});
+
+test("taking a scene away gives up its context, which is nothing to recover from", async () => {
+  let lost = 0;
+  const s = photoScene({ onContextLost: () => lost++ });
+  try {
+    await s.scene.load();
+    s.listeners.get("webglcontextlost")({ preventDefault() {} });
+    assert.equal(lost, 1, "a real loss is reported");
+    s.scene._gl = s.gl;
+    s.scene.remove();
+    assert.equal(lost, 1, "a scene taken away says nothing");
+    s.listeners.get("webglcontextrestored")();
+    assert.equal(s.scene._gl, null, "and does not come back");
+  } finally {
+    s.restore();
+  }
+});
+
+// A round, burnt-out blob in a dark band of a picture: glare, as far as findSun can tell.
+function pictureWithGlare(azimuth, elevation, W = 512, H = 256) {
+  const R = photoRotation({ heading: 0, pitch: 0, roll: 0 });
+  const data = new Uint8ClampedArray(W * H * 4);
+  const sky = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const d = photoDirection(R, (x + 0.5) / W, (y + 0.5) / H);
+      const i = (y * W + x) * 4;
+      const across = Math.hypot(((d.azimuth - azimuth + 540) % 360) - 180, d.elevation - elevation);
+      const v = across < 3 ? 255 : d.elevation > 0 ? 120 : 40;
+      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = 255;
+      sky[y * W + x] = d.elevation > 0 ? 1 : 0;
+    }
+  }
+  return { image: { width: W, height: H, data }, found: { width: W, height: H, sky, fraction: 0.5 } };
+}
+
+test("a bright cloud far from where the Sun should be does not turn a photo", () => {
+  const { image, found } = pictureWithGlare(120, 30);
+  const photo = { heading: 40, pitch: 0, roll: 0 };
+  const near = sunHeading({ heading: 0, pitch: 0, roll: 0 }, image, found, { azimuth: 150, elevation: 30 });
+  assert.ok(Math.abs(near.turned - 30) < 3, `a blob 30° off turns the photo by that much, not ${near.turned}`);
+  const far = sunHeading({ heading: 0, pitch: 0, roll: 0 }, image, found, { azimuth: 280, elevation: 30 });
+  assert.equal(far.turned, 0, "a blob 160° off is no Sun");
+  assert.equal(far.heading, 0);
+  assert.equal(sunHeading(photo, image, found, { azimuth: 280, elevation: 30 }).heading, 40);
+});
+
+test("a photo that does not say which way it faces may be turned by any amount, and comes last", () => {
+  const { image, found } = pictureWithGlare(120, 30);
+  const free = sunHeading({ heading: 0, pitch: 0, roll: 0, noHeading: true }, image, found, { azimuth: 280, elevation: 30 });
+  assert.ok(Math.abs(free.turned - 160) < 3, `turned ${free.turned}`);
+  const place = { distance: 10, latitude: 1, longitude: 2 };
+  assert.ok(photoScore({ ...place, noHeading: true }, {}) > photoScore({ ...place, distance: 199 }, {}), "after any that does");
+});
+
+test("a rotation worked out from the pictures themselves is not turned to match a bright spot", async () => {
+  const asked = [];
+  const s = photoScene({ photo: { computedRotation: true, taken: 1700000000, latitude: 1, longitude: 2 }, sunAt: (...args) => (asked.push(args), { azimuth: 10, elevation: 20 }) });
+  try {
+    await s.scene.load();
+    assert.deepEqual(asked, [], "the Sun is not even looked for");
+    assert.equal(s.scene.turned, 0);
+  } finally {
+    s.restore();
   }
 });

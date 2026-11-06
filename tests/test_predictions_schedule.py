@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
@@ -18,7 +19,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.satellite_spotter.catalog import CatalogManager, async_shared_catalog
 from custom_components.satellite_spotter.celestrak import CatalogError, DownloadRefused
-from custom_components.satellite_spotter.const import CONF_ALERT_LEAD_MINUTES, DOMAIN
+from custom_components.satellite_spotter.const import (
+    CONF_ALERT_LEAD_MINUTES,
+    DOMAIN,
+    STORAGE_VERSION,
+)
 from custom_components.satellite_spotter.coordinator import (
     ListedPass,
     Predictions,
@@ -27,7 +32,7 @@ from custom_components.satellite_spotter.coordinator import (
     predict_passes,
     scrub,
 )
-from custom_components.satellite_spotter.predict import Satellite
+from custom_components.satellite_spotter.predict import Satellite, write_catalog
 from custom_components.satellite_spotter.track import Observer
 from custom_components.satellite_spotter.weather import CloudCoverError, CloudForecast
 
@@ -209,6 +214,9 @@ def test_settings_default_as_documented() -> None:
         alert_lead=timedelta(minutes=15),
         show_in_calendar=True,
         units="auto",
+        min_elevation=10,
+        weather_entity=None,
+        follow_entity=None,
     )
 
 
@@ -220,6 +228,9 @@ def test_settings_follow_the_options() -> None:
             "alert_lead_minutes": 240,
             "show_in_calendar": False,
             "units": "imperial",
+            "min_elevation": 25,
+            "weather_entity": "weather.home",
+            "follow_entity": "person.someone",
         }
     )
     assert settings == PredictionSettings(
@@ -228,6 +239,9 @@ def test_settings_follow_the_options() -> None:
         alert_lead=timedelta(hours=4),
         show_in_calendar=False,
         units="imperial",
+        min_elevation=25,
+        weather_entity="weather.home",
+        follow_entity="person.someone",
     )
 
 
@@ -786,16 +800,28 @@ async def _stale_setup(
     return entry, later
 
 
-async def test_elements_over_two_weeks_old_pause_predictions_with_the_upstream_wording(
+async def test_data_as_old_at_celestrak_pauses_predictions_with_nothing_to_repair(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, mock_downloads: dict[str, AsyncMock]
 ) -> None:
+    """A repair is for something someone can fix, and here the download worked."""
     entry, _ = await _stale_setup(hass, freezer, mock_downloads)
     coordinator = entry.runtime_data
     assert not coordinator.last_update_success
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE) is None
+    assert coordinator.last_exception.translation_key == "catalog_stale_upstream"
+    assert coordinator.last_exception.translation_placeholders == {"age": "20"}
+
+
+async def test_failing_downloads_with_old_elements_raise_the_repair(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, mock_downloads: dict[str, AsyncMock]
+) -> None:
+    mock_downloads["fetch_catalog"].return_value = [with_epoch(s, NOW) for s in satellites()]
+    await add_location(hass)
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("no route")
+    await advance(hass, freezer, NOW + timedelta(days=20))
     issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE)
     assert issue is not None
-    assert issue.translation_key == "catalog_stale_upstream"
-    assert issue.translation_placeholders == {"age": "20"}
+    assert issue.translation_key == "catalog_stale"
     assert issue.severity is ir.IssueSeverity.WARNING
     assert issue.is_fixable is False
 
@@ -804,10 +830,14 @@ async def test_a_repair_someone_ignored_stays_ignored_through_a_reload(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, mock_downloads: dict[str, AsyncMock]
 ) -> None:
     """Changing an option reloads the location, which must not bring the repair back."""
-    entry, _ = await _stale_setup(hass, freezer, mock_downloads)
+    mock_downloads["fetch_catalog"].return_value = [with_epoch(s, NOW) for s in satellites()]
+    entry = await add_location(hass)
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("no route")
+    await advance(hass, freezer, NOW + timedelta(days=20))
     ir.async_get(hass).async_ignore(DOMAIN, ISSUE, True)
     await set_options(hass, entry, {CONF_ALERT_LEAD_MINUTES: 20})
-    assert entry.state is ConfigEntryState.SETUP_RETRY
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
     issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE)
     assert issue is not None
     assert issue.dismissed_version is not None
@@ -844,6 +874,8 @@ async def test_why_predictions_stopped_can_be_translated(
     entry = MockConfigEntry(domain=DOMAIN, title="Home", data=dict(HONOLULU))
     entry.add_to_hass(hass)
     coordinator = SatelliteSpotterCoordinator(hass, entry, async_shared_catalog(hass))
+    # Twice, as the first of a location starts from the catalog there is, however old.
+    await coordinator.async_refresh()
     await coordinator.async_refresh()
     await coordinator.async_shutdown()
     error = coordinator.last_exception
@@ -883,9 +915,9 @@ async def test_the_limit_is_fourteen_days(
     entry = MockConfigEntry(domain=DOMAIN, title="Home", data=dict(HONOLULU))
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert (ir.async_get(hass).async_get_issue(DOMAIN, ISSUE) is not None) is paused
-    assert (entry.state.value == "setup_retry") is paused
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
+    assert (entry.runtime_data.paused_reason(NOW) is not None) is paused
 
 
 async def test_paused_predictions_retry_after_five_minutes_and_a_second(
@@ -944,13 +976,38 @@ async def test_the_issue_is_deleted_only_when_the_elements_are_fresh(
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE) is None
 
 
-async def test_setup_on_a_stale_catalog_retries_and_raises_the_repair(
+async def test_a_restart_on_a_stale_catalog_keeps_the_entity_that_says_why(
+    hass: HomeAssistant, hass_storage: dict[str, Any], mock_downloads: dict[str, AsyncMock]
+) -> None:
+    hass_storage["satellite_spotter.catalog"] = {
+        "version": STORAGE_VERSION,
+        "data": {
+            "updated": (NOW - timedelta(days=20)).isoformat(),
+            "catalog": write_catalog(aged(satellites(), timedelta(days=-20))),
+        },
+    }
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("no route")
+    entry = await add_location(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
+    epoch = hass.states.get("sensor.home_orbital_elements_epoch")
+    assert epoch is not None
+    assert epoch.attributes["stale"] is True
+    assert epoch.attributes["last_download_error"] == "no route"
+    state = hass.states.get("sensor.home_next_visible_pass")
+    assert state is not None
+    assert state.state == "unavailable"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE) is not None
+
+
+async def test_a_stale_catalog_from_the_first_download_still_sets_up(
     hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
 ) -> None:
     mock_downloads["fetch_catalog"].return_value = aged(satellites(), timedelta(days=-30))
     entry = await add_location(hass)
-    assert entry.state.value == "setup_retry"
-    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE) is not None
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert entry.state is ConfigEntryState.LOADED
+    assert not entry.runtime_data.last_update_success
 
 
 # Why predictions are paused, in words.
@@ -1026,7 +1083,9 @@ async def test_the_coordinator_names_its_location(hass: HomeAssistant) -> None:
     entry = MockConfigEntry(domain=DOMAIN, title="Cabin", data=dict(DENVER))
     entry.add_to_hass(hass)
     coordinator = SatelliteSpotterCoordinator(hass, entry, CatalogManager(hass))
-    assert coordinator.name == "satellite_spotter Cabin"
+    # By its id: what a location is called can say where it is, and this reaches the log.
+    assert coordinator.name == f"satellite_spotter {entry.entry_id}"
+    assert "Cabin" not in coordinator.name
     assert coordinator.update_interval == timedelta(hours=1)
     await coordinator.async_shutdown()
 

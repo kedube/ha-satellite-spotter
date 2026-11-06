@@ -16,6 +16,8 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from sgp4.api import Satrec, SatrecArray
 
+from .const import DEFAULT_MIN_ELEVATION
+
 if TYPE_CHECKING:
     from .predict import Satellite
 
@@ -34,9 +36,6 @@ _METRES_PER_AU = 149597870700.0
 _MU_KM3_PER_S2 = 398600.4418
 _EARTH_RADIUS_KM = 6378.137
 
-MIN_ELEVATION = 10.0
-_SIN_MIN_ELEVATION = math.sin(math.radians(MIN_ELEVATION))
-_MIN_ELEVATION_RADIANS = math.radians(MIN_ELEVATION)
 # Sunlight grazing the air below this height is too dim to light a satellite.
 _SUNLIGHT_CLEARS_M = 15000.0
 _SHADOW_RADII = np.array(
@@ -116,6 +115,10 @@ _CURVE_FIT_DEGREES = (15.0, 155.0)
 _SCAN_STEP_S = 5.0
 _SCAN_REACH_S = 1800.0
 
+# What a full Moon overhead takes off what the sky shows, in magnitudes: a rule of thumb, for
+# rating passes rather than for deciding what can be seen.
+_MOONLIGHT_MAGNITUDES = 1.0
+
 
 def julian(ts: ArrayLike) -> tuple[Floats, Floats]:
     """Split Unix seconds into whole-day Julian dates and day fractions, as SGP4 wants them."""
@@ -179,14 +182,74 @@ def sun_at(ts: ArrayLike) -> Floats:
     return _earth_fixed(inertial, _earth_turned(ts))
 
 
-class Observer:
-    """Somewhere above the WGS84 ellipsoid to watch from."""
+def moon_at(ts: ArrayLike) -> Floats:
+    """Return the Moon's Earth-fixed position in metres, to a few tenths of a degree.
 
-    def __init__(self, latitude: float, longitude: float, elevation_m: float = 0.0) -> None:
+    The Astronomical Almanac's low-precision formulae, in the mean equator and equinox of date.
+    """
+    t = _centuries(ts)
+
+    def sin(phase: float, rate: float) -> Floats:
+        wave: Floats = np.sin(np.radians(phase + rate * t))
+        return wave
+
+    def cos(phase: float, rate: float) -> Floats:
+        wave: Floats = np.cos(np.radians(phase + rate * t))
+        return wave
+
+    longitude = np.radians(
+        218.32
+        + 481267.881 * t
+        + 6.29 * sin(135.0, 477198.87)
+        - 1.27 * sin(259.3, -413335.36)
+        + 0.66 * sin(235.7, 890534.22)
+        + 0.21 * sin(269.9, 954397.74)
+        - 0.19 * sin(357.5, 35999.05)
+        - 0.11 * sin(186.5, 966404.03)
+    )
+    latitude = np.radians(
+        5.13 * sin(93.3, 483202.02)
+        + 0.28 * sin(228.2, 960400.89)
+        - 0.28 * sin(318.3, 6003.15)
+        - 0.17 * sin(217.6, -407332.21)
+    )
+    parallax = np.radians(
+        0.9508
+        + 0.0518 * cos(135.0, 477198.87)
+        + 0.0095 * cos(259.3, -413335.36)
+        + 0.0078 * cos(235.7, 890534.22)
+        + 0.0028 * cos(269.9, 954397.74)
+    )
+    distance = _EQUATOR_M / np.sin(parallax)
+    tilt = np.radians(23.439 - 0.0130 * t)
+    across = np.cos(latitude) * np.sin(longitude)
+    inertial = np.stack(
+        (
+            distance * np.cos(latitude) * np.cos(longitude),
+            distance * (np.cos(tilt) * across - np.sin(tilt) * np.sin(latitude)),
+            distance * (np.sin(tilt) * across + np.cos(tilt) * np.sin(latitude)),
+        ),
+        axis=-1,
+    )
+    return _earth_fixed(inertial, _earth_turned(ts))
+
+
+class Observer:
+    """Somewhere above the WGS84 ellipsoid to watch from, and how high a satellite must get."""
+
+    def __init__(
+        self,
+        latitude: float,
+        longitude: float,
+        elevation_m: float = 0.0,
+        min_elevation: float = DEFAULT_MIN_ELEVATION,
+    ) -> None:
         """Work out where the place is, which way is which, and how much air is above it."""
         self.latitude = latitude
         self.longitude = longitude
         self.elevation_m = elevation_m
+        self.min_elevation = min_elevation
+        self.min_elevation_radians = math.radians(min_elevation)
         lat, lon = math.radians(latitude), math.radians(longitude)
         sin_lat, cos_lat = math.sin(lat), math.cos(lat)
         sin_lon, cos_lon = math.sin(lon), math.cos(lon)
@@ -241,12 +304,11 @@ def geodetic(pos: Floats) -> tuple[Floats, Floats, Floats]:
     return np.degrees(lat), np.degrees(np.arctan2(y, x)), height / 1000.0
 
 
-def above_horizon(observer: Observer, pos: Floats) -> Flags:
-    """Say where positions are at least MIN_ELEVATION up."""
+def above_horizon(observer: Observer, pos: Floats, margin: float = 0.0) -> Flags:
+    """Say where positions are as high as the observer asks, or within a margin of it (degrees)."""
     offset = pos - observer.position
-    high_enough: Flags = offset @ observer.normal >= _SIN_MIN_ELEVATION * np.linalg.norm(
-        offset, axis=-1
-    )
+    lowest = math.sin(math.radians(observer.min_elevation - margin))
+    high_enough: Flags = offset @ observer.normal >= lowest * np.linalg.norm(offset, axis=-1)
     return high_enough
 
 
@@ -321,6 +383,7 @@ class Photometry(NamedTuple):
     lit: Flags
     magnitude: Floats  # Kept even when too low, faint or in shadow.
     limiting: Floats  # The faintest the sky shows.
+    high_enough: Flags  # As high as the observer asks.
 
 
 def photometry(sat: Satellite, observer: Observer, pos: Floats, sun: Floats) -> Photometry:
@@ -341,18 +404,49 @@ def photometry(sat: Satellite, observer: Observer, pos: Floats, sun: Floats) -> 
         lit=sunlit(pos, to_sun),
         magnitude=_apparent(sat, observer, elevation, distance, cos_phase),
         limiting=limiting_magnitude(sun_angle),
+        high_enough=elevation >= observer.min_elevation_radians,
     )
 
 
 def visible(light: Photometry, faintest: float | None = None) -> Flags:
     """Say where a satellite can be seen and, if given, is brighter than ``faintest``."""
     seen: Flags = (
-        (light.elevation >= _MIN_ELEVATION_RADIANS)
+        light.high_enough
         & np.isfinite(light.distance)
         & light.lit
         & (light.magnitude <= light.limiting - _SKY_MARGIN)
     )
     return seen if faintest is None else seen & (light.magnitude < faintest)
+
+
+def bright_enough_nearby(
+    light: Photometry, faintest: float, past_cutoff: float, past_sky: float
+) -> Flags:
+    """Say where a satellite could be bright enough to count, a little before or after.
+
+    It can gain a magnitude or more in half a minute: ``past_cutoff`` and ``past_sky`` are how far
+    short of the cutoff and of what the sky shows it may fall.
+    """
+    could: Flags = (
+        np.isfinite(light.distance)
+        & (light.magnitude < faintest + past_cutoff)
+        & (light.magnitude <= light.limiting - _SKY_MARGIN + past_sky)
+    )
+    return could
+
+
+def moon_dimming(observer: Observer, when: float) -> float:
+    """Return what the Moon's light takes off the sky at a moment, in magnitudes.
+
+    Nothing while it is down. A rule of thumb: how much of it is lit, times how high it is.
+    """
+    moon, sun = moon_at(when), sun_at(when)
+    _, elevation, _ = look(observer, moon)
+    if not elevation > 0.0:
+        return 0.0
+    cos_elongation = _dot(moon, sun) / (np.linalg.norm(moon) * np.linalg.norm(sun))
+    lit = (1.0 - float(cos_elongation)) / 2.0
+    return _MOONLIGHT_MAGNITUDES * lit * math.sin(math.radians(float(elevation)))
 
 
 def brightest_possible(sat: Satellite, observer: Observer) -> float:
@@ -455,8 +549,8 @@ class SightingShape:
     end_reason: str
 
 
-def _edge_reason(elevation: float, lit: bool, horizon: str) -> str:
-    if elevation < MIN_ELEVATION:
+def _edge_reason(elevation: float, lit: bool, horizon: str, lowest: float) -> str:
+    if elevation < lowest:
         return horizon
     return "shadow" if math.isfinite(elevation) and not lit else "sky"
 
@@ -480,8 +574,8 @@ def sighting_shape(
     lit = sunlit(places, sun_at(seconds) - places)
     return SightingShape(
         SkyPoint(float(seconds[highest]), float(azimuth[highest]), float(elevation[highest])),
-        _edge_reason(float(elevation[0]), bool(lit[0]), "rise"),
-        _edge_reason(float(elevation[-1]), bool(lit[-1]), "set"),
+        _edge_reason(float(elevation[0]), bool(lit[0]), "rise", observer.min_elevation),
+        _edge_reason(float(elevation[-1]), bool(lit[-1]), "set", observer.min_elevation),
     )
 
 

@@ -3,7 +3,8 @@ blueprint:
   description: >-
     Sends a phone notification shortly before a satellite pass in the
     Satellite Spotter calendar: what is passing, when and where to look, how
-    bright it is and the forecast cloud cover. Tapping the notification opens
+    bright it is, how good a pass it is, the forecast cloud cover and a picture
+    of its path across the sky. Tapping the notification opens
     the pass in the street view on the Satellite Spotter page, which is there
     while a location has "Show Satellite Spotter in the sidebar" on (the
     default); with it off for every location, the tap opens your default
@@ -43,14 +44,62 @@ blueprint:
               value: "-1:00:00"
             - label: 2 hours
               value: "-2:00:00"
+    min_rating:
+      name: Minimum rating
+      description: >-
+        Only passes rated at least this. The rating weighs how bright the pass
+        looks against the sky at that moment, how high it climbs, how long it
+        lasts, the Moon and the forecast clouds.
+      default: good
+      selector:
+        select:
+          options:
+            - label: Great
+              value: great
+            - label: Good
+              value: good
+            - label: Fair
+              value: fair
+            - label: Any pass
+              value: poor
     bright_only:
       name: Bright passes only
       description: >-
-        Only bright passes: brighter than magnitude 0.5 against a properly dark
-        sky, easy to see even from a town.
-      default: true
+        Also require a bright pass: brighter than magnitude 0.5 against a
+        properly dark sky, easy to see even from a town.
+      default: false
       selector:
         boolean:
+    kinds:
+      name: Only these kinds of satellite
+      description: Leave empty for every kind.
+      default: []
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: International Space Station
+              value: iss
+            - label: Tiangong
+              value: tiangong
+            - label: Hubble
+              value: hubble
+            - label: Starlink trains
+              value: starlink
+            - label: Rocket stages
+              value: rocket
+            - label: Debris
+              value: debris
+            - label: Other satellites
+              value: satellite
+    satellite_name:
+      name: Only satellites named
+      description: >-
+        Only passes with a satellite whose name contains this, such as SAOCOM.
+        Leave empty for any name.
+      default: ""
+      selector:
+        text:
     max_cloud_cover:
       name: Maximum cloud cover
       description: >-
@@ -65,6 +114,27 @@ blueprint:
           step: 5
           unit_of_measurement: "%"
           mode: slider
+    quiet_from:
+      name: Quiet hours from
+      description: >-
+        No notifications from this time until the next. The same time in both
+        means no quiet hours.
+      default: "00:00:00"
+      selector:
+        time:
+    quiet_until:
+      name: Quiet hours until
+      default: "00:00:00"
+      selector:
+        time:
+    sky_chart:
+      name: Sky chart
+      description: >-
+        Attach a picture of the pass's path across the sky. The phone must be
+        able to reach your Home Assistant to load it.
+      default: true
+      selector:
+        boolean:
     notify_device:
       name: Phone to notify
       description: A device running the Home Assistant Companion app.
@@ -89,6 +159,9 @@ triggers:
 variables:
   bright_only: !input bright_only
   max_cloud_cover: !input max_cloud_cover
+  quiet_from: !input quiet_from
+  quiet_until: !input quiet_until
+  sky_chart: !input sky_chart
   calendar: !input calendar
   summary: "{{ trigger.calendar_event.summary | default('', true) }}"
   description: "{{ trigger.calendar_event.description | default('', true) }}"
@@ -108,21 +181,46 @@ variables:
     {{ description.split('\n')[:-1] | join(' ') }}
   link: >-
     /satellite-spotter?{{ ('entry_id=' ~ entry_id ~ '&') if entry_id else '' }}pass={{ pass_id }}&view=street
+  # Across midnight when it starts later than it ends.
+  quiet: >-
+    {% set time = now().strftime('%H:%M:%S') %}
+    {% if quiet_from == quiet_until %}
+      {{ false }}
+    {% elif quiet_from < quiet_until %}
+      {{ quiet_from <= time < quiet_until }}
+    {% else %}
+      {{ time >= quiet_from or time < quiet_until }}
+    {% endif %}
 
 conditions:
   - condition: template
     value_template: "{{ bright or not bright_only }}"
   - condition: template
     value_template: "{{ cloud_cover is none or cloud_cover <= max_cloud_cover | int }}"
+  - condition: template
+    value_template: "{{ not quiet }}"
 
 actions:
+  # Lists this pass only if it is what was asked for, whatever the language.
+  - action: satellite_spotter.get_passes
+    data:
+      config_entry_id: "{{ entry_id }}"
+      pass_id: "{{ pass_id }}"
+      min_rating: !input min_rating
+      kinds: !input kinds
+      satellite: !input satellite_name
+    response_variable: found
+  - condition: template
+    value_template: "{{ found.passes | count > 0 }}"
+  - variables:
+      # Opens the pass in the street view: url on iOS, clickAction on Android.
+      opens_the_pass: >-
+        {{ dict(url=link, clickAction=link, tag='satellite-pass-' ~ pass_id) }}
+      notification_data: >-
+        {{ dict(opens_the_pass, image=found.passes[0].sky_chart) if sky_chart else opens_the_pass }}
   - domain: mobile_app
     type: notify
     device_id: !input notify_device
     title: "{{ satellite }} in {{ minutes }} min"
     message: "{{ details }}"
-    data:
-      # Opens the pass in the street view: url on iOS, clickAction on Android.
-      url: "{{ link }}"
-      clickAction: "{{ link }}"
-      tag: "satellite-pass-{{ pass_id }}"
+    data: "{{ notification_data }}"

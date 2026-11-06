@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Voer een breedtegraad tussen -90° en 90° en een geldige lengtegraad in.",
+      "name_required": "Voer een naam in voor deze locatie.",
+      "invalid_elevation": "Voer de hoogte in als een aantal meters.",
       "cannot_connect": "De satellietcatalogus kon niet worden gedownload. Controleer of Home Assistant het internet bereikt en probeer het opnieuw.",
       "download_limited": "CelesTrak, waar de baangegevens vandaan komen, staat nog geen nieuwe download toe. Probeer het over twee uur opnieuw.",
       "unknown": "Onverwachte fout bij het laden van de satellietcatalogus. Het logboek bevat de details."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Helderheidsgrens",
           "cloud_forecast": "Wolkenverwachting",
+          "weather_entity": "Weerentiteit voor de bewolking",
           "alert_lead_minutes": "Vooraankondiging",
+          "min_elevation": "Minimale hoogte",
+          "follow_entity": "Een persoon of tracker volgen",
           "show_in_sidebar": "Satellite Spotter in de zijbalk tonen",
           "show_in_calendar": "Overkomsten in de agenda tonen",
           "units": "Eenheden"
         },
         "data_description": {
           "brightness_cutoff": "Een overkomst wordt alleen getoond als die minstens zo helder wordt. De schaal loopt achterstevoren, dus een lager getal is helderder: 2,25 past bij de hemel boven een buitenwijk, 1 laat de makkelijke over, en onder 0 alleen de verblindende.",
-          "cloud_forecast": "Laat zien hoe bewolkt Open-Meteo het bij elke overkomst verwacht. Open-Meteo ontvangt daarvoor elk uur de coördinaten van deze locatie (op vier decimalen).",
+          "cloud_forecast": "Toont hoe bewolkt het naar verwachting is bij elke passage. Tenzij je hieronder een weerentiteit kiest, ontvangt Open-Meteo elk uur de coördinaten van deze locatie, afgerond op ongeveer een kilometer.",
+          "weather_entity": "Optioneel. Haalt de bewolking uit de uurverwachting van deze entiteit, en Open-Meteo wordt niet gevraagd. Staat er geen bewolking in die verwachting, dan tonen passages die niet.",
           "alert_lead_minutes": "De sensoren \"Zichtbare overkomst binnenkort\" en \"Heldere overkomst binnenkort\" gaan zo lang voor het verschijnen van de helderste satelliet van de overkomst aan.",
+          "min_elevation": "Een satelliet telt alleen mee zolang die minstens zo hoog staat. Verhoog dit als bomen of gebouwen je horizon verbergen.",
+          "follow_entity": "Optioneel, voor op reis. Passages worden berekend voor waar deze persoon of tracker is, zodra die meer dan 25 km weg is, en hooguit elk halfuur. Open-Meteo weet dan ongeveer waar die is, tenzij je een weerentiteit gebruikt, en iedereen die de pagina kan openen kan het zien.",
           "show_in_sidebar": "Voegt een Satellite Spotter-pagina toe aan de zijbalk met de overkomsten, een 3D-globe en een weergave van de hemel op straatniveau. De straatweergave laadt kaarttegels van de omgeving van OpenFreeMap en AWS (en van Esri met luchtfoto's). De dashboardkaarten werken hoe dan ook.",
           "show_in_calendar": "Voegt een agenda toe met de overkomsten van de komende vijf dagen, elk met wanneer en waar je moet kijken. Agenda-triggers kunnen dan vóór een overkomst automatiseringen starten.",
           "units": "Voor afstanden en snelheden op de globe en in de straatweergave. \"Automatisch\" volgt het eenhedenstelsel van Home Assistant."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Voer een getal in binnen het aangegeven bereik.",
       "google_key_needed": "Vul een Google Cloud-API-sleutel in om foto's van Google Street View te tonen.",
       "mapillary_token_needed": "Vul een Mapillary-toegangstoken in om foto's van Mapillary te tonen.",
       "mapillary_token_format": "Een Mapillary-toegangstoken ziet eruit als MLY|1234…|abcd…: kopieer de client token van je applicatie op mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Geen foto's: het 3D-model"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Uitstekend",
+        "good": "Goed",
+        "fair": "Redelijk",
+        "poor": "Slecht"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Rakettrappen",
+        "debris": "Brokstukken",
+        "satellite": "Andere satellieten"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Bewolking volgende zichtbare overkomst"
       },
+      "next_visible_pass_rating": {
+        "name": "Beoordeling volgende zichtbare passage",
+        "state": {
+          "great": "Uitstekend",
+          "good": "Goed",
+          "fair": "Redelijk",
+          "poor": "Slecht"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Naam volgende zichtbare satelliet"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "De baanelementen in de satellietcatalogus zijn {age} dagen oud, en de gegevens van CelesTrak zijn net zo oud; de voorspellingen zijn gepauzeerd tot er een nieuwe catalogus is gedownload"
+    },
+    "unknown_location": {
+      "message": "Deze Satellite Spotter-locatie bestaat niet."
+    },
+    "location_not_loaded": {
+      "message": "Deze Satellite Spotter-locatie is nog niet klaar."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellietvoorspellingen zijn gepauzeerd",
       "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en er kon geen nieuwere catalogus worden gedownload ({error}). Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot een download lukt. Controleer of Home Assistant het internet bereikt: de baangegevens komen van CelesTrak. Deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
-    },
-    "catalog_stale_upstream": {
-      "title": "Satellietvoorspellingen zijn gepauzeerd",
-      "description": "De baanelementen in de satellietcatalogus zijn {age} dagen oud (de mediaan over alle satellieten), en de gegevens van CelesTrak zelf zijn net zo oud: er valt niets nieuwers te downloaden. Voorspellingen op basis van zulke oude elementen zouden misleidend zijn, dus de entiteiten van Satellite Spotter zijn niet beschikbaar tot CelesTrak nieuwe gegevens publiceert. In Home Assistant valt niets op te lossen: deze melding verdwijnt vanzelf zodra er een nieuwe catalogus binnenkomt."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Beste zicht om {time}: {direction}, {elevation}° hoog, magnitude {magnitude}.",
     "calendar_disappears": "Voor het laatst zichtbaar om {time} richting {direction}, {elevation}° hoog.",
     "calendar_together": "Tijdens deze passage zijn {count} satellieten te zien.",
+    "calendar_rating": "Beoordeling: {rating}.",
+    "rating_great": "Uitstekend",
+    "rating_good": "Goed",
+    "rating_fair": "Redelijk",
+    "rating_poor": "Slecht",
     "calendar_cloud_cover": "Bewolking tijdens de passage: {cloud_cover}%.",
     "calendar_about": "Object: {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "WNW",
     "compass_nw": "NW",
     "compass_nnw": "NNW"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Passages ophalen",
+      "description": "Toont de voorspelde passages van een locatie, de eerstvolgende eerst, met optionele filters.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Locatie",
+          "description": "De locatie waarvan de passages worden getoond."
+        },
+        "pass_id": {
+          "name": "Passage",
+          "description": "Alleen deze passage, op id: de uid van een agenda-item of de pass_id van een sensor."
+        },
+        "start": {
+          "name": "Vanaf",
+          "description": "Alleen passages die na dit moment nog bezig zijn. Standaard de passages die nog niet voorbij zijn."
+        },
+        "end": {
+          "name": "Tot",
+          "description": "Alleen passages die vóór dit moment beginnen."
+        },
+        "min_rating": {
+          "name": "Minimale beoordeling",
+          "description": "Alleen passages met minstens deze beoordeling."
+        },
+        "max_cloud_cover": {
+          "name": "Maximale bewolking",
+          "description": "Laat passages met meer verwachte bewolking weg. Passages zonder verwachting blijven staan."
+        },
+        "bright_only": {
+          "name": "Alleen heldere passages",
+          "description": "Alleen passages die als helder gelden."
+        },
+        "kinds": {
+          "name": "Soorten satelliet",
+          "description": "Alleen passages met een van deze soorten."
+        },
+        "satellite": {
+          "name": "Naam van de satelliet",
+          "description": "Alleen passages met een satelliet waarvan de naam dit bevat."
+        },
+        "limit": {
+          "name": "Limiet",
+          "description": "Het maximale aantal passages om te tonen."
+        }
+      }
+    }
   }
 }

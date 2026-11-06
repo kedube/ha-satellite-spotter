@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,14 @@ def _enable_custom_integrations(enable_custom_integrations: None) -> None:
 @pytest.fixture(autouse=True)
 def _storage_in_memory(hass_storage: dict[str, Any]) -> None:
     """Keep what Home Assistant stores in memory, for every test."""
+
+
+@pytest.fixture
+def usual_csv_limit() -> Iterator[None]:
+    """Put the csv module's limit back to its default: scripts the tests load can raise it."""
+    before = csv.field_size_limit(131072)
+    yield
+    csv.field_size_limit(before)
 
 
 @pytest.fixture

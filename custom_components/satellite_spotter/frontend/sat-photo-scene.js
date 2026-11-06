@@ -216,12 +216,14 @@ export class PhotoScene {
     this.canvas = canvas;
     this.container = container;
     canvas.addEventListener("webglcontextlost", (ev) => {
+      // Taking the scene away gives up its context, which is nothing to recover from.
+      if (this._removed) return;
       ev.preventDefault();
       this._gl = null;
       this._onContextLost();
     });
     canvas.addEventListener("webglcontextrestored", () => {
-      if (!this._setupGl()) return;
+      if (this._removed || !this._setupGl()) return;
       this._upload();
       this.render();
       this._onContextRestored();
@@ -259,9 +261,10 @@ export class PhotoScene {
       throw new Error("the picture shows too little sky");
     }
     // The heading the photo came with is often 10° to 30° off: the Sun in it says by how much.
-    // (Turning it changes no elevation, so the sky found stands.) Google's say only the month.
+    // (Turning it changes no elevation, so the sky found stands.) Google's say only the month, and
+    // a rotation worked out from the pictures themselves is better than a blob of glare.
     const photo = this.photo;
-    if (this._sunAt && !photo.approximate && Number.isFinite(photo.taken) && Number.isFinite(photo.latitude) && Number.isFinite(photo.longitude)) {
+    if (this._sunAt && !photo.approximate && !photo.computedRotation && Number.isFinite(photo.taken) && Number.isFinite(photo.latitude) && Number.isFinite(photo.longitude)) {
       const predicted = this._sunAt(photo.taken * 1000, { latitude: photo.latitude, longitude: photo.longitude });
       const { heading, turned } = sunHeading(photo, image, found, predicted);
       if (turned) {

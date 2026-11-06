@@ -185,6 +185,9 @@ async def test_saving_stores_every_field(hass: HomeAssistant, entry: MockConfigE
         "brightness_cutoff": 1.75,
         "cloud_forecast": False,
         "alert_lead_minutes": 30,
+        "min_elevation": 25,
+        "weather_entity": "weather.home",
+        "follow_entity": "person.someone",
         "show_in_sidebar": False,
         "show_in_calendar": False,
         "units": "metric",
@@ -708,3 +711,63 @@ def test_the_street_payload_says_none_for_a_missing_key() -> None:
         "mapillary_token": None,
         "google_api_key": "k",
     }
+
+
+# The newer options.
+
+
+@pytest.mark.parametrize("field", ["brightness_cutoff", "alert_lead_minutes", "min_elevation"])
+async def test_a_number_that_is_not_one_is_explained(
+    hass: HomeAssistant, entry: MockConfigEntry, field: str
+) -> None:
+    chosen = {
+        "brightness_cutoff": 1.75,
+        "cloud_forecast": False,
+        "alert_lead_minutes": 30,
+        "min_elevation": 25,
+        "show_in_sidebar": False,
+        "show_in_calendar": False,
+        "units": "metric",
+        "street_view": {"street_source": "panoramax"},
+        field: float("nan"),
+    }
+    result = await submit(hass, entry, chosen)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {field: "invalid_number"}
+
+
+@pytest.mark.parametrize("height", [4, 61])
+async def test_the_lowest_height_has_its_limits(
+    hass: HomeAssistant, entry: MockConfigEntry, height: int
+) -> None:
+    chosen = {
+        "brightness_cutoff": 1.75,
+        "cloud_forecast": False,
+        "alert_lead_minutes": 30,
+        "min_elevation": height,
+        "show_in_sidebar": False,
+        "show_in_calendar": False,
+        "units": "metric",
+        "street_view": {"street_source": "panoramax"},
+    }
+    with pytest.raises(InvalidData):
+        await submit(hass, entry, chosen)
+
+
+async def test_the_entities_to_follow_and_to_ask_about_clouds_are_optional(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    chosen = {
+        "brightness_cutoff": 1.75,
+        "cloud_forecast": False,
+        "alert_lead_minutes": 30,
+        "min_elevation": 25,
+        "show_in_sidebar": False,
+        "show_in_calendar": False,
+        "units": "metric",
+        "street_view": {"street_source": "panoramax"},
+    }
+    result = await submit(hass, entry, chosen)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert "weather_entity" not in result["data"]
+    assert "follow_entity" not in result["data"]

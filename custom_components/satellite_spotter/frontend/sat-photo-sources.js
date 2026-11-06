@@ -27,7 +27,7 @@
  */
 
 const VERSION = new URL(import.meta.url).search;
-const { PHOTO_MAX_M, SEARCH_RADIUS_M, SEARCH_TIMEOUT_MS, distanceBearing, https, multiply3, photoOrientation, photoScore, spacedPhotos, transpose3 } =
+const { PHOTO_MAX_M, SEARCH_RADIUS_M, SEARCH_TIMEOUT_MS, distanceBearing, https, multiply3, photoOrientation, photoScore, spacedPhotos, transpose3, withTimeout } =
   await import(`./sat-photo.js${VERSION}`);
 
 export const MAPILLARY_API = "https://graph.mapillary.com";
@@ -80,20 +80,6 @@ const round4 = (x) => Math.round(x * 1e4) / 1e4;
 /** The fetch options for a service: no cookies; no referrer, but Google's origin. */
 export function fetchInit(source, init = {}) {
   return { credentials: "omit", referrerPolicy: source === "google" ? GOOGLE_REFERRER : "no-referrer", ...init };
-}
-
-/** A fetch with its own time limit, which also stops when `signal` does. */
-async function withTimeout(signal, timeoutMs, run) {
-  const abort = globalThis.AbortController ? new AbortController() : null;
-  const stop = () => abort?.abort();
-  signal?.addEventListener?.("abort", stop, { once: true });
-  const timer = setTimeout(stop, timeoutMs);
-  try {
-    return await run(abort?.signal ?? signal ?? undefined);
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener?.("abort", stop);
-  }
 }
 
 /**
@@ -180,11 +166,11 @@ export function mapillaryCandidates(json, { latitude, longitude, maxDistance = P
     if (distance > maxDistance) continue;
     let orientation = null;
     if (Array.isArray(image.computed_rotation) && image.computed_rotation.length === 3 && image.computed_rotation.every(Number.isFinite)) {
-      orientation = mapillaryOrientation(image.computed_rotation);
+      orientation = { ...mapillaryOrientation(image.computed_rotation), computedRotation: true };
       if (Math.abs(orientation.pitch) > MAX_TILT || Math.abs(orientation.roll) > MAX_TILT) orientation = null;
     }
     const compass = Number.isFinite(image.computed_compass_angle) ? image.computed_compass_angle : image.compass_angle;
-    orientation ??= { heading: wrap360(Number.isFinite(compass) ? compass : 0), pitch: 0, roll: 0 };
+    orientation ??= { heading: wrap360(Number.isFinite(compass) ? compass : 0), pitch: 0, roll: 0, noHeading: !Number.isFinite(compass) };
     const photo = {
       source: "mapillary",
       id: `mapillary:${image.id}`,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -72,6 +73,13 @@ BRIGHT_SOON = "binary_sensor.home_bright_pass_soon"
 CALENDAR = "calendar.home_visible_passes"
 # How a timestamp sensor writes its state.
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%S+00:00"
+
+
+@pytest.fixture(autouse=True)
+def _tracker_enabled() -> Iterator[None]:
+    """Have the tracker too, which starts disabled for anyone else."""
+    with patch.object(SatellitePositionTracker, "_attr_entity_registry_enabled_default", True):
+        yield
 
 
 def state_of(hass: HomeAssistant, entity_id: str) -> State:
@@ -205,6 +213,7 @@ async def test_the_description_has_what_the_readme_lists_worked_out_by_hand(
         "duration_seconds": 300,
         "magnitude": -2.5,
         "bright": True,
+        "rating": "great",
         "sun_up": False,
         "cloud_cover": 12,
         "appears_from_shadow": True,
@@ -221,6 +230,7 @@ async def test_the_description_has_what_the_readme_lists_worked_out_by_hand(
                 "duration_seconds": 360,
                 "magnitude": -2.5,
                 "bright": True,
+                "rating": "great",
                 "cloud_cover": 12,
             }
         ],

@@ -384,6 +384,14 @@ export default {
   },
   // The simulation time bar shared by the globe and the street view (track D1).
   // {countdown} is "01:23" or "1d 02:03:04"; {rate} a number such as 7.3.
+  // How worth going outside for a pass is, as the integration rates it. {rating} is one of the words below.
+  rating: {
+    says: "Rating: {rating}",
+    great: "Great",
+    good: "Good",
+    fair: "Fair",
+    poor: "Poor",
+  },
   timebar: {
     name: "Simulation controls",
     simulation: "Simulation",

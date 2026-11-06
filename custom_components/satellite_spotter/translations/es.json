@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Introduce una latitud entre -90° y 90° y una longitud válida.",
+      "name_required": "Introduce un nombre para esta ubicación.",
+      "invalid_elevation": "Introduce la altitud como un número de metros.",
       "cannot_connect": "No se ha podido descargar el catálogo de satélites. Comprueba que Home Assistant tiene acceso a internet y vuelve a intentarlo.",
       "download_limited": "CelesTrak, de donde vienen los datos orbitales, aún no permite otra descarga. Vuelve a intentarlo dentro de dos horas.",
       "unknown": "Error inesperado al cargar el catálogo de satélites. El registro tiene los detalles."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Límite de brillo",
           "cloud_forecast": "Previsión de nubes",
+          "weather_entity": "Entidad meteorológica para la nubosidad",
           "alert_lead_minutes": "Aviso previo",
+          "min_elevation": "Altura mínima",
+          "follow_entity": "Seguir a una persona o un rastreador",
           "show_in_sidebar": "Mostrar Satellite Spotter en la barra lateral",
           "show_in_calendar": "Mostrar los pasos en el calendario",
           "units": "Unidades"
         },
         "data_description": {
           "brightness_cutoff": "Un paso solo aparece si llega a ser al menos así de brillante. La escala va al revés, así que un número menor es más brillante: 2,25 va bien para el cielo de una zona residencial, 1 deja los fáciles, y por debajo de 0 solo los deslumbrantes.",
-          "cloud_forecast": "Muestra cuántas nubes espera Open-Meteo en cada paso. Open-Meteo recibe las coordenadas de esta ubicación (con cuatro decimales) cada hora.",
+          "cloud_forecast": "Muestra la nubosidad prevista en cada paso. Si no eliges abajo una entidad meteorológica, Open-Meteo recibe cada hora las coordenadas de esta ubicación, redondeadas a aproximadamente un kilómetro.",
+          "weather_entity": "Opcional. Toma la nubosidad de la previsión horaria de esta entidad y no se consulta a Open-Meteo. Si esa previsión no incluye la nubosidad, los pasos no la muestran.",
           "alert_lead_minutes": "Los sensores \"Paso visible inminente\" y \"Paso brillante inminente\" se activan con esta antelación antes de que aparezca el satélite más brillante del paso.",
+          "min_elevation": "Un satélite solo cuenta mientras esté al menos a esta altura. Auméntala si los árboles o los edificios te tapan el horizonte.",
+          "follow_entity": "Opcional, para viajes. Los pasos se calculan para donde esté esta persona o rastreador, cuando se aleje más de 25 km, y como mucho cada media hora. Open-Meteo sabrá entonces más o menos dónde está, salvo que uses una entidad meteorológica, y podrá verlo cualquiera que pueda abrir la página.",
           "show_in_sidebar": "Añade a la barra lateral una página de Satellite Spotter con los pasos, un globo 3D y una vista del cielo a pie de calle. La vista de calle carga teselas de mapa de los alrededores desde OpenFreeMap y AWS (y desde Esri con imágenes aéreas). Las tarjetas del panel funcionan en cualquier caso.",
           "show_in_calendar": "Añade un calendario con los pasos de los próximos cinco días, cada uno con cuándo y hacia dónde mirar. Así, los desencadenantes de calendario pueden iniciar automatizaciones antes de un paso.",
           "units": "Para las distancias y velocidades del globo y de la vista de calle. \"Automático\" sigue el sistema de unidades de Home Assistant."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Introduce un número dentro del intervalo indicado.",
       "google_key_needed": "Introduce una clave de API de Google Cloud para mostrar fotos de Google Street View.",
       "mapillary_token_needed": "Introduce un token de acceso de Mapillary para mostrar fotos de Mapillary.",
       "mapillary_token_format": "Un token de acceso de Mapillary tiene esta forma: MLY|1234…|abcd…. Copia el token de cliente de tu aplicación en mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Sin fotos: el modelo 3D"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Excelente",
+        "good": "Bueno",
+        "fair": "Regular",
+        "poor": "Malo"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Etapas de cohete",
+        "debris": "Restos",
+        "satellite": "Otros satélites"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Nubosidad del próximo paso visible"
       },
+      "next_visible_pass_rating": {
+        "name": "Valoración del próximo paso visible",
+        "state": {
+          "great": "Excelente",
+          "good": "Bueno",
+          "fair": "Regular",
+          "poor": "Malo"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Nombre del próximo satélite visible"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "Los elementos orbitales del catálogo de satélites tienen {age} días, y los datos de CelesTrak son igual de antiguos; las predicciones están en pausa hasta que se descargue un catálogo reciente"
+    },
+    "unknown_location": {
+      "message": "Esta ubicación de Satellite Spotter no existe."
+    },
+    "location_not_loaded": {
+      "message": "Esta ubicación de Satellite Spotter aún no está lista."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Las predicciones de satélites están en pausa",
       "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y no se ha podido descargar un catálogo más reciente ({error}). Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que una descarga funcione. Comprueba que Home Assistant tiene acceso a internet: los datos orbitales vienen de CelesTrak. Este mensaje desaparece solo en cuanto llega un catálogo reciente."
-    },
-    "catalog_stale_upstream": {
-      "title": "Las predicciones de satélites están en pausa",
-      "description": "Los elementos orbitales del catálogo de satélites tienen {age} días (la mediana de todos los satélites), y los propios datos de CelesTrak son igual de antiguos: no hay nada más reciente que descargar. Las predicciones con elementos tan antiguos serían engañosas, así que las entidades de Satellite Spotter no están disponibles hasta que CelesTrak publique datos recientes. No hay nada que arreglar en Home Assistant: este mensaje desaparece solo en cuanto llega un catálogo reciente."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Mejor vista a las {time}: {direction}, a {elevation}° de altura, magnitud {magnitude}.",
     "calendar_disappears": "Visible por última vez a las {time} hacia {direction}, a {elevation}° de altura.",
     "calendar_together": "Este paso incluye {count} satélites.",
+    "calendar_rating": "Valoración: {rating}.",
+    "rating_great": "Excelente",
+    "rating_good": "Bueno",
+    "rating_fair": "Regular",
+    "rating_poor": "Malo",
     "calendar_cloud_cover": "Nubosidad durante el paso: {cloud_cover}%.",
     "calendar_about": "Objeto: {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "ONO",
     "compass_nw": "NO",
     "compass_nnw": "NNO"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Obtener pasos",
+      "description": "Enumera los pasos previstos de una ubicación, primero los más próximos, con filtros opcionales.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Ubicación",
+          "description": "La ubicación cuyos pasos se enumeran."
+        },
+        "pass_id": {
+          "name": "Paso",
+          "description": "Solo este paso, por su id: el uid de un evento del calendario o el pass_id de un sensor."
+        },
+        "start": {
+          "name": "Desde",
+          "description": "Solo los pasos que sigan en curso después de este momento. Por defecto, los que aún no han terminado."
+        },
+        "end": {
+          "name": "Hasta",
+          "description": "Solo los pasos que empiecen antes de este momento."
+        },
+        "min_rating": {
+          "name": "Valoración mínima",
+          "description": "Solo los pasos con al menos esta valoración."
+        },
+        "max_cloud_cover": {
+          "name": "Nubosidad máxima",
+          "description": "Omite los pasos con una nubosidad prevista mayor. Los pasos sin previsión se mantienen."
+        },
+        "bright_only": {
+          "name": "Solo pasos brillantes",
+          "description": "Solo los pasos que cuentan como brillantes."
+        },
+        "kinds": {
+          "name": "Tipos de satélite",
+          "description": "Solo los pasos que incluyan alguno de estos."
+        },
+        "satellite": {
+          "name": "Nombre del satélite",
+          "description": "Solo los pasos con un satélite cuyo nombre contenga esto."
+        },
+        "limit": {
+          "name": "Límite",
+          "description": "El número máximo de pasos que se enumeran."
+        }
+      }
+    }
   }
 }

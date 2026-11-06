@@ -8,7 +8,8 @@ degrees with azimuths clockwise from north, magnitudes to one decimal.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Hashable, Sequence
 from datetime import datetime, timedelta
 from functools import partial
 import hashlib
@@ -16,6 +17,7 @@ import inspect
 import logging
 import math
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import frontend, panel_custom, websocket_api
@@ -26,7 +28,6 @@ from homeassistant.config_entries import (
     ConfigEntryChange,
     ConfigEntryState,
 )
-from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -47,20 +48,22 @@ from .const import (
     FRONTEND_URL,
     ISSUE_CATALOG_STALE,
     MAX_SIGHTINGS,
-    MIN_ELEVATION,
     PANEL_ELEMENT,
     PANEL_ICON,
     PANEL_MODULE,
     PANEL_TITLE,
     PANEL_URL_PATH,
+    PASS_ID_TOLERANCE,
     PASS_TRACK_MAX_STEP,
     PASS_TRACK_MEMBERS,
     PASS_TRACK_STEP,
     PASS_TRACK_SUN_STEP,
+    POSITIONS_BURST,
     POSITIONS_MAX_SAMPLES,
     POSITIONS_MAX_SPAN,
     POSITIONS_MAX_STEP,
     POSITIONS_MIN_STEP,
+    POSITIONS_REFILL_SECONDS,
     POSITIONS_SPAN,
     POSITIONS_STEP,
     PREDICTION_DAYS,
@@ -74,6 +77,7 @@ from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, satellite_kind
 from .links import about_url
 from .predict import Moment, Satellite, Sighting, cutoff_for
+from .sky_chart import SkyChartView
 from .street import street_payload
 
 if TYPE_CHECKING:
@@ -92,6 +96,7 @@ ERR_SETUP_FAILED = "setup_failed"
 ERR_STALE_CATALOG = "stale_catalog"
 ERR_UNKNOWN_PASS = "unknown_pass"
 ERR_UNKNOWN_SATELLITE = "unknown_satellite"
+ERR_TOO_MANY_REQUESTS = "too_many_requests"
 
 WAITING = "Waiting for the satellite catalog"
 
@@ -111,6 +116,24 @@ _PANEL_HANDLES_SAFE_AREA = (
 )
 
 
+class _RequestBudget:
+    """So many requests at once for each user, and one more every so often."""
+
+    def __init__(self, burst: int, refill_seconds: float) -> None:
+        """Start everyone with a full budget."""
+        self._burst = burst
+        self._refill_seconds = refill_seconds
+        self._left: dict[str, tuple[float, float]] = {}
+
+    def allows(self, user_id: str, now: float) -> bool:
+        """Take a request from the user's budget, if there is one left."""
+        left, at = self._left.get(user_id, (float(self._burst), now))
+        left = min(self._burst, left + max(0.0, now - at) / self._refill_seconds)
+        allowed = left >= 1.0
+        self._left[user_id] = (left - 1.0 if allowed else left, now)
+        return allowed
+
+
 class FrontendState:
     """What has been registered with the frontend in this run."""
 
@@ -121,6 +144,9 @@ class FrontendState:
         self.panel_conflict_logged = False
         # The catalog payload, built once per catalog version.
         self.catalog: tuple[int, dict[str, Any]] | None = None
+        self.positions_budget = _RequestBudget(POSITIONS_BURST, POSITIONS_REFILL_SECONDS)
+        # Positions being worked out: everyone asking for the same ones waits for the same job.
+        self.positions_jobs: dict[Hashable, asyncio.Future[bytes]] = {}
 
 
 def _files_version() -> str:
@@ -158,6 +184,7 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
         ]
     )
     frontend.add_extra_js_url(hass, f"{FRONTEND_URL}/{CARD_MODULE}?v={version}")
+    hass.http.register_view(SkyChartView())
     for command in (
         ws_locations,
         ws_passes,
@@ -384,6 +411,7 @@ def pass_json(p: ListedPass) -> dict[str, Any]:
         "duration": p.duration,
         "magnitude": magnitude(p.peak_magnitude),
         "bright": p.bright,
+        "rating": p.rating,
         "sun_up": p.sun_up,
         "cloud_cover": p.cloud_cover,
         "satellite_count": p.count,
@@ -398,14 +426,14 @@ def pass_json(p: ListedPass) -> dict[str, Any]:
 
 
 def location_json(coordinator: SatelliteSpotterCoordinator) -> dict[str, Any]:
-    """Where a location is (the page draws it; the websocket is authenticated)."""
+    """Where a location is now (the page draws it; the websocket is authenticated)."""
     entry = coordinator.config_entry
     return {
         "entry_id": entry.entry_id,
         "title": entry.title,
-        "latitude": entry.data[CONF_LATITUDE],
-        "longitude": entry.data[CONF_LONGITUDE],
-        "elevation": entry.data.get(CONF_ELEVATION, 0.0),
+        "latitude": coordinator.observer.latitude,
+        "longitude": coordinator.observer.longitude,
+        "elevation": coordinator.observer.elevation_m,
     }
 
 
@@ -430,6 +458,8 @@ def build_passes_payload(coordinator: SatelliteSpotterCoordinator, now: datetime
         "generated_at": int(now.timestamp()),
         # Precise, so the page can allow for a browser clock that is off.
         "server_time": round(now.timestamp(), 3),
+        # Which predictions these are: a pass's track from any others may be out of date.
+        "searched_at": None if data is None else int(data.searched_at.timestamp()),
         "paused": paused,
         # Paused because the orbit data is too old: the page words that itself, in the user's
         # language, from these.
@@ -439,7 +469,8 @@ def build_passes_payload(coordinator: SatelliteSpotterCoordinator, now: datetime
         "settings": {
             "units": coordinator.settings.units,
             "days": PREDICTION_DAYS,
-            "min_elevation": MIN_ELEVATION,
+            "min_elevation": coordinator.settings.min_elevation,
+            "pass_id_tolerance": int(PASS_ID_TOLERANCE.total_seconds()),
         },
         "catalog": catalog_json(coordinator.catalog),
         "passes": (
@@ -753,26 +784,51 @@ async def ws_positions(
         return
     if not _predictions(coordinator, connection, msg):
         return
+    state = hass.data[DATA_FRONTEND]
+    # Every reply goes into the connection's queue whole, so this is what keeps a burst of requests
+    # from filling Home Assistant's memory, whether or not the result is already at hand.
+    if not state.positions_budget.allows(connection.user.id, time.monotonic()):
+        connection.send_error(
+            msg["id"], ERR_TOO_MANY_REQUESTS, "Too many requests for positions: try again later"
+        )
+        return
     catalog = coordinator.catalog
     # Aligned to the step, so every page asking around now shares the result.
     start = math.floor(when.timestamp() / step) * step
     key = ("positions", catalog.version, start, span, step)
     if (payload := catalog.cached(key)) is None:
-        satellites, version = catalog.satellites or [], catalog.version
+        job = state.positions_jobs.get(key)
+        if job is None:
+            job = state.positions_jobs[key] = _async_positions_job(
+                hass, catalog, key, start=start, span=span, step=step
+            )
+            job.add_done_callback(lambda _: state.positions_jobs.pop(key, None))
+        # Shielded, as others may be waiting for it when this connection closes.
+        payload = await asyncio.shield(job)
+    connection.send_message(websocket_api.messages.construct_result_message(msg["id"], payload))
+
+
+def _async_positions_job(
+    hass: HomeAssistant, catalog: CatalogManager, key: Hashable, **window: int
+) -> asyncio.Future[bytes]:
+    """Work out positions in the executor, and remember them while the catalog stands."""
+    version = catalog.version
+
+    async def run() -> bytes:
         payload = await hass.async_add_executor_job(
             partial(
                 positions_json,
-                satellites,
+                catalog.satellites or [],
                 catalog.satrecs(),
-                start=start,
-                span=span,
-                step=step,
                 version=version,
+                **window,
             )
         )
         if catalog.version == version:
             catalog.remember(key, payload)
-    connection.send_message(websocket_api.messages.construct_result_message(msg["id"], payload))
+        return payload
+
+    return hass.async_create_background_task(run(), name=f"{DOMAIN} positions")
 
 
 @websocket_api.websocket_command(

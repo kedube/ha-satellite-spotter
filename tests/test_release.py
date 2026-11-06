@@ -243,3 +243,15 @@ def test_a_folder_without_a_manifest_is_not_packaged(tmp_path: Path) -> None:
     (tmp_path / "src/__init__.py").write_text("")
     with pytest.raises(ValueError, match=r"no manifest\.json"):
         release.package(tmp_path / "out.zip", tmp_path / "src")
+
+
+def test_the_package_carries_the_licences(tmp_path: Path) -> None:
+    out = tmp_path / "out.zip"
+    names = release.package(out)
+    assert {"LICENSE", "LICENSES/MIT-see-a-satellite.txt"} <= set(names)
+    root = Path(__file__).parents[1]
+    with zipfile.ZipFile(out) as zf:
+        assert zf.read("LICENSE") == (root / "LICENSE").read_bytes()
+        notice = zf.read("LICENSES/MIT-see-a-satellite.txt").decode()
+    assert "Copyright (c) 2026 Willem Vooijs" in notice
+    assert "Permission is hereby granted, free of charge" in notice

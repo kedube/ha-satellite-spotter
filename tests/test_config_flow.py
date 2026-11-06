@@ -373,3 +373,56 @@ async def test_either_side_of_zero_is_the_same_place(hass: HomeAssistant, fetch:
     result = await submit(hass, place(-0.00001, -0.00001))
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+# What only a script could send, and two forms at once.
+
+
+async def test_a_blank_name_is_explained(hass: HomeAssistant, fetch: AsyncMock) -> None:
+    for name in ("", "   "):
+        result = await submit(hass, place(10.0, 20.0, name=name))
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {CONF_NAME: "name_required"}
+    fetch.assert_not_awaited()
+
+
+async def test_a_name_loses_the_spaces_around_it(hass: HomeAssistant, fetch: AsyncMock) -> None:
+    result = await submit(hass, place(10.0, 20.0, name="  Cabin "))
+    assert result["title"] == "Cabin"
+
+
+async def test_an_elevation_that_is_not_a_number_is_explained(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    result = await submit(hass, place(10.0, 20.0, elevation=math.nan))
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_ELEVATION: "invalid_elevation"}
+    fetch.assert_not_awaited()
+
+
+async def test_two_forms_open_for_one_place_end_with_one_location(
+    hass: HomeAssistant, fetch: AsyncMock
+) -> None:
+    first, second = await start(hass), await start(hass)
+    for flow in (first, second):
+        assert flow["type"] is FlowResultType.FORM
+    done = await hass.config_entries.flow.async_configure(first["flow_id"], place(10.0, 20.0))
+    assert done["type"] is FlowResultType.CREATE_ENTRY
+    # Each submits: with its own form open, the second learns the place is taken.
+    again = await hass.config_entries.flow.async_configure(second["flow_id"], place(10.0, 20.0))
+    assert again["type"] is FlowResultType.ABORT
+    assert again["reason"] == "already_configured"
+
+
+async def test_adding_a_location_with_a_catalog_there_does_not_wait_for_a_new_one(
+    hass: HomeAssistant, fetch: AsyncMock, freezer: Any
+) -> None:
+    freezer.move_to("2026-11-04T15:30:00+00:00")
+    assert (await submit(hass, place(10.0, 20.0)))["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done(wait_background_tasks=True)
+    asked = fetch.await_count
+    # Long enough for a new catalog to be due, which comes along after setup.
+    freezer.move_to("2026-11-05T12:00:00+00:00")
+    fetch.side_effect = CatalogError("no route")
+    assert (await submit(hass, place(11.0, 21.0)))["type"] is FlowResultType.CREATE_ENTRY
+    assert fetch.await_count <= asked + 1

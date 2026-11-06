@@ -302,6 +302,13 @@
     "easy": "facile à voir",
     "faint": "faible"
   },
+  "rating": {
+    "says": "Note : {rating}",
+    "great": "Excellent",
+    "good": "Bon",
+    "fair": "Moyen",
+    "poor": "Faible"
+  },
   "timebar": {
     "name": "Commandes de la simulation",
     "simulation": "Simulation",

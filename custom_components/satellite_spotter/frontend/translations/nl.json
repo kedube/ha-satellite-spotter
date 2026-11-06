@@ -302,6 +302,13 @@
     "easy": "goed zichtbaar",
     "faint": "zwak"
   },
+  "rating": {
+    "says": "Beoordeling: {rating}",
+    "great": "Uitstekend",
+    "good": "Goed",
+    "fair": "Redelijk",
+    "poor": "Slecht"
+  },
   "timebar": {
     "name": "Simulatiebediening",
     "simulation": "Simulatie",

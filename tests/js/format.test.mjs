@@ -364,3 +364,22 @@ test("kinds of object and pass names", () => {
   assert.equal(fmt.passTitle({ transits: [{ name: "ISS" }] }), "ISS");
   assert.equal(fmt.passTitle(null), "");
 });
+
+test("what rounds to nothing is never negative", () => {
+  const fmt = new Formatter(hass(), english);
+  assert.equal(fmt.num(-0.3), "0");
+  assert.equal(fmt.num(-0.04, 1), "0.0");
+  assert.equal(fmt.num(-0), "0");
+  assert.equal(fmt.degrees(-0.4), "0°");
+  assert.equal(fmt.num(-1.6), "-2");
+  assert.equal(fmt.num(0.26, 1), "0.3");
+});
+
+test("a pass's rating, in words; none where an older payload has none", () => {
+  const fmt = new Formatter(hass(), english);
+  assert.deepEqual(fmt.rating({ rating: "great" }), { level: "great", word: "Great", says: "Rating: Great" });
+  assert.equal(fmt.rating({ rating: "poor" }).word, "Poor");
+  assert.equal(fmt.rating({}), null);
+  assert.equal(fmt.rating({ rating: "wonderful" }), null);
+  assert.equal(fmt.rating(null), null);
+});

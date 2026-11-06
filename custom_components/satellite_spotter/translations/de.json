@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Gib einen Breitengrad zwischen -90° und 90° und einen gültigen Längengrad ein.",
+      "name_required": "Gib einen Namen für diesen Standort ein.",
+      "invalid_elevation": "Gib die Höhe als Zahl in Metern ein.",
       "cannot_connect": "Der Satellitenkatalog konnte nicht heruntergeladen werden. Prüfe, ob Home Assistant das Internet erreicht, und versuche es dann erneut.",
       "download_limited": "CelesTrak, die Quelle der Bahndaten, lässt noch keinen weiteren Download zu. Versuche es in zwei Stunden erneut.",
       "unknown": "Unerwarteter Fehler beim Laden des Satellitenkatalogs. Details stehen im Protokoll."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Helligkeitsgrenze",
           "cloud_forecast": "Wolkenvorhersage",
+          "weather_entity": "Wetter-Entität für die Bewölkung",
           "alert_lead_minutes": "Vorwarnzeit",
+          "min_elevation": "Mindesthöhe",
+          "follow_entity": "Einer Person oder einem Tracker folgen",
           "show_in_sidebar": "Satellite Spotter in der Seitenleiste anzeigen",
           "show_in_calendar": "Überflüge im Kalender anzeigen",
           "units": "Einheiten"
         },
         "data_description": {
           "brightness_cutoff": "Ein Überflug wird nur aufgeführt, wenn er mindestens so hell wird. Die Skala läuft rückwärts, kleinere Zahlen sind also heller: 2,25 passt zum Himmel eines Vororts, 1 lässt die leichten übrig, unter 0 bleiben nur die strahlend hellen.",
-          "cloud_forecast": "Zeigt, wie bewölkt es laut Open-Meteo bei jedem Überflug sein wird. Open-Meteo erhält dafür jede Stunde die Koordinaten dieses Standorts (auf vier Nachkommastellen).",
+          "cloud_forecast": "Zeigt, wie bewölkt es bei jedem Überflug voraussichtlich ist. Sofern du unten keine Wetter-Entität wählst, erhält Open-Meteo stündlich die auf etwa einen Kilometer gerundeten Koordinaten dieses Standorts.",
+          "weather_entity": "Optional. Übernimmt die Bewölkung aus der stündlichen Vorhersage dieser Entität, und Open-Meteo wird nicht gefragt. Enthält diese Vorhersage keine Bewölkung, zeigen Überflüge keine an.",
           "alert_lead_minutes": "Die Sensoren „Sichtbarer Überflug in Kürze“ und „Heller Überflug in Kürze“ schalten sich so lange vor dem Erscheinen des hellsten Satelliten des Überflugs ein.",
+          "min_elevation": "Ein Satellit zählt nur, solange er mindestens so hoch steht. Erhöhe den Wert, wenn Bäume oder Gebäude deinen Horizont verdecken.",
+          "follow_entity": "Optional, für Reisen. Überflüge werden dafür berechnet, wo sich diese Person oder dieser Tracker befindet, sobald die Entfernung über 25 km liegt, und höchstens jede halbe Stunde. Open-Meteo erfährt dann ungefähr den Aufenthaltsort, außer du nutzt eine Wetter-Entität, und alle, die die Seite öffnen können, sehen ihn.",
           "show_in_sidebar": "Fügt der Seitenleiste eine Satellite-Spotter-Seite mit den Überflügen, einem 3D-Globus und einer Ansicht des Himmels auf Straßenhöhe hinzu. Die Straßenansicht lädt Kartenkacheln der Umgebung des Standorts von OpenFreeMap und AWS (mit Luftbildern auch von Esri). Die Dashboard-Karten funktionieren in jedem Fall.",
           "show_in_calendar": "Fügt einen Kalender mit den Überflügen der nächsten fünf Tage hinzu, jeweils mit Zeit und Blickrichtung. Kalender-Auslöser können damit vor einem Überflug Automationen starten.",
           "units": "Für Entfernungen und Geschwindigkeiten auf dem Globus und in der Straßenansicht. „Automatisch“ folgt dem Einheitensystem von Home Assistant."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Gib eine Zahl im angezeigten Bereich ein.",
       "google_key_needed": "Gib einen Google-Cloud-API-Schlüssel ein, um Fotos von Google Street View zu zeigen.",
       "mapillary_token_needed": "Gib ein Mapillary-Zugriffstoken ein, um Fotos von Mapillary zu zeigen.",
       "mapillary_token_format": "Ein Mapillary-Zugriffstoken sieht so aus: MLY|1234…|abcd…. Kopiere das Client-Token deiner Anwendung auf mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Keine Fotos: das 3D-Modell"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Großartig",
+        "good": "Gut",
+        "fair": "Mäßig",
+        "poor": "Schlecht"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Raketenstufen",
+        "debris": "Trümmerteile",
+        "satellite": "Andere Satelliten"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Bewölkung des nächsten sichtbaren Überflugs"
       },
+      "next_visible_pass_rating": {
+        "name": "Bewertung des nächsten sichtbaren Überflugs",
+        "state": {
+          "great": "Großartig",
+          "good": "Gut",
+          "fair": "Mäßig",
+          "poor": "Schlecht"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Name des nächsten sichtbaren Satelliten"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt, und die Daten von CelesTrak sind genauso alt; die Vorhersagen sind pausiert, bis ein aktueller Katalog heruntergeladen ist"
+    },
+    "unknown_location": {
+      "message": "Dieser Satellite-Spotter-Standort existiert nicht."
+    },
+    "location_not_loaded": {
+      "message": "Dieser Satellite-Spotter-Standort ist noch nicht bereit."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellitenvorhersagen sind pausiert",
       "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und es konnte kein aktuellerer Katalog heruntergeladen werden ({error}). Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis ein Download gelingt. Prüfe, ob Home Assistant das Internet erreicht: Die Bahndaten kommen von CelesTrak. Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
-    },
-    "catalog_stale_upstream": {
-      "title": "Satellitenvorhersagen sind pausiert",
-      "description": "Die Bahnelemente im Satellitenkatalog sind {age} Tage alt (der Median über alle Satelliten), und die Daten von CelesTrak selbst sind genauso alt: Es gibt nichts Aktuelleres herunterzuladen. Vorhersagen aus so alten Daten wären irreführend, daher sind die Entitäten von Satellite Spotter nicht verfügbar, bis CelesTrak aktuellere Daten veröffentlicht. In Home Assistant ist nichts zu beheben: Diese Meldung verschwindet von selbst, sobald ein aktueller Katalog eintrifft."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Beste Sicht um {time}: {direction}, {elevation}° hoch, Helligkeit {magnitude}.",
     "calendar_disappears": "Zuletzt sichtbar um {time} in Richtung {direction}, {elevation}° hoch.",
     "calendar_together": "Zu diesem Überflug gehören {count} Satelliten.",
+    "calendar_rating": "Bewertung: {rating}.",
+    "rating_great": "Großartig",
+    "rating_good": "Gut",
+    "rating_fair": "Mäßig",
+    "rating_poor": "Schlecht",
     "calendar_cloud_cover": "Bewölkung während des Überflugs: {cloud_cover} %.",
     "calendar_about": "Objekt: {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "WNW",
     "compass_nw": "NW",
     "compass_nnw": "NNW"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Überflüge abrufen",
+      "description": "Listet die vorhergesagten Überflüge eines Standorts auf, die nächsten zuerst, mit optionalen Filtern.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Standort",
+          "description": "Der Standort, dessen Überflüge aufgelistet werden."
+        },
+        "pass_id": {
+          "name": "Überflug",
+          "description": "Nur dieser Überflug, anhand seiner ID: die uid eines Kalendereintrags oder die pass_id eines Sensors."
+        },
+        "start": {
+          "name": "Von",
+          "description": "Nur Überflüge, die nach diesem Zeitpunkt noch andauern. Standardmäßig die noch nicht beendeten."
+        },
+        "end": {
+          "name": "Bis",
+          "description": "Nur Überflüge, die vor diesem Zeitpunkt beginnen."
+        },
+        "min_rating": {
+          "name": "Mindestbewertung",
+          "description": "Nur Überflüge mit mindestens dieser Bewertung."
+        },
+        "max_cloud_cover": {
+          "name": "Maximale Bewölkung",
+          "description": "Lässt Überflüge weg, für die mehr Bewölkung vorhergesagt ist. Überflüge ohne Vorhersage bleiben."
+        },
+        "bright_only": {
+          "name": "Nur helle Überflüge",
+          "description": "Nur Überflüge, die als hell gelten."
+        },
+        "kinds": {
+          "name": "Satellitenarten",
+          "description": "Nur Überflüge, die eine dieser Arten enthalten."
+        },
+        "satellite": {
+          "name": "Satellitenname",
+          "description": "Nur Überflüge mit einem Satelliten, dessen Name dies enthält."
+        },
+        "limit": {
+          "name": "Begrenzung",
+          "description": "Die höchste Anzahl aufzulistender Überflüge."
+        }
+      }
+    }
   }
 }

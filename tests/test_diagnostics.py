@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -208,3 +209,17 @@ async def test_with_nothing_yet_there_is_nothing_to_say(hass: HomeAssistant) -> 
     }
     assert "predictions" not in diagnostics
     await coordinator.async_shutdown()
+
+
+async def test_a_location_still_retrying_setup_gets_a_report_of_the_catalog(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
+) -> None:
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("no route")
+    entry = await add_location(hass)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    report = await async_get_config_entry_diagnostics(hass, entry)
+    assert report["state"] == "setup_retry"
+    assert report["catalog"]["satellites"] == 0
+    assert report["catalog"]["last_error"] == "no route"
+    assert "predictions" not in report
+    assert report["entry"]["latitude"] == REDACTED

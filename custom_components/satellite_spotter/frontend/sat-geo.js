@@ -8,12 +8,13 @@
  * these five; nothing here reads them.
  */
 
+const VERSION = new URL(import.meta.url).search;
+const [{ greenwichSiderealTime, sunPosition }, { esc }] = await Promise.all([import(`./sat-astro.js${VERSION}`), import(`./sat-text.js${VERSION}`)]);
+
 const DEG = Math.PI / 180;
 const WGS84_A_KM = 6378.137;
 const WGS84_E2 = 0.00669437999014;
 const EARTH_MU = 398600.4418; // km^3/s^2
-// The ISS's orbital period: what previewTimeline() paces itself by when not told.
-const ISS_PERIOD_S = 92.9 * 60;
 export const MERCATOR_MAX_LAT = 85.051129;
 
 export function wrapLongitude(lon) {
@@ -34,28 +35,10 @@ export function mercator(lat, lon, limit = MERCATOR_MAX_LAT) {
   ];
 }
 
-/**
- * Greenwich mean sidereal time in radians (IAU 1982, as track.py's `gmst`) for
- * a Julian date in UT1 (UTC is near enough).
- */
-export function gmst(jd) {
-  const t = (jd - 2451545.0) / 36525.0;
-  const seconds =
-    -6.2e-6 * t ** 3 + 0.093104 * t ** 2 + (876600.0 * 3600 + 8640184.812866) * t + 67310.54841;
-  return (((seconds * DEG) / 240.0) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
-}
-
-/** Point on Earth with the Sun overhead (same low-precision formula as the Python engine). */
+/** Point on Earth with the Sun overhead. */
 export function subsolarPoint(date) {
-  const jd = date.getTime() / 86400000 + 2440587.5;
-  const n = jd - 2451545.0;
-  const meanLongitude = 280.46 + 0.9856474 * n;
-  const g = (357.528 + 0.9856003 * n) * DEG;
-  const lambda = (meanLongitude + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * DEG;
-  const obliquity = (23.439 - 0.0000004 * n) * DEG;
-  const ra = Math.atan2(Math.cos(obliquity) * Math.sin(lambda), Math.cos(lambda));
-  const dec = Math.asin(Math.sin(obliquity) * Math.sin(lambda));
-  return { lat: dec / DEG, lon: wrapLongitude((ra - gmst(jd)) / DEG) };
+  const { ra, dec } = sunPosition(date);
+  return { lat: dec, lon: wrapLongitude(ra - greenwichSiderealTime(date)) };
 }
 
 /** Unit vector towards the Sun in an Earth-fixed frame: x at (0, 0), y at (0, 90E), z north. */
@@ -74,7 +57,11 @@ export function sunElevation(lat, lon, sun) {
   return Math.asin(Math.max(-1, Math.min(1, s))) / DEG;
 }
 
-/** Position on a track at time t (unix seconds), interpolated; null outside the track. */
+// Rows further apart than this are the ends of two stretches of a track (the orbit, a pass hours
+// later), not two points on it: a straight line between them can be half a world away.
+export const MAX_ROW_GAP_S = 300;
+
+/** Position on a track at time t (unix seconds), interpolated; null outside the track or across a gap in it. */
 export function positionAt(track, t) {
   if (!track || track.length < 2 || t < track[0][0] || t > track[track.length - 1][0]) {
     return null;
@@ -88,6 +75,7 @@ export function positionAt(track, t) {
   }
   const a = track[lo];
   const b = track[hi];
+  if (b[0] - a[0] > MAX_ROW_GAP_S && t > a[0]) return null;
   const f = b[0] === a[0] ? 0 : (t - a[0]) / (b[0] - a[0]);
   return {
     t,
@@ -149,7 +137,8 @@ export function visibilityRadius(altitudeKm, minElevation) {
   return (Math.acos((WGS84_A_KM * Math.cos(e)) / (WGS84_A_KM + altitudeKm)) - e) / DEG;
 }
 
-function ecef(latDeg, lonDeg, hKm) {
+/** A place in Earth-fixed coordinates (km) on WGS84. */
+export function ecef(latDeg, lonDeg, hKm) {
   const lat = latDeg * DEG;
   const lon = lonDeg * DEG;
   const n = WGS84_A_KM / Math.sqrt(1 - WGS84_E2 * Math.sin(lat) ** 2);
@@ -180,15 +169,6 @@ export function lookAngles(observer, satellite) {
   };
 }
 
-/** Where a track appears in the observer's sky: [{t, azimuth, elevation, range, sunlit}]. */
-export function skyTrack(observer, rows) {
-  return (rows || []).map((r) => ({
-    t: r[0],
-    ...lookAngles(observer, { lat: r[1], lon: r[2], alt: r[3] }),
-    sunlit: r[4] === 1,
-  }));
-}
-
 /** Index of the row where the satellite is highest in the observer's sky. */
 export function closestApproach(observer, rows) {
   let best = -1;
@@ -201,11 +181,6 @@ export function closestApproach(observer, rows) {
     }
   });
   return best;
-}
-
-/** Orbital period in seconds from the mean motion in revolutions per day (the elements' MEAN_MOTION). */
-export function periodFromMeanMotion(revPerDay) {
-  return revPerDay > 0 ? 86400 / revPerDay : NaN;
 }
 
 /** Semi-major axis in km of an orbit with this period (Kepler's third law). */
@@ -243,29 +218,8 @@ export function compass(azimuth) {
   return COMPASS[Math.round((((azimuth % 360) + 360) % 360) / 22.5) % 16];
 }
 
-/** Escape text for use in HTML. */
-export function esc(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
+export { esc };
 
-// Satellites with a look of their own, by NORAD id.
-const KIND_BY_ID = { 25544: "iss", 48274: "tiangong", 20580: "hubble" };
-
-/**
- * What a satellite is, for its sprite and icon: iss, tiangong, hubble,
- * starlink, rocket, debris or satellite. The same rules as the integration's
- * satellite_kind(), so a satellite looks the same everywhere: the stations by
- * NORAD id, then by name, ignoring case.
- */
-export function satelliteKind({ norad_id: id, name } = {}) {
-  const known = KIND_BY_ID[Number(id)];
-  if (known) return known;
-  const upper = String(name ?? "").toUpperCase();
-  if (upper.includes("STARLINK")) return "starlink";
-  if (upper.includes("R/B") || upper.includes("PKM") || upper.includes("AKM")) return "rocket";
-  if (upper.includes("DEB")) return "debris";
-  return "satellite";
-}
 
 // Unit vectors, altitudes and sunlight of a positions payload, made once per payload.
 const positionBases = new WeakMap();
@@ -368,42 +322,6 @@ export function interpolatePositions(payload, tS, out) {
     res[o + 3] = lit[a] + f * (lit[b] - lit[a]);
   }
   return res;
-}
-
-/**
- * Timeline of the fast-forward preview: sweep quickly to a few minutes before
- * the pass, play the pass itself slowly, then hold. With `skipApproach` (for
- * reduced motion) it starts at the lead-in instead of sweeping there.
- * `periodS` is the satellite's orbital period: the sweep takes about 1.5 s
- * per orbit (the ISS's when not given).
- *
- * Returns { at(realMs) -> {sim, phase, done}, durationMs }.
- */
-export function previewTimeline(simStartS, passStartS, passEndS, options = {}) {
-  const lead = options.leadS ?? 240;
-  const slowRate = options.slowRate ?? 30; // simulated seconds per real second during the pass
-  const holdMs = options.holdMs ?? 2500;
-  const periodS = options.periodS > 0 ? options.periodS : ISS_PERIOD_S;
-  const startS = options.skipApproach ? Math.max(simStartS, passStartS - lead) : simStartS;
-  const approachS = Math.max(0, passStartS - lead - startS);
-  // About 1.5 s per orbit, between 3 and 9 seconds in all.
-  const fastMs = approachS > 0 ? Math.min(9000, Math.max(3000, (approachS / periodS) * 1500)) : 0;
-  const slowStartS = startS + approachS;
-  const slowMs = ((passEndS + 60 - slowStartS) / slowRate) * 1000;
-  const durationMs = fastMs + slowMs + holdMs;
-  const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
-  return {
-    durationMs,
-    at(realMs) {
-      if (realMs < fastMs) {
-        return { sim: startS + approachS * ease(realMs / fastMs), phase: "approach", done: false };
-      }
-      if (realMs < fastMs + slowMs) {
-        return { sim: slowStartS + ((realMs - fastMs) / 1000) * slowRate, phase: "pass", done: false };
-      }
-      return { sim: passEndS + 60, phase: "hold", done: realMs >= durationMs };
-    },
-  };
 }
 
 /**

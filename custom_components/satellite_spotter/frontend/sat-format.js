@@ -19,6 +19,7 @@ const MINUS = "−";
 const KM_PER_MILE = 1.609344;
 
 /** Brightness words by level, faintest first (keys in the "brightness" group). */
+const RATINGS = ["great", "good", "fair", "poor"];
 const BRIGHTNESS = ["faint", "easy", "bright", "very_bright", "dazzling"];
 /** Kinds of object the integration tells apart (keys in the "kinds" group). */
 const KINDS = new Set(["iss", "tiangong", "hubble", "starlink", "rocket", "debris", "satellite"]);
@@ -298,7 +299,9 @@ export class Formatter {
   /** A number in the user's number format, with a fixed number of decimals. */
   num(value, digits = 0) {
     if (!Number.isFinite(value)) return "";
-    return this._number(`n${digits}`, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+    // Rounded here, and + 0: what rounds to nothing is never "-0".
+    const rounded = Number(value.toFixed(digits)) + 0;
+    return this._number(`n${digits}`, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(rounded);
   }
 
   /** A magnitude with one decimal and a true minus sign: "−3.4", "0.0", "2.5". */
@@ -316,6 +319,14 @@ export class Formatter {
   brightness(m) {
     const level = !Number.isFinite(m) ? 0 : m < -2 ? 4 : m < 0 ? 3 : m < 1.5 ? 2 : m < 2.5 ? 1 : 0;
     return { level, word: this.t(`brightness.${BRIGHTNESS[level]}`) };
+  }
+
+  /** How worth going outside for a pass is: {level, word, says}; null without a rating. */
+  rating(pass) {
+    const level = pass?.rating;
+    if (!RATINGS.includes(level)) return null;
+    const word = this.t(`rating.${level}`);
+    return { level, word, says: this.t("rating.says", { rating: word }) };
   }
 
   /** A compass point as the integration names it ("SSW"), in the user's language. */

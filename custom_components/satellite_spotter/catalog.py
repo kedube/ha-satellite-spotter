@@ -47,6 +47,8 @@ _INTERRUPTED = (
     "integration waits two hours, then tries again by itself."
 )
 _LONGEST_RETRY = max(CATALOG_RETRY, CATALOG_UNREACHABLE_RETRY)
+# Later than any clock will be wrong by, and well short of where adding to a date overflows.
+_LATEST_STORED_YEAR = 9000
 
 
 # What the first version of the store called two of each satellite's fields.
@@ -132,8 +134,14 @@ def _read_stored(entries: Any) -> tuple[list[Satellite], list[Satrec], list[str]
 
 
 def _stored_time(value: Any) -> datetime | None:
+    """Read a stored moment, if it is one that can be worked with: a wait is added to it."""
     parsed = dt_util.parse_datetime(value) if isinstance(value, str) else None
-    return None if parsed is None else dt_util.as_utc(parsed)
+    if parsed is None or parsed.year > _LATEST_STORED_YEAR:
+        return None
+    try:
+        return dt_util.as_utc(parsed)
+    except OverflowError:
+        return None
 
 
 class CatalogManager:
@@ -147,7 +155,10 @@ class CatalogManager:
         self.last_error: str | None = None
         self.version = 0
         self._cache: OrderedDict[Hashable, bytes] = OrderedDict()
-        self._store = _CatalogStore(hass, STORAGE_VERSION, STORAGE_KEY)
+        # Half a megabyte: written out in the executor rather than the event loop.
+        self._store = _CatalogStore(
+            hass, STORAGE_VERSION, STORAGE_KEY, serialize_in_event_loop=False
+        )
         self._lock = asyncio.Lock()
         self._store_read = False
         self._refusal: _Wait | None = None
@@ -159,24 +170,41 @@ class CatalogManager:
         self.median_epoch: datetime | None = None
         self._listeners: list[CALLBACK_TYPE] = []
 
-    async def async_satellites(self, *, retry_now: bool = False) -> list[Satellite]:
-        """Return the catalog, reading storage on first use and downloading when due.
+    async def async_load(self) -> list[Satellite] | None:
+        """Return the catalog there is, reading storage on first use. Never asks CelesTrak."""
+        if not self._store_read:
+            async with self._lock:
+                await self._async_read_store()
+        return self.satellites
 
-        ``retry_now`` cuts short the wait after a failed download, but never after a refusal.
-        Raises CatalogError when there is no catalog, or DownloadRefused if that is because
-        CelesTrak refused.
-        """
+    async def async_refresh(self) -> None:
+        """Download a new catalog, if one is due and CelesTrak may be asked."""
         async with self._lock:
             await self._async_read_store()
             now = dt_util.utcnow()
-            if self._due(now) and self._may_ask(now, retry_now):
+            if self._due(now) and self._may_ask(now):
                 await self._async_download()
-            if self.satellites is not None:
-                return self.satellites
-            error = self.last_error or "CelesTrak did not send a catalog"
-            if self._refusal is not None:
-                raise DownloadRefused(error)
-            raise CatalogError(error)
+
+    def forget_failed_download(self) -> None:
+        """Let the next refresh try at once, as someone is waiting. A refusal's wait stands."""
+        self._retry = None
+
+    def loaded(self) -> list[Satellite]:
+        """Return the catalog there is.
+
+        Raises CatalogError without one, or DownloadRefused if that is because CelesTrak refused.
+        """
+        if self.satellites is not None:
+            return self.satellites
+        error = self.last_error or "CelesTrak did not send a catalog"
+        if self._refusal is not None:
+            raise DownloadRefused(error)
+        raise CatalogError(error)
+
+    async def async_satellites(self) -> list[Satellite]:
+        """Refresh the catalog if that is due, and return it. Raises as ``loaded`` does."""
+        await self.async_refresh()
+        return self.loaded()
 
     def _due(self, now: datetime) -> bool:
         if self.satellites is None or self.updated is None:
@@ -191,13 +219,13 @@ class CatalogManager:
             self._clock_wait = _Wait(self.updated + CATALOG_REFUSED_RETRY, CATALOG_REFUSED_RETRY)
         return self._clock_wait.is_over(now)
 
-    def _may_ask(self, now: datetime, retry_now: bool) -> bool:
+    def _may_ask(self, now: datetime) -> bool:
         """Whether a download may go ahead."""
         if self._refusal is not None and self._refusal.is_over(now):
             self._refusal = None
         if self._retry is not None and self._retry.is_over(now):
             self._retry = None
-        return self._refusal is None and (self._retry is None or retry_now)
+        return self._refusal is None and self._retry is None
 
     async def _async_download(self) -> None:
         try:
@@ -266,11 +294,17 @@ class CatalogManager:
     async def _async_read_store(self) -> None:
         if self._store_read:
             return
-        self._store_read = True
+        try:
+            await self._async_restore()
+        finally:
+            self._store_read = True
+
+    async def _async_restore(self) -> None:
         try:
             stored = await self._store.async_load()
-        except HomeAssistantError as err:
-            _LOGGER.warning(_IGNORING, err)
+        # A file of the wrong shape fails in the store's own code, with whatever that meets.
+        except (AttributeError, HomeAssistantError, KeyError, TypeError, ValueError) as err:
+            _LOGGER.warning(_IGNORING, repr(err))
             return
         if not stored:
             return
@@ -285,7 +319,8 @@ class CatalogManager:
         until = _stored_time(stored.get("refused_until"))
         if until is not None and until > dt_util.utcnow():
             self._refusal = _Wait(until, CATALOG_REFUSED_RETRY)
-            self.last_error = stored.get("last_error")
+            error = stored.get("last_error")
+            self.last_error = error if isinstance(error, str) else None
 
     async def _async_restore_catalog(self, entries: Any, stamp: Any) -> None:
         if (updated := _stored_time(stamp)) is None:
@@ -293,7 +328,7 @@ class CatalogManager:
             return
         try:
             kept, records, dropped = await self.hass.async_add_executor_job(_read_stored, entries)
-        except (AttributeError, KeyError, TypeError, ValueError) as err:
+        except (ArithmeticError, AttributeError, KeyError, TypeError, ValueError) as err:
             _LOGGER.warning(_IGNORING, repr(err))
             return
         if not kept:

@@ -27,7 +27,7 @@ const [geo, sprites] = await Promise.all([import(`./sat-geo.js${VERSION}`), impo
 // map's limit unless a shape that reaches past it towards a pole passes
 // POLE_LAT, so the globe draws it where it is (the flat map still sets it on
 // its edge, see PROJECT_GLSL).
-const { displayAltitudeKm, mercator } = geo;
+const { MAX_ROW_GAP_S, displayAltitudeKm, mercator } = geo;
 const { KIND_CODES, KIND_COLORS, KINDS, drawSprite, spriteKind } = sprites;
 export { KIND_CODES };
 
@@ -759,6 +759,12 @@ export function buildRibbon(points) {
   let run = [];
   for (const p of points) {
     const prev = run[run.length - 1];
+    // Two stretches of a track (the orbit, a pass hours later): no line between them.
+    if (prev && p[3] - prev[3] > MAX_ROW_GAP_S) {
+      if (run.length > 1) runs.push(run);
+      run = [p];
+      continue;
+    }
     if (prev && Math.abs(p[0] - prev[0]) > 0.5) {
       const unwrapped = p[0] + (prev[0] > 0.5 ? 1 : -1);
       const edge = prev[0] > 0.5 ? 1 : 0;
@@ -1034,6 +1040,8 @@ function highOrbitScale(displayAltM) {
 }
 
 // Cloud flags (setCloudFlags).
+// How long a visible satellite's ring takes to breathe, as its shader has it: sin(u_time * 3.2).
+const BREATH_PERIOD_S = (2 * Math.PI) / 3.2;
 const FLAG_HIDDEN = 1;
 const FLAG_HOVER = 2;
 const FLAG_NOW = 4;
@@ -1675,7 +1683,8 @@ export class SpaceLayer {
     gl.uniform1f(u.u_center_x, view.center);
     gl.uniform1f(u.u_px, this._pixelRatio || 1);
     gl.uniform1f(u.u_scale, this._cloudScaleNow);
-    gl.uniform1f(u.u_time, (globalThis.performance?.now() ?? Date.now()) / 1000);
+    // Within one breath, as a float cannot count a page left open for days to the frame.
+    gl.uniform1f(u.u_time, ((globalThis.performance?.now() ?? Date.now()) / 1000) % BREATH_PERIOD_S);
     gl.uniform1f(u.u_pulse, this._reducedMotion() ? 0 : 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, c.gl.atlas);

@@ -501,3 +501,112 @@ def test_the_sgp4_record_is_the_one_its_own_reader_builds() -> None:
 def test_a_temporary_number_is_left_out_of_the_record() -> None:
     elements = {**satellites()[0].elements, "NORAD_CAT_ID": "270123456"}
     assert Satellite.from_elements(elements, 2.0).sgp4_record().satnum == 0
+
+
+# A lone Starlink left out, and what it joined together.
+
+
+def test_a_lone_starlink_does_not_chain_what_is_either_side_of_it() -> None:
+    rocket, *_ = (s for s in satellites() if not s.name.startswith("STARLINK"))
+    starlink = next(s for s in satellites() if s.name.startswith("STARLINK"))
+    flyovers = group_sightings(
+        [
+            _sighting(rocket, NOW, 300),
+            _sighting(starlink, NOW + timedelta(seconds=330), 170),
+            _sighting(rocket, NOW + timedelta(seconds=530), 170),
+        ]
+    )
+    assert [flyover.count for flyover in flyovers] == [1, 1]
+    assert flyovers[1].start == NOW + timedelta(seconds=530)
+
+
+def test_a_train_still_chains_what_is_either_side_of_it() -> None:
+    rocket = next(s for s in satellites() if not s.name.startswith("STARLINK"))
+    starlink = next(s for s in satellites() if s.name.startswith("STARLINK"))
+    flyovers = group_sightings(
+        [
+            _sighting(rocket, NOW, 300),
+            *(_sighting(starlink, NOW + timedelta(seconds=330), 170) for _ in range(5)),
+            _sighting(rocket, NOW + timedelta(seconds=530), 170),
+        ]
+    )
+    assert [flyover.count for flyover in flyovers] == [7]
+
+
+# Windows shorter than the grid: nothing the sky shows is lost between two minutes.
+
+
+def _windows(
+    sat: Satellite, observer: track.Observer, first: float, last: float, faintest: float
+) -> list[tuple[int, int]]:
+    """Look at every second by brute force: return when each window begins, and how long it is."""
+    seconds = np.arange(first, last)
+    places = track.propagate([sat.sgp4_record()], seconds)[0]
+    light = track.photometry(sat, observer, places, track.sun_at(seconds))
+    seen = track.visible(light, cutoff_for(sat, faintest))
+    edges = np.flatnonzero(np.diff(np.concatenate(([0], seen.astype(np.int8), [0]))))
+    return [
+        (int(seconds[begin]), int(end - begin))
+        for begin, end in zip(edges[::2], edges[1::2], strict=True)
+        if seconds[begin] > first
+    ]
+
+
+@pytest.mark.parametrize(
+    ("place", "lowest", "shortest"),
+    [
+        # With windows of 19 s of the ISS and 13 s of a Starlink, which fall between two minutes.
+        pytest.param(DENVER, 10.0, 19, id="Denver"),
+        pytest.param(HONOLULU, 10.0, None, id="Honolulu"),
+        pytest.param(DENVER, 25.0, None, id="Denver, over the trees"),
+    ],
+)
+def test_every_second_the_sky_shows_is_found(
+    place: dict[str, float], lowest: float, shortest: int | None
+) -> None:
+    observer = track.Observer(*place.values(), lowest)
+    catalog = satellites()
+    days = 5
+    faintest = 2.25
+    found = {
+        (sighting.satellite.norad_id, int(sighting.appears.time.timestamp()))
+        for sighting in find_sightings(catalog, observer, start=START, days=days, faintest=faintest)
+    }
+    first = START.timestamp()
+    # Not the end of the time: a stretch still going there is left for the next search.
+    last = first + days * 86400.0 - 600.0
+    durations = []
+    for sat in catalog:
+        for appears, seconds in _windows(sat, observer, first, last, faintest):
+            assert (sat.norad_id, appears) in found, (sat.name, appears, seconds)
+            if sat.norad_id == 25544:
+                durations.append(seconds)
+    if shortest is not None:
+        assert shortest in durations
+
+
+# The lowest height, by location.
+
+
+def test_a_higher_lowest_height_keeps_only_what_climbs_that_high() -> None:
+    catalog = satellites()
+    low = find_sightings(catalog, HONOLULU_SKY, start=START, days=2)
+    high_sky = track.Observer(*HONOLULU.values(), 40.0)
+    high = find_sightings(catalog, high_sky, start=START, days=2)
+    assert 0 < len(high) < len(low)
+    for sighting in high:
+        assert sighting.appears.elevation >= 39.9
+        assert sighting.vanishes.elevation >= 39.9
+
+
+# Reading what is stored.
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [{"name": 5}, {"curve": []}, {"standard_magnitude": "x"}, {"standard_magnitude": False}],
+)
+def test_a_stored_satellite_of_the_wrong_type_is_refused(changes: dict[str, Any]) -> None:
+    entry = write_catalog(satellites()[:1])[0]
+    with pytest.raises(TypeError):
+        read_catalog([{**entry, **changes}])

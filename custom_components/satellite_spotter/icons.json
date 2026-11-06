@@ -46,6 +46,14 @@
       "next_visible_pass_cloud_cover": {
         "default": "mdi:weather-cloudy"
       },
+      "next_visible_pass_rating": {
+        "default": "mdi:star-outline",
+        "state": {
+          "great": "mdi:star",
+          "good": "mdi:star-half-full",
+          "poor": "mdi:weather-cloudy-alert"
+        }
+      },
       "next_visible_satellite_name": {
         "default": "mdi:satellite-variant"
       },
@@ -61,6 +69,11 @@
       "orbital_elements_epoch": {
         "default": "mdi:database-clock-outline"
       }
+    }
+  },
+  "services": {
+    "get_passes": {
+      "service": "mdi:format-list-checks"
     }
   }
 }

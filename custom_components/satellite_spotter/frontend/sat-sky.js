@@ -8,7 +8,7 @@
 
 const DEG = Math.PI / 180;
 
-const esc = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const { esc } = await import(`./sat-text.js${new URL(import.meta.url).search}`);
 const f1 = (v) => v.toFixed(1);
 
 /** Polar position of an azimuth/elevation on a dome of radius r centred at (c, c). */
@@ -164,7 +164,12 @@ export function skyChartSvg({
   }
 
   let pass = "";
-  if (visible.length > 1) {
+  if (visible.length < 2 && above.length > 1) {
+    // Gone between two rows: the way it goes, and about where it can be seen.
+    const middle = (visibleStart + visibleEnd) / 2;
+    const [x, y] = xy(above.reduce((a, b) => (Math.abs(b.t - middle) < Math.abs(a.t - middle) ? b : a)));
+    pass = `<path d="${pathData(above, r, c)}" class="above"/><circle cx="${f1(x)}" cy="${f1(y)}" r="4" class="pt"/>`;
+  } else if (visible.length > 1) {
     const first = visible[0];
     const last = visible[visible.length - 1];
     const top = visible.reduce((a, b) => (b.elevation > a.elevation ? b : a));

@@ -96,6 +96,11 @@ def gp_csv(entries: Iterable[Mapping[str, Any]]) -> str:
     return out.getvalue()
 
 
+def unreadable_csv() -> str:
+    """Return an answer the csv module refuses: one field past its usual limit."""
+    return "NORAD_CAT_ID,OBJECT_NAME,EPOCH\n1," + "x" * 200_000 + ",2026\n"
+
+
 def cloud_percent(hour: int) -> int:
     """Return the mocked forecast's value for the hour labelled with these Unix seconds.
 

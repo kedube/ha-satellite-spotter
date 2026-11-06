@@ -10,7 +10,9 @@ from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_GOOGLE_API_KEY, CONF_MAPILLARY_TOKEN
+from .catalog import CatalogManager, async_shared_catalog
+from .const import CONF_FOLLOW_ENTITY, CONF_GOOGLE_API_KEY, CONF_MAPILLARY_TOKEN
+from .coordinator import SatelliteSpotterCoordinator
 
 if TYPE_CHECKING:
     from . import SatelliteSpotterConfigEntry
@@ -19,36 +21,47 @@ TO_REDACT = {
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_ELEVATION,
+    CONF_FOLLOW_ENTITY,
     CONF_GOOGLE_API_KEY,
     CONF_MAPILLARY_TOKEN,
 }
+
+
+def _catalog_report(catalog: CatalogManager) -> dict[str, Any]:
+    now = dt_util.utcnow()
+    age = catalog.median_epoch_age(now)
+    oldest, newest = catalog.epoch_range() or (None, None)
+    return {
+        "updated": None if catalog.updated is None else catalog.updated.isoformat(),
+        "version": catalog.version,
+        "satellites": len(catalog.satellites or ()),
+        "median_epoch_age_days": None if age is None else round(age / timedelta(days=1), 2),
+        "oldest_epoch": None if oldest is None else oldest.isoformat(),
+        "newest_epoch": None if newest is None else newest.isoformat(),
+        "last_error": catalog.last_error,
+    }
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: SatelliteSpotterConfigEntry
 ) -> dict[str, Any]:
     """Describe a location, without saying where it is or what passes over it when."""
-    coordinator = entry.runtime_data
-    catalog = coordinator.catalog
     now = dt_util.utcnow()
-    age = catalog.median_epoch_age(now)
-    oldest, newest = catalog.epoch_range() or (None, None)
     diagnostics: dict[str, Any] = {
         "entry": async_redact_data(entry.data, TO_REDACT),
         "options": async_redact_data(entry.options, TO_REDACT),
         "now": now.isoformat(),
-        "last_update_success": coordinator.last_update_success,
-        "paused": coordinator.paused_reason(now),
-        "catalog": {
-            "updated": None if catalog.updated is None else catalog.updated.isoformat(),
-            "version": catalog.version,
-            "satellites": len(catalog.satellites or ()),
-            "median_epoch_age_days": None if age is None else round(age / timedelta(days=1), 2),
-            "oldest_epoch": None if oldest is None else oldest.isoformat(),
-            "newest_epoch": None if newest is None else newest.isoformat(),
-            "last_error": catalog.last_error,
-        },
     }
+    # While setup retries there is no coordinator, which is often when this is wanted.
+    coordinator: SatelliteSpotterCoordinator | None = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        diagnostics["state"] = entry.state.value
+        diagnostics["reason"] = entry.reason
+        diagnostics["catalog"] = _catalog_report(async_shared_catalog(hass))
+        return diagnostics
+    diagnostics["last_update_success"] = coordinator.last_update_success
+    diagnostics["paused"] = coordinator.paused_reason(now)
+    diagnostics["catalog"] = _catalog_report(coordinator.catalog)
     if (data := coordinator.predictions) is not None:
         diagnostics["predictions"] = {
             "searched_at": data.searched_at.isoformat(),

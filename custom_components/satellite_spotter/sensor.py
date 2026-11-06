@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .const import MAX_UPCOMING_PASSES
+from .const import MAX_UPCOMING_PASSES, RATINGS
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import (
     LiveEntity,
@@ -89,6 +89,12 @@ PASS_SENSORS: tuple[PassSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=0,
         value=lambda p: p.cloud_cover,
+    ),
+    PassSensorDescription(
+        key="next_visible_pass_rating",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(RATINGS),
+        value=lambda p: p.rating,
     ),
     PassSensorDescription(
         key="next_visible_satellite_name",

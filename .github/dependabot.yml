@@ -1,0 +1,15 @@
+# Proposes updates to the actions the workflows use and to the tests' tools. requirements_test_oldest.txt
+# stays as it is: its point is the oldest Home Assistant supported. MapLibre is vendored, so check
+# frontend/vendor by hand against https://github.com/maplibre/maplibre-gl-js/releases now and then.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /
+    exclude-paths:
+      - requirements_test_oldest.txt
+    schedule:
+      interval: weekly

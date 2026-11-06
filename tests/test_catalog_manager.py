@@ -30,9 +30,10 @@ from custom_components.satellite_spotter.catalog import (
     validate,
 )
 from custom_components.satellite_spotter.celestrak import CatalogError, DownloadRefused
+from custom_components.satellite_spotter.const import STORAGE_KEY, STORAGE_VERSION
 from custom_components.satellite_spotter.predict import Satellite, read_catalog, write_catalog
 
-from .common import NOW, advance, aged, satellites, with_epoch
+from .common import NOW, advance, aged, satellites, unreadable_csv, with_epoch
 
 STORE_KEY = "satellite_spotter.catalog"
 IGNORING = "Ignoring the stored satellite catalog"
@@ -748,24 +749,73 @@ async def test_a_stale_catalog_is_retried_sooner(
     assert fetch.await_count == 2
 
 
-async def test_retry_now_cuts_short_the_wait_after_a_failed_download(
+async def test_forgetting_a_failed_download_cuts_short_its_wait(
     manager: CatalogManager, fetch: AsyncMock, catalog: list[Satellite]
 ) -> None:
     fetch.side_effect = CatalogError("no route")
     with pytest.raises(CatalogError):
         await manager.async_satellites()
     fetch.side_effect = None
-    assert await manager.async_satellites(retry_now=True) == catalog
+    manager.forget_failed_download()
+    assert await manager.async_satellites() == catalog
     assert fetch.await_count == 2
     assert manager.last_error is None
 
 
-async def test_retry_now_does_not_download_a_catalog_that_is_not_due(
+async def test_forgetting_a_failed_download_does_not_download_a_catalog_that_is_not_due(
     manager: CatalogManager, fetch: AsyncMock
 ) -> None:
     await manager.async_satellites()
-    await manager.async_satellites(retry_now=True)
+    manager.forget_failed_download()
+    await manager.async_satellites()
     assert fetch.await_count == 1
+
+
+async def test_loading_reads_storage_and_never_asks_celestrak(
+    hass: HomeAssistant, hass_storage: dict[str, Any], fetch: AsyncMock, catalog: list[Satellite]
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": STORAGE_VERSION,
+        "data": {
+            "updated": (NOW - timedelta(days=2)).isoformat(),
+            "catalog": write_catalog(catalog),
+        },
+    }
+    manager = CatalogManager(hass)
+    assert [sat.norad_id for sat in await manager.async_load() or []] == [
+        sat.norad_id for sat in catalog
+    ]
+    # Well overdue, but this is only for what is there.
+    await manager.async_load()
+    fetch.assert_not_awaited()
+
+
+async def test_loading_with_nothing_stored_says_so_and_asks_nothing(
+    manager: CatalogManager, fetch: AsyncMock
+) -> None:
+    assert await manager.async_load() is None
+    fetch.assert_not_awaited()
+    with pytest.raises(CatalogError):
+        manager.loaded()
+
+
+async def test_loading_does_not_wait_for_a_download_under_way(
+    manager: CatalogManager, fetch: AsyncMock, catalog: list[Satellite]
+) -> None:
+    await manager.async_satellites()
+    manager.updated = NOW - timedelta(days=1)
+    release = asyncio.Event()
+
+    async def hang(_hass: HomeAssistant) -> list[Satellite]:
+        await release.wait()
+        return catalog
+
+    fetch.side_effect = hang
+    download = asyncio.create_task(manager.async_refresh())
+    await asyncio.sleep(0)
+    assert await asyncio.wait_for(manager.async_load(), 1) is not None
+    release.set()
+    await download
 
 
 async def test_only_the_first_of_a_run_of_failures_is_a_warning(
@@ -973,17 +1023,19 @@ async def test_a_date_without_a_catalog_is_not_stored(manager: CatalogManager) -
 async def test_asking_is_a_plain_yes_or_no(
     manager: CatalogManager, freezer: FrozenDateTimeFactory, fetch: AsyncMock
 ) -> None:
-    assert manager._may_ask(NOW, False) is True
+    assert manager._may_ask(NOW) is True
     fetch.side_effect = CatalogError("no route")
     with pytest.raises(CatalogError):
         await manager.async_satellites()
-    assert manager._may_ask(NOW, False) is False
-    assert manager._may_ask(NOW, True) is True
+    assert manager._may_ask(NOW) is False
+    manager.forget_failed_download()
+    assert manager._may_ask(NOW) is True
     fetch.side_effect = DownloadRefused("HTTP 403")
     with pytest.raises(DownloadRefused):
-        await manager.async_satellites(retry_now=True)
-    assert manager._may_ask(NOW, False) is False
-    assert manager._may_ask(NOW, True) is False
+        await manager.async_satellites()
+    assert manager._may_ask(NOW) is False
+    manager.forget_failed_download()
+    assert manager._may_ask(NOW) is False
 
 
 async def test_being_refused_is_a_plain_yes_or_no(
@@ -1189,3 +1241,119 @@ async def test_the_catalog_ages_as_time_passes(
     age = manager.median_epoch_age(NOW)
     assert age is not None
     assert manager.median_epoch_age(NOW + timedelta(days=2)) == age + timedelta(days=2)
+
+
+# Stored files of the wrong shape: ignored, and never in the way of a new download.
+
+
+def _stored_entry(catalog: list[Satellite], **changes: Any) -> dict[str, Any]:
+    return {**write_catalog(catalog)[0], **changes}
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param({"name": 12345}, id="a name that is a number"),
+        pytest.param({"curve": ["starlink"]}, id="a curve that is a list"),
+        pytest.param({"standard_magnitude": "bright"}, id="a magnitude that is text"),
+        pytest.param({"standard_magnitude": True}, id="a magnitude that is true"),
+        pytest.param({"elements": "none"}, id="elements that are text"),
+    ],
+)
+async def test_a_stored_satellite_of_the_wrong_shape_loses_the_file_not_the_searches(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    fetch: AsyncMock,
+    catalog: list[Satellite],
+    changes: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": STORAGE_VERSION,
+        "data": {"updated": NOW.isoformat(), "catalog": [_stored_entry(catalog, **changes)]},
+    }
+    manager = CatalogManager(hass)
+    assert await manager.async_load() is None
+    assert "Ignoring the stored satellite catalog" in caplog.text
+    assert await manager.async_satellites() == catalog
+    fetch.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        pytest.param({"version": STORAGE_VERSION, "data": ["not", "a", "catalog"]}, id="a list"),
+        pytest.param({"version": STORAGE_VERSION, "data": {"catalog": 5}}, id="a number of them"),
+        pytest.param(["not even a store"], id="not even a store"),
+        pytest.param({"data": {}}, id="no version"),
+    ],
+)
+async def test_a_store_of_the_wrong_shape_is_ignored(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    fetch: AsyncMock,
+    catalog: list[Satellite],
+    stored: Any,
+) -> None:
+    hass_storage[STORAGE_KEY] = stored
+    assert await CatalogManager(hass).async_satellites() == catalog
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    ["9999-12-31T23:59:59+00:00", "0001-01-01T00:00:00+14:00", "yesterday", 12345],
+)
+async def test_a_stored_date_that_cannot_be_worked_with_is_no_date(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    fetch: AsyncMock,
+    catalog: list[Satellite],
+    stamp: Any,
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": STORAGE_VERSION,
+        "data": {"updated": stamp, "catalog": write_catalog(catalog)},
+    }
+    manager = CatalogManager(hass)
+    assert await manager.async_load() is None
+    assert await manager.async_satellites() == catalog
+    fetch.assert_awaited_once()
+
+
+async def test_a_refused_until_that_cannot_be_worked_with_is_no_wait(
+    hass: HomeAssistant, hass_storage: dict[str, Any], fetch: AsyncMock, catalog: list[Satellite]
+) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": STORAGE_VERSION,
+        "data": {"refused_until": "9999-12-31T23:59:59+00:00", "last_error": 5},
+    }
+    manager = CatalogManager(hass)
+    assert await manager.async_satellites() == catalog
+    assert manager.last_error is None
+
+
+@pytest.mark.usefixtures("usual_csv_limit")
+async def test_a_broken_answer_waits_two_hours_like_a_refusal(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, catalog: list[Satellite]
+) -> None:
+    session = MagicMock()
+    download = AsyncMock(return_value=unreadable_csv())
+    with (
+        patch("custom_components.satellite_spotter.celestrak.async_get_clientsession", session),
+        patch("custom_components.satellite_spotter.celestrak._async_download", download),
+    ):
+        manager = CatalogManager(hass)
+        for minutes in (0, 5, 30, 119):
+            freezer.move_to(NOW + timedelta(minutes=minutes))
+            with pytest.raises(DownloadRefused):
+                await manager.async_satellites()
+        asked = download.await_count
+        assert asked == 4  # The three queries and the supplement, once.
+        freezer.move_to(NOW + timedelta(hours=2))
+        with pytest.raises(DownloadRefused):
+            await manager.async_satellites()
+        assert download.await_count > asked
+
+
+async def test_the_catalog_is_written_out_away_from_the_event_loop(manager: CatalogManager) -> None:
+    assert manager._store._serialize_in_event_loop is False

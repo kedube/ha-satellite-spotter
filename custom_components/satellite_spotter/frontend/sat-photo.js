@@ -38,6 +38,10 @@ const PICK_SPACING_M = 6;
 /** The size the sky is looked for at (px; equirectangular 2:1). */
 export const SKY_WIDTH = 1024;
 
+// The most the Sun may turn a photo with a heading: more is more likely a bright cloud.
+const MAX_SUN_TURN = 45;
+// What not knowing which way a photo faces counts for, in metres: more than the search's reach.
+const NO_HEADING_PENALTY_M = 1000;
 const DEG = Math.PI / 180;
 const EARTH_RADIUS = 6371008.8;
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
@@ -88,8 +92,10 @@ const finiteOr = (x, fallback) => (Number.isFinite(x) ? x : fallback);
  * `sunElevation(date, place)` (degrees) is optional, and so is everything
  * but the distance.
  */
-export function photoScore({ distance, taken = null, latitude, longitude }, { nowS = Date.now() / 1000, accuracy = null, sunElevation = null } = {}) {
+export function photoScore({ distance, taken = null, latitude, longitude, noHeading = false }, { nowS = Date.now() / 1000, accuracy = null, sunElevation = null } = {}) {
   let score = distance;
+  // Turned who knows how: what hides the path would be wrong, so any other first.
+  if (noHeading) score += NO_HEADING_PENALTY_M;
   if (Number.isFinite(taken)) score += 12 * Math.max(0, (nowS - taken) / (365.25 * 86400) - 3);
   if (Number.isFinite(accuracy)) score += Math.max(0, accuracy - 5);
   if (Number.isFinite(taken) && sunElevation) {
@@ -149,6 +155,7 @@ export function photoCandidates(collection, { latitude, longitude, maxDistance =
       distance,
       bearing,
       heading: wrap360(finiteOr(p["view:azimuth"], 0)),
+      noHeading: !Number.isFinite(p["view:azimuth"]),
       pitch: clamp(finiteOr(p["pers:pitch"], 0), -45, 45),
       roll: clamp(finiteOr(p["pers:roll"], 0), -45, 45),
       taken,
@@ -171,26 +178,44 @@ export function photoCandidates(collection, { latitude, longitude, maxDistance =
 export const SEARCH_TIMEOUT_MS = 8000;
 
 /**
+ * Run a request that is stopped by a signal, or after a while: the running out of time rejects as a
+ * TimeoutError of its own, where being stopped is an AbortError, which nobody needs to hear about.
+ * `run` is given the signal to pass on.
+ */
+export async function withTimeout(signal, timeoutMs, run) {
+  const abort = globalThis.AbortController ? new AbortController() : null;
+  const stop = () => abort?.abort();
+  let late = false;
+  signal?.addEventListener?.("abort", stop, { once: true });
+  const timer = setTimeout(() => {
+    late = true;
+    stop();
+  }, timeoutMs);
+  try {
+    return await run(abort?.signal ?? signal ?? undefined);
+  } catch (err) {
+    if (late && err?.name === "AbortError") throw Object.assign(new Error(`no answer in ${timeoutMs} ms`), { name: "TimeoutError" });
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener?.("abort", stop);
+  }
+}
+
+/**
  * Ask Panoramax for the pictures near a place: photoCandidates() of the
  * answer. No cookies and no referrer go with it. Rejects when Panoramax
  * cannot be reached, answers with an error, or takes too long.
  */
 export async function findPhotos({ latitude, longitude }, { signal = null, fetch: fetchImpl = (url, init) => globalThis.fetch(url, init), sunElevation = null, timeoutMs = SEARCH_TIMEOUT_MS } = {}) {
-  const abort = globalThis.AbortController ? new AbortController() : null;
-  const stop = () => abort?.abort();
-  signal?.addEventListener?.("abort", stop, { once: true });
-  const timer = setTimeout(stop, timeoutMs);
-  try {
-    const get = (url) => fetchImpl(url, { signal: abort?.signal, credentials: "omit", referrerPolicy: "no-referrer" });
+  return withTimeout(signal, timeoutMs, async (stop) => {
+    const get = (url) => fetchImpl(url, { signal: stop, credentials: "omit", referrerPolicy: "no-referrer" });
     let response = await get(photoSearchUrl(latitude, longitude));
     // A server without the meta-catalogue's 360° filter: every picture, sorted out here.
     if (response.status === 400) response = await get(photoSearchUrl(latitude, longitude, { only360: false }));
     if (!response.ok) throw new Error(`Panoramax answered ${response.status}`);
     return photoCandidates(await response.json(), { latitude, longitude, sunElevation });
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener?.("abort", stop);
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -816,6 +841,8 @@ export function sunHeading(photo, image, found, predicted) {
   const sun = findSun(image, R, predicted, found);
   if (!sun) return { heading: photo.heading, turned: 0 };
   const turned = ((predicted.azimuth - sun.azimuth + 540) % 360) - 180;
+  // A heading is never this far out, unless it is not known at all: a bright cloud, rather.
+  if (Math.abs(turned) > (photo.noHeading ? 180 : MAX_SUN_TURN)) return { heading: photo.heading, turned: 0 };
   return { heading: wrap360(photo.heading + turned), turned };
 }
 

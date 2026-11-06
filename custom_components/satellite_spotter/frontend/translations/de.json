@@ -302,6 +302,13 @@
     "easy": "gut sichtbar",
     "faint": "schwach"
   },
+  "rating": {
+    "says": "Bewertung: {rating}",
+    "great": "Großartig",
+    "good": "Gut",
+    "fair": "Mäßig",
+    "poor": "Schlecht"
+  },
   "timebar": {
     "name": "Simulationssteuerung",
     "simulation": "Simulation",

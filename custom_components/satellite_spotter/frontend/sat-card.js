@@ -138,9 +138,9 @@ class LazyCard extends BaseElement {
           ha-card:has(> [fullscreen]), ha-card:has(> [overlay]) { position: relative; z-index: 10000;
             backdrop-filter: none; -webkit-backdrop-filter: none; }
           ${VIEW} { border-radius: var(--ha-card-border-radius, 12px); }
-          .error { padding: 16px; color: var(--secondary-text-color); }
+          .error, .booting { padding: 16px; color: var(--secondary-text-color); }
         </style>
-        <ha-card></ha-card>`;
+        <ha-card><div class="booting" role="status" aria-label="Loading">Loading…</div></ha-card>`;
       this._card = root.querySelector("ha-card");
       this._applyHeight();
     }

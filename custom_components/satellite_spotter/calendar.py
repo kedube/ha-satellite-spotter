@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
 from datetime import datetime, timedelta
-import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
@@ -18,38 +15,19 @@ from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import SatelliteSpotterEntity, compass, magnitude
 from .links import about_url
 from .predict import Moment
+from .texts import load_common
 
 if TYPE_CHECKING:
     from . import SatelliteSpotterConfigEntry
 
 PARALLEL_UPDATES = 0
 
-_TRANSLATIONS = Path(__file__).parent / "translations"
-_DEFAULT_LANGUAGE = "en"
-
-
-def resolve_language(language: str, available: Collection[str]) -> str:
-    """Return an exact match, else the first with the same base language, else English."""
-    language = language.replace("_", "-")
-    if language in available:
-        return language
-    base = language.partition("-")[0].lower()
-    for candidate in sorted(available):
-        if candidate.partition("-")[0].lower() == base:
-            return candidate
-    return _DEFAULT_LANGUAGE
-
-
-def _load_common(language: str) -> dict[str, str]:
-    available = [path.stem for path in _TRANSLATIONS.glob("*.json")]
-    path = _TRANSLATIONS / f"{resolve_language(language, available)}.json"
-    common: dict[str, str] = json.loads(path.read_text(encoding="utf-8"))["common"]
-    return common
+_SECOND = timedelta(seconds=1)
 
 
 async def async_pass_text(hass: HomeAssistant) -> PassText:
     """Load the calendar's words in Home Assistant's language."""
-    return PassText(await hass.async_add_executor_job(_load_common, hass.config.language))
+    return PassText(await hass.async_add_executor_job(load_common, hass.config.language))
 
 
 class PassText:
@@ -84,6 +62,9 @@ class PassText:
             self._sight("calendar_appears", lead.appears),
             self._sight("calendar_disappears", lead.vanishes),
         ]
+        lines.append(
+            self._strings["calendar_rating"].format(rating=self._strings[f"rating_{p.rating}"])
+        )
         if p.cloud_cover is not None:
             lines.append(self._strings["calendar_cloud_cover"].format(cloud_cover=p.cloud_cover))
         if p.count > 1:
@@ -96,11 +77,30 @@ class PassText:
         return "\n".join(lines)
 
 
+def _last_before_clock_change(start: datetime, end: datetime) -> datetime:
+    """Return the last whole second from start, in UTC, before the local clock changes."""
+    offset = dt_util.as_local(start).utcoffset()
+    while end - start > _SECOND:
+        middle = start + timedelta(seconds=(end - start).total_seconds() // 2)
+        if dt_util.as_local(middle).utcoffset() == offset:
+            start = middle
+        else:
+            end = middle
+    return start
+
+
 def event_times(p: ListedPass) -> tuple[datetime, datetime]:
-    """Return a pass's start and end in local time, to the second, at least a second apart."""
-    start = dt_util.as_local(p.start).replace(microsecond=0)
-    end = dt_util.as_local(p.end).replace(microsecond=0)
-    return start, max(end, start + timedelta(seconds=1))
+    """Return a pass's start and end in local time, to the second, at least a second apart.
+
+    Home Assistant's calendar compares them by their wall clocks. So a pass across the clock going
+    back, whose end would look earlier than its start, ends here just before the change.
+    """
+    first, last = p.start.replace(microsecond=0), p.end.replace(microsecond=0)
+    start, end = dt_util.as_local(first), dt_util.as_local(last)
+    if end.replace(tzinfo=None) >= start.replace(tzinfo=None) + _SECOND:
+        return start, end
+    end = dt_util.as_local(_last_before_clock_change(first, last)) if last > first else start
+    return start, max(end, start + _SECOND)
 
 
 async def async_setup_entry(
@@ -160,8 +160,10 @@ class SatellitePassCalendar(SatelliteSpotterEntity, CalendarEntity):
     ) -> list[CalendarEvent]:
         """Return the passes overlapping the range."""
         events = []
+        # In UTC, as times in one zone compare by their wall clocks, and an hour can repeat.
+        first, last = dt_util.as_utc(start_date), dt_util.as_utc(end_date)
         for p in self._passes():
             start, end = event_times(p)
-            if start < end_date and end > start_date:
+            if dt_util.as_utc(start) < last and dt_util.as_utc(end) > first:
                 events.append(self._event(p))
         return events

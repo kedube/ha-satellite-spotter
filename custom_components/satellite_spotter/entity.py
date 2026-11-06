@@ -22,7 +22,7 @@ from .const import (
 )
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .links import about_url
-from .predict import Satellite
+from .predict import Satellite, is_starlink
 
 _KIND_BY_ID = {25544: "iss", 48274: "tiangong", 20580: "hubble"}
 _ROCKET_WORDS = ("R/B", "PKM", "AKM")
@@ -37,9 +37,9 @@ def satellite_kind(norad_id: int, name: str) -> str:
     """Say what sort of thing a satellite is, as the page's satelliteKind does."""
     if (kind := _KIND_BY_ID.get(norad_id)) is not None:
         return kind
-    upper = name.upper()
-    if "STARLINK" in upper:
+    if is_starlink(name):
         return "starlink"
+    upper = name.upper()
     if any(word in upper for word in _ROCKET_WORDS):
         return "rocket"
     return "debris" if "DEB" in upper else "satellite"
@@ -102,6 +102,7 @@ def pass_attributes(p: ListedPass) -> dict[str, Any]:
         "duration_seconds": lead.duration,
         "magnitude": magnitude(p.peak_magnitude),
         "bright": p.bright,
+        "rating": p.rating,
         "sun_up": p.sun_up,
         "cloud_cover": p.cloud_cover,
         "appears_from_shadow": shape.start_reason == "shadow",
@@ -122,6 +123,7 @@ def upcoming_pass(p: ListedPass) -> dict[str, Any]:
         "duration_seconds": p.duration,
         "magnitude": magnitude(p.peak_magnitude),
         "bright": p.bright,
+        "rating": p.rating,
         "cloud_cover": p.cloud_cover,
     }
 

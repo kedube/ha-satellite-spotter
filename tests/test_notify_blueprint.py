@@ -72,18 +72,16 @@ def substituted(**inputs: Any) -> dict[str, Any]:
 async def set_up_automation(hass: HomeAssistant, **inputs: Any) -> list[ServiceCall]:
     """Set the blueprint's automation up, sending its notification to a service the test reads."""
     config = substituted(**inputs)
-    action = config["actions"][0]
+    action = config["actions"][-1]
     assert action["device_id"] == "a_phone"
-    config["actions"] = [
-        {
-            "action": "notify.phone",
-            "data": {
-                "title": action["title"],
-                "message": action["message"],
-                "data": action["data"],
-            },
-        }
-    ]
+    config["actions"][-1] = {
+        "action": "notify.phone",
+        "data": {
+            "title": action["title"],
+            "message": action["message"],
+            "data": action["data"],
+        },
+    }
     calls = async_mock_service(hass, "notify", "phone")
     assert await async_setup_component(
         hass, "automation", {"automation": {"id": "notify", "alias": "Notify", **config}}
@@ -157,19 +155,32 @@ def test_it_loads_as_an_automation_blueprint() -> None:
     assert set(loaded.inputs) == {
         "calendar",
         "notice",
+        "min_rating",
         "bright_only",
+        "kinds",
+        "satellite_name",
         "max_cloud_cover",
+        "quiet_from",
+        "quiet_until",
+        "sky_chart",
         "notify_device",
     }
 
 
 def test_its_defaults_are_what_the_readme_says() -> None:
-    # README: "By default it covers bright passes only, ten minutes ahead, and skips skies more
-    # than 60% cloudy."
+    assert (
+        "By default it covers passes rated Good or better, ten minutes ahead, with a picture"
+        in (README.replace("\n", " "))
+    )
     inputs = blueprint().inputs
     assert inputs["notice"]["default"] == "-0:10:00"
-    assert inputs["bright_only"]["default"] is True
+    assert inputs["min_rating"]["default"] == "good"
+    assert inputs["bright_only"]["default"] is False
     assert inputs["max_cloud_cover"]["default"] == 60
+    assert inputs["kinds"]["default"] == []
+    assert inputs["satellite_name"]["default"] == ""
+    assert inputs["quiet_from"]["default"] == inputs["quiet_until"]["default"]
+    assert inputs["sky_chart"]["default"] is True
 
 
 def test_the_two_inputs_with_no_default_are_required() -> None:
@@ -208,14 +219,10 @@ def test_the_automation_it_makes_is_triggered_by_the_calendar_and_notifies_a_dev
     ]
     assert config["mode"] == "queued"
     assert config["max"] == 10
-    action = config["actions"][0]
+    action = config["actions"][-1]
     assert action["domain"] == "mobile_app"
     assert action["type"] == "notify"
     assert action["device_id"] == "a_phone"
-
-
-def test_each_notification_is_tagged_with_its_pass_so_that_it_can_be_replaced() -> None:
-    assert substituted()["actions"][0]["data"]["tag"] == "satellite-pass-{{ pass_id }}"
 
 
 # Its templates, one by one.
@@ -288,9 +295,37 @@ async def test_a_calendar_of_no_location_gives_an_empty_entry_id(hass: HomeAssis
     assert _render(hass, "entry_id", calendar="calendar.not_there") == ""
 
 
+@pytest.mark.parametrize(
+    ("clock", "quiet_from", "quiet_until", "quiet"),
+    [
+        pytest.param("12:00:00", "00:00:00", "00:00:00", False, id="no quiet hours"),
+        pytest.param("03:00:00", "01:00:00", "06:00:00", True, id="in the morning hours"),
+        pytest.param("06:00:00", "01:00:00", "06:00:00", False, id="at their end"),
+        pytest.param("01:00:00", "01:00:00", "06:00:00", True, id="at their start"),
+        pytest.param("23:30:00", "22:00:00", "07:00:00", True, id="before midnight"),
+        pytest.param("02:00:00", "22:00:00", "07:00:00", True, id="after midnight"),
+        pytest.param("12:00:00", "22:00:00", "07:00:00", False, id="in the day"),
+    ],
+)
+async def test_quiet_hours_can_run_across_midnight(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    clock: str,
+    quiet_from: str,
+    quiet_until: str,
+    quiet: bool,
+) -> None:
+    await hass.config.async_set_time_zone("UTC")
+    freezer.move_to(f"2026-11-05T{clock}+00:00")
+    rendered = _render(hass, "quiet", quiet_from=quiet_from, quiet_until=quiet_until)
+    assert rendered is quiet
+
+
 async def test_its_conditions_read_as_the_blueprint_says(hass: HomeAssistant) -> None:
     conditions = substituted()["conditions"]
-    bright_template, cloud_template = (c["value_template"] for c in conditions)
+    bright_template, cloud_template, quiet_template = (c["value_template"] for c in conditions)
+    assert Template(quiet_template, hass).async_render({"quiet": True}) is False
+    assert Template(quiet_template, hass).async_render({"quiet": False}) is True
     for bright, bright_only, expected in (
         (True, True, True),
         (True, False, True),
@@ -347,7 +382,26 @@ async def test_a_bright_pass_is_notified_ten_minutes_ahead_by_default(
     link = f"/satellite-spotter?entry_id={entry.entry_id}&pass={p.id}&view=street"
     assert data["data"]["url"] == link
     assert data["data"]["clickAction"] == link
+    # So that it can be replaced.
     assert data["data"]["tag"] == f"satellite-pass-{p.id}"
+    # A link that needs no token: a phone fetches a notification's image by itself.
+    assert data["data"]["image"].startswith(
+        f"/api/satellite_spotter/sky_chart/{entry.entry_id}/{p.id}.png?authSig="
+    )
+
+
+async def test_the_chart_can_be_left_out(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    calls = await notifications_for(
+        hass, freezer, predict_passes, [bright_pass(START, cloud_cover=12)], sky_chart=False
+    )
+    assert len(calls) == 1
+    assert "image" not in calls[0].data["data"]
+    assert calls[0].data["data"]["tag"].startswith("satellite-pass-")
 
 
 async def test_the_notification_reads_as_the_readme_shows_it(
@@ -423,7 +477,7 @@ async def test_dim_passes_are_skipped_by_default_and_told_when_asked(
     assert [call.data["title"] for call in calls] == ["ISS in 10 min"]
 
 
-async def test_with_bright_only_off_every_pass_is_notified(
+async def test_any_rating_notifies_every_pass(
     hass: HomeAssistant,
     freezer: FrozenDateTimeFactory,
     mock_downloads: dict[str, AsyncMock],
@@ -431,8 +485,69 @@ async def test_with_bright_only_off_every_pass_is_notified(
 ) -> None:
     dim = dim_pass(START, cloud_cover=10, name="DIM", norad_id=1)
     bright = bright_pass(START + timedelta(hours=1), cloud_cover=10)
-    calls = await notifications_for(hass, freezer, predict_passes, [dim, bright], bright_only=False)
+    calls = await notifications_for(hass, freezer, predict_passes, [dim, bright], min_rating="poor")
     assert [call.data["title"] for call in calls] == ["DIM in 10 min", "ISS in 10 min"]
+
+
+async def test_bright_only_also_leaves_out_what_rates_well_but_is_not_bright(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    dim = dim_pass(START, cloud_cover=10, name="DIM", norad_id=1)
+    bright = bright_pass(START + timedelta(hours=1), cloud_cover=10)
+    calls = await notifications_for(
+        hass, freezer, predict_passes, [dim, bright], min_rating="poor", bright_only=True
+    )
+    assert [call.data["title"] for call in calls] == ["ISS in 10 min"]
+
+
+@pytest.mark.parametrize(
+    ("inputs", "told"),
+    [
+        pytest.param({"kinds": ["iss"]}, ["ISS in 10 min"], id="only the station"),
+        pytest.param({"kinds": ["rocket"]}, ["CZ-2C R/B in 10 min"], id="only rocket stages"),
+        pytest.param({"kinds": ["hubble"]}, [], id="a kind with no pass"),
+        pytest.param({"satellite_name": "cz-2c"}, ["CZ-2C R/B in 10 min"], id="by part of a name"),
+        pytest.param({"satellite_name": "nothing"}, [], id="by a name with no pass"),
+    ],
+)
+async def test_only_these_satellites(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+    inputs: dict[str, Any],
+    told: list[str],
+) -> None:
+    station = bright_pass(START, cloud_cover=10)
+    rocket = bright_pass(
+        START + timedelta(hours=1), cloud_cover=10, name="CZ-2C R/B", norad_id=7777
+    )
+    calls = await notifications_for(hass, freezer, predict_passes, [station, rocket], **inputs)
+    assert [call.data["title"] for call in calls] == told
+
+
+async def test_nothing_is_sent_during_quiet_hours(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    await hass.config.async_set_time_zone("UTC")
+    # The notification goes out at 16:27, the next pass's an hour later.
+    quiet = bright_pass(START, cloud_cover=10, name="QUIET", norad_id=1)
+    told = bright_pass(START + timedelta(hours=1), cloud_cover=10, name="TOLD", norad_id=2)
+    calls = await notifications_for(
+        hass,
+        freezer,
+        predict_passes,
+        [quiet, told],
+        quiet_from="16:00:00",
+        quiet_until="17:00:00",
+    )
+    assert [call.data["title"] for call in calls] == ["TOLD in 10 min"]
 
 
 @pytest.mark.parametrize(
@@ -456,7 +571,9 @@ async def test_passes_too_cloudy_are_skipped(
     limit: int | None,
     told: bool,
 ) -> None:
-    inputs = {} if limit is None else {"max_cloud_cover": limit}
+    inputs: dict[str, Any] = {"min_rating": "poor"}
+    if limit is not None:
+        inputs["max_cloud_cover"] = limit
     calls = await notifications_for(
         hass, freezer, predict_passes, [bright_pass(START, cloud_cover=cloud)], **inputs
     )
@@ -505,7 +622,9 @@ async def test_in_every_language_the_cloud_limit_holds_and_the_text_is_translate
     hass.config.language = language
     on_limit = bright_pass(START, 60, cloud_cover=60, name="OK", norad_id=1)
     over = bright_pass(START + timedelta(hours=1), 60, cloud_cover=61, name="CLOUDY", norad_id=2)
-    calls = await notifications_for(hass, freezer, predict_passes, [on_limit, over])
+    calls = await notifications_for(
+        hass, freezer, predict_passes, [on_limit, over], min_rating="poor"
+    )
 
     assert [call.data["title"] for call in calls] == ["OK in 10 min"]
     strings = _translated(language)
@@ -537,7 +656,7 @@ async def test_it_works_with_real_predictions(
     init_integration: MockConfigEntry,
 ) -> None:
     # The second bright pass over Honolulu is the first with room for the notice.
-    calls = await set_up_automation(hass, max_cloud_cover=100)
+    calls = await set_up_automation(hass, max_cloud_cover=100, min_rating="poor", bright_only=True)
     passes = init_integration.runtime_data.predictions.passes
     bright = next(p for p in passes if p.bright and p.start - NOW > timedelta(minutes=30))
     await walk_to(hass, freezer, bright.start - timedelta(minutes=10))

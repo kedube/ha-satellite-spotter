@@ -20,6 +20,7 @@ from homeassistant.const import (
     CONF_LONGITUDE,
     CONF_NAME,
     CONF_RADIUS,
+    DEGREE,
     UnitOfLength,
     UnitOfTime,
 )
@@ -27,6 +28,8 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
     BooleanSelector,
+    EntitySelector,
+    EntitySelectorConfig,
     LocationSelector,
     LocationSelectorConfig,
     NumberSelector,
@@ -47,25 +50,31 @@ from .const import (
     CONF_ALERT_LEAD_MINUTES,
     CONF_BRIGHTNESS_CUTOFF,
     CONF_CLOUD_FORECAST,
+    CONF_FOLLOW_ENTITY,
     CONF_GOOGLE_API_KEY,
     CONF_MAPILLARY_TOKEN,
+    CONF_MIN_ELEVATION,
     CONF_SHOW_CALENDAR,
     CONF_SHOW_PANEL,
     CONF_STREET_SOURCE,
     CONF_STREET_VIEW,
     CONF_UNITS,
+    CONF_WEATHER_ENTITY,
     CUTOFF_MAX,
     CUTOFF_MIN,
     CUTOFF_STEP,
     DEFAULT_ALERT_LEAD_MINUTES,
     DEFAULT_BRIGHTNESS_CUTOFF,
     DEFAULT_CLOUD_FORECAST,
+    DEFAULT_MIN_ELEVATION,
     DEFAULT_SHOW_CALENDAR,
     DEFAULT_SHOW_PANEL,
     DEFAULT_UNITS,
     DOMAIN,
     ELEVATION_MAX_M,
     ELEVATION_MIN_M,
+    MIN_ELEVATION_HIGHEST,
+    MIN_ELEVATION_LOWEST,
     STREET_SOURCES,
     UNITS,
 )
@@ -93,6 +102,8 @@ _ELEVATION_SELECTOR = NumberSelector(
     )
 )
 _PASSWORD_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
+# NumberSelector takes "nan": it fails no comparison with the limits. Only the API can send one.
+_NUMBERS = (CONF_BRIGHTNESS_CUTOFF, CONF_ALERT_LEAD_MINUTES, CONF_MIN_ELEVATION)
 
 
 class _AnyLocationSelector(LocationSelector):
@@ -166,29 +177,48 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
             }
         )
 
+    async def _async_catalog_error(self) -> str | None:
+        """Make sure there is a catalog to predict from; return what went wrong if not.
+
+        One that is there will do, even if a new one is due: that comes after setup. Someone is
+        waiting, so a failed download is tried again now, but CelesTrak's refusal stands.
+        """
+        catalog = async_shared_catalog(self.hass)
+        try:
+            if await catalog.async_load() is None:
+                catalog.forget_failed_download()
+                await catalog.async_satellites()
+        except DownloadRefused:
+            return "download_limited"
+        except CatalogError:
+            return "cannot_connect"
+        except Exception:
+            _LOGGER.exception("Unexpected error while loading the satellite catalog")
+            return "unknown"
+        return None
+
     @override
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Ask where the location is, and make sure the catalog can be had."""
         errors: dict[str, str] = {}
         if user_input is not None:
             place = _checked_place(user_input[CONF_LOCATION])
+            name = user_input[CONF_NAME].strip()
+            if not name:
+                errors[CONF_NAME] = "name_required"
             if place is None:
                 errors[CONF_LOCATION] = "invalid_location"
-            else:
-                await self.async_set_unique_id(_unique_id(*place))
+            if not math.isfinite(user_input[CONF_ELEVATION]):
+                errors[CONF_ELEVATION] = "invalid_elevation"
+            if place is not None and not errors:
+                # Two forms can be open for one place: the second finds the first's entry there.
+                await self.async_set_unique_id(_unique_id(*place), raise_on_progress=False)
                 self._abort_if_unique_id_configured()
-                try:
-                    await async_shared_catalog(self.hass).async_satellites(retry_now=True)
-                except DownloadRefused:
-                    errors["base"] = "download_limited"
-                except CatalogError:
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error while loading the satellite catalog")
-                    errors["base"] = "unknown"
+                if (error := await self._async_catalog_error()) is not None:
+                    errors["base"] = error
                 else:
                     return self.async_create_entry(
-                        title=user_input[CONF_NAME],
+                        title=name,
                         data={
                             CONF_LATITUDE: place[0],
                             CONF_LONGITUDE: place[1],
@@ -211,10 +241,12 @@ class SatelliteSpotterConfigFlow(ConfigFlow, domain=DOMAIN):
             place = _checked_place(user_input[CONF_LOCATION])
             if place is None:
                 errors[CONF_LOCATION] = "invalid_location"
-            else:
+            if not math.isfinite(user_input[CONF_ELEVATION]):
+                errors[CONF_ELEVATION] = "invalid_elevation"
+            if place is not None and not errors:
                 unique_id = _unique_id(*place)
                 if unique_id != entry.unique_id:
-                    await self.async_set_unique_id(unique_id)
+                    await self.async_set_unique_id(unique_id, raise_on_progress=False)
                     self._abort_if_unique_id_configured()
                 return self.async_update_reload_and_abort(
                     entry,
@@ -276,6 +308,24 @@ def _options_schema(options: Mapping[str, Any]) -> vol.Schema:
                     mode=NumberSelectorMode.BOX,
                     unit_of_measurement=UnitOfTime.MINUTES,
                 )
+            ),
+            vol.Required(
+                CONF_MIN_ELEVATION,
+                default=options.get(CONF_MIN_ELEVATION, DEFAULT_MIN_ELEVATION),
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=MIN_ELEVATION_LOWEST,
+                    max=MIN_ELEVATION_HIGHEST,
+                    step=1,
+                    mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement=DEGREE,
+                )
+            ),
+            vol.Optional(CONF_WEATHER_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain="weather")
+            ),
+            vol.Optional(CONF_FOLLOW_ENTITY): EntitySelector(
+                EntitySelectorConfig(domain=["person", "device_tracker"])
             ),
             vol.Required(
                 CONF_SHOW_PANEL, default=options.get(CONF_SHOW_PANEL, DEFAULT_SHOW_PANEL)
@@ -355,8 +405,12 @@ class SatelliteSpotterOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         placeholders: dict[str, str] = {}
         if user_input is not None:
+            for key in _NUMBERS:
+                if not math.isfinite(user_input[key]):
+                    errors[key] = "invalid_number"
             street = street_options(user_input)
-            placeholders = await self._async_street_error(street, errors)
+            if not errors:
+                placeholders = await self._async_street_error(street, errors)
             if not errors:
                 return self.async_create_entry(data={**user_input, CONF_STREET_VIEW: street})
         options = self.config_entry.options

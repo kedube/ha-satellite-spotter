@@ -16,6 +16,7 @@ from typing import Any
 from aiohttp import ClientError, ClientTimeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util.json import json_loads
 
 from .const import (
     CONF_GOOGLE_API_KEY,
@@ -23,10 +24,12 @@ from .const import (
     CONF_STREET_SOURCE,
     CONF_STREET_VIEW,
     DEFAULT_STREET_SOURCE,
+    MAX_REPLY_BYTES,
     STREET_SOURCES,
     USER_AGENT,
 )
 from .coordinator import scrub
+from .download import async_read_capped
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,7 +115,7 @@ async def async_check_google_key(hass: HomeAssistant, key: str) -> str | None:
             if response.status == 200:
                 return None
             status = response.status
-            data = await response.json(content_type=None)
+            data = json_loads(await async_read_capped(response, MAX_REPLY_BYTES))
     except (ClientError, TimeoutError, ValueError) as err:
         # Offline, or Google is: the street view will say so if it lasts. Some
         # of aiohttp's errors name the URL, and the key is in its query.
@@ -137,7 +140,7 @@ async def async_check_mapillary_token(hass: HomeAssistant, token: str) -> str | 
             if response.status == 200:
                 return None
             status = response.status
-            data = await response.json(content_type=None)
+            data = json_loads(await async_read_capped(response, MAX_REPLY_BYTES))
     except (ClientError, TimeoutError, ValueError) as err:
         _LOGGER.debug("Could not try the Mapillary access token: %s", scrub(err))
         return None

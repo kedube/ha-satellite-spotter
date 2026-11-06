@@ -126,6 +126,7 @@ export class SatClient {
     this._inflight.clear();
     this._passTracks.clear();
     this._tracks.clear();
+    this._searchedAt = undefined;
   }
 
   _call(msg, entryId) {
@@ -150,6 +151,25 @@ export class SatClient {
   /** The passes payload (always fresh: the integration answers from its cache). */
   passes(entryId) {
     return this._call({ type: COMMANDS.passes }, entryId);
+  }
+
+  /**
+   * The passes payload, and what follows from it for any view: how far this device's clock is off
+   * (given how far it was), and whether these are new predictions. A pass keeps its id through a
+   * new search, but its track can change, so the tracks kept go then.
+   * @returns {Promise<{payload: object, offsetMs: number, newSearch: boolean}>}
+   */
+  async fetchPasses(entryId, offsetMs = 0) {
+    const sent = Date.now();
+    const payload = await this.passes(entryId);
+    const searchedAt = payload?.searched_at;
+    const newSearch = this._searchedAt !== undefined && searchedAt !== undefined && searchedAt !== null && searchedAt !== this._searchedAt;
+    if (searchedAt !== undefined && searchedAt !== null) this._searchedAt = searchedAt;
+    if (newSearch) {
+      this._passTracks.clear();
+      this._tracks.clear();
+    }
+    return { payload, offsetMs: nextClockOffset(offsetMs, payload?.server_time, sent, Date.now()), newSearch };
   }
 
   /**

@@ -602,3 +602,25 @@ test("destroy lets go of everything", async () => {
   list.setNow(BOSTON_NOW);
   await flush();
 });
+
+test("a satellite's name cannot change the row it is on, whatever it holds", () => {
+  const pass = makePass({ id: "x", title: "A$&B$`C$'D$1", start: at("2026-10-17T18:35:13-04:00"), duration: 100, magnitude: 1 });
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const list = new PassList(host, { formatter: fmt, onStreet: () => {}, onSimulate: () => {} });
+  list.render([pass], { nowS: at("2026-10-17T17:00:00-04:00"), filters: {}, days: 5 });
+  flush();
+  const row = host.shadowRoot.querySelector("li.row");
+  assert.equal(row.querySelectorAll(".acts").length, 1, "one place for the buttons, however the name reads");
+  assert.equal(row.querySelectorAll(".act").length, 2);
+  host.remove();
+});
+
+test("a row says how the pass rates, to the eye and to a screen reader", () => {
+  const rated = { ...makePass({ id: "x", title: "ISS", start: 2000000000, duration: 100, magnitude: 1 }), rating: "great" };
+  const { html, label } = rowParts(rated, fmt);
+  assert.match(html, /class="rate great"/);
+  assert.match(label, /Rating: Great/);
+  const unrated = rowParts({ ...rated, rating: undefined }, fmt);
+  assert.doesNotMatch(unrated.html, /class="rate/);
+});

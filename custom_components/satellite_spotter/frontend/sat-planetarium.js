@@ -13,9 +13,10 @@
  */
 
 const VERSION = new URL(import.meta.url).search;
-const [astro, sky] = await Promise.all([
+const [astro, sky, { horizonAt }] = await Promise.all([
   import(`./sat-astro.js${VERSION}`),
   import(`./sat-stars.js${VERSION}`),
+  import(`./sat-horizon.js${VERSION}`),
 ]);
 const {
   azElVector, bvToRgb, extinction, galacticToRaDec, horizonMatrix, horizonVectors, moonAzEl, moonLitPath, moonPhase,
@@ -202,27 +203,9 @@ const turnDeg = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
 // ---------------------------------------------------------------------------
 // The sky's light
 
-/**
- * The limiting magnitude at the zenith: the darker of the twilight's (and the
- * Moon's, sat-astro's skyPalette) and the town's (LIGHT_POLLUTION).
- */
-export function limitingMagnitude(sunElevation, { moon = null, lightPollution = "suburban" } = {}) {
-  const lp = LIGHT_POLLUTION[lightPollution] ?? LIGHT_POLLUTION.suburban;
-  return Math.min(skyPalette(sunElevation, moon).limit, lp.limit);
-}
-
 /** How bright a star of magnitude `mag` looks at an elevation: fainter low down (extinction). */
 export function apparentMagnitude(mag, elevation) {
   return mag + extinction(elevation);
-}
-
-/**
- * Whether a star shows: above the horizon and, with the air's extinction and
- * the brighter sky low down (the town's glow), brighter than the limit.
- */
-export function starVisible(mag, elevation, limit, dome = 0) {
-  if (elevation <= 0) return false;
-  return apparentMagnitude(mag, elevation) <= limit - horizonGlowPenalty(elevation, dome);
 }
 
 /** Magnitudes lost to the glow of a town low over the horizon (dome 0..1). */
@@ -601,17 +584,6 @@ export function hiddenStretches(data, hidden, t0, t1, gap = 4.5) {
     else out.push([t, t]);
   }
   return out;
-}
-
-/** Linear interpolation in a skyline profile ({profile: [{elevation}], stepDeg}) at an azimuth. */
-export function skylineAt(skyline, azimuth) {
-  const { profile, stepDeg } = skyline;
-  const a = wrap360(azimuth) / stepDeg;
-  const i = Math.floor(a);
-  const f = a - i;
-  const p = profile[i % profile.length].elevation;
-  const q = profile[(i + 1) % profile.length].elevation;
-  return p + (q - p) * f;
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,7 +1235,7 @@ export class Planetarium {
     const to = P.bearing + Math.min(180, half);
     const pts = [];
     for (let a = from; a <= to; a += 0.25) {
-      const q = P.project(a, skylineAt(this.skyline, a));
+      const q = P.project(a, horizonAt(this.skyline, a));
       if (q) pts.push(q);
     }
     if (pts.length < 2) {

@@ -12,18 +12,18 @@
 
 const VERSION = new URL(import.meta.url).search;
 // Modules are kept as namespaces and read when used: see sat-format.js.
-const [theme, client, passesModule, formatModule, sky, i18n] = await Promise.all([
+const [theme, client, passesModule, formatModule, sky, i18n, streetHost] = await Promise.all([
   import(`./sat-theme.js${VERSION}`),
   import(`./sat-client.js${VERSION}`),
   import(`./sat-passes.js${VERSION}`),
   import(`./sat-format.js${VERSION}`),
   import(`./sat-sky.js${VERSION}`),
   import(`./sat-i18n.js${VERSION}`),
+  import(`./sat-street-host.js${VERSION}`),
 ]);
 
 const PANEL = "satellite-spotter";
 const PANEL_ELEMENT = "satellite-spotter-panel";
-const STREET_STORE = "satellite-spotter:street";
 export const REFRESH_MS = 5 * 60000;
 // After an error: try again in 10 s, then doubling, up to the refresh interval.
 const RETRY_MIN_MS = 10000;
@@ -36,9 +36,13 @@ const DETAIL_RETRY_MS = 60000;
 // view re-columns when a phone turns or the window widens): an open street
 // view waits this long for the card before it closes.
 const OVERLAY_GRACE_MS = 1000;
+// What makes the passes on the card wrong, not just out of date: the location is no more.
+const GONE = ["not_found", "unknown_location", "location_disabled"];
+// How light a background has to be for dark text to read better on it than light text.
+const LIGHT_LUMINANCE = 0.4;
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 
-const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const { esc } = passesModule;
 // Countdowns round up, so they reach 00:00 as the pass starts (or ends), not a second before.
 const wholeSeconds = (s) => Math.ceil(s - 1e-6) * 1000;
 
@@ -53,14 +57,44 @@ export function darkTheme(hass, media = globalThis.matchMedia) {
   return media?.("(prefers-color-scheme: dark)")?.matches ?? true;
 }
 
-/** The street view's options as it keeps them (only it writes them), to hand back to it. */
-function loadStreetOptions() {
-  try {
-    const options = JSON.parse(localStorage.getItem(STREET_STORE));
-    return options && typeof options === "object" ? options : undefined;
-  } catch {
-    return undefined;
+/** The relative luminance of a CSS colour (0 to 1), or null if it cannot be told or can be seen through. */
+export function luminanceOf(color) {
+  const text = String(color ?? "").trim().toLowerCase();
+  let rgb = null;
+  let alpha = 1;
+  const hex = /^#([0-9a-f]{3,8})$/.exec(text)?.[1];
+  if (hex && (hex.length === 3 || hex.length === 4)) {
+    const digits = [...hex].map((d) => parseInt(d + d, 16));
+    rgb = digits.slice(0, 3).map((v) => v / 255);
+    if (digits.length === 4) alpha = digits[3] / 255;
+  } else if (hex && (hex.length === 6 || hex.length === 8)) {
+    const digits = hex.match(/../g).map((d) => parseInt(d, 16));
+    rgb = digits.slice(0, 3).map((v) => v / 255);
+    if (digits.length === 4) alpha = digits[3] / 255;
+  } else {
+    const numbers = /^(rgba?)\(([^)]+)\)$/.exec(text)?.[2].split(/[\s,/]+/).filter(Boolean);
+    if (numbers?.length >= 3) {
+      rgb = numbers.slice(0, 3).map((v) => (v.endsWith("%") ? parseFloat(v) / 100 : parseFloat(v) / 255));
+      if (numbers[3] !== undefined) alpha = numbers[3].endsWith("%") ? parseFloat(numbers[3]) / 100 : parseFloat(numbers[3]);
+    }
   }
+  if (!rgb || !rgb.every(Number.isFinite) || !(alpha >= 0.5)) return null;
+  const [r, g, b] = rgb.map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * Whether text on a card needs to be dark: by the card's own background, which is what it has to
+ * read against. Home Assistant says a classic theme without a dark mode is not dark, whatever its
+ * colours, and a view can have a theme of its own. Only without a colour to go by, what it says goes.
+ */
+export function cardIsLight(element, hass, getStyle = globalThis.getComputedStyle) {
+  const style = element && getStyle?.(element);
+  for (const name of ["--ha-card-background", "--card-background-color"]) {
+    const luminance = luminanceOf(style?.getPropertyValue?.(name));
+    if (luminance !== null) return luminance > LIGHT_LUMINANCE;
+  }
+  return !darkTheme(hass);
 }
 
 /** Where a pass_track transit is at a time: azimuth and elevation, interpolated; null outside its rows. */
@@ -112,11 +146,11 @@ const CSS = `
   /* The list follows the dashboard's theme. */
   --sat-ink: var(--primary-text-color, #f8fafc);
   --sat-ink-2: var(--secondary-text-color, #cbd5e1);
-  --sat-ink-3: color-mix(in srgb, var(--secondary-text-color, #94a3b8) 80%, transparent);
+  --sat-ink-3: var(--secondary-text-color, #94a3b8);
   --sat-pl-head: transparent; --sat-pl-hover: rgba(127,127,127,.08); --sat-pl-selected: rgba(125,211,252,.1);
   --sat-pl-chip: rgba(127,127,127,.1); --sat-pl-chip-edge: rgba(127,127,127,.3); }
 :host([light]) {
-  --sat-gold-ink: #b45309; --sat-sky-ink: #0369a1; --sat-warn: #c2410c;
+  --sat-sky: #0369a1; --sat-gold-ink: #b45309; --sat-sky-ink: #0369a1; --sat-warn: #c2410c;
   --sat-cloud-clear: #15803d; --sat-cloud-partly: #a16207; --sat-cloud-cloudy: #be123c;
   --sat-kind-station: #b45309; --sat-kind-satellite: #475569; --sat-kind-starlink: #0369a1; --sat-kind-rocket: #c2410c;
   --sat-kind-debris: #64748b; --sat-kind-telescope: #6d28d9; --sat-pl-meter-off: rgba(100,116,139,.3);
@@ -160,7 +194,7 @@ svg { fill: currentColor; }
 .chip svg { width: 11px; height: 11px; }
 .clock { display: block; margin-top: 4px; font-size: 36px; font-weight: 650; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hero.live .clock { font-size: 26px; letter-spacing: -.01em; color: #fcd34d; }
+.hero.live .clock { font-size: 26px; letter-spacing: -.01em; color: #fcd34d; white-space: normal; }
 .hero.quiet .clock { font-size: 22px; letter-spacing: 0; font-weight: 600; color: #e2e8f0; white-space: normal; }
 .when { margin-top: 3px; font-size: 13.5px; color: #e2e8f0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
 .when .cloud { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -175,6 +209,8 @@ svg { fill: currentColor; }
 .name .with { flex: none; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: #fcd34d; border: 1px solid rgba(252,211,77,.45); }
 .facts { margin-top: 4px; font-size: 12.5px; color: #cbd5e1; display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; }
 .facts > * + *::before { content: "·"; margin: 0 7px; color: #94a3b8; }
+.facts .rate { font-weight: 650; }
+.facts .rate.great { color: #fcd34d; } .facts .rate.good { color: #7dd3fc; } .facts .rate.poor { color: #94a3b8; font-weight: 500; }
 .facts .mag { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .facts .arrow { margin: 0 3px; color: #94a3b8; }
 .facts.path { margin-top: 3px; }
@@ -255,8 +291,16 @@ export class SatellitePassesView extends BaseElement {
     this._gen = 0;
     this._fmt = new formatModule.Formatter(undefined);
     this._client = new client.SatClient(() => this._hass);
+    this._language = new i18n.StringsFollower((strings) => {
+      this._fmt.update(this._hass, strings);
+      this._render();
+    });
     this._onVisibility = () => this._visibilityChanged();
-    this._onReconnect = () => this._refresh();
+    this._onReconnect = () => {
+      // The connection is back: nothing waits for it now.
+      this._detailRetryAt = 0;
+      this._refresh();
+    };
     this._onFullscreen = () => this._fullscreenChanged();
     this._onFocusIn = (ev) => this._focusIn(ev);
   }
@@ -265,8 +309,8 @@ export class SatellitePassesView extends BaseElement {
     const old = this._hass;
     this._hass = hass;
     this._fmt.update(hass);
-    this.toggleAttribute("light", !darkTheme(hass));
-    this._useLanguage();
+    if (!old || hass?.themes !== old.themes || hass?.selectedTheme !== old.selectedTheme) this._applyTheme();
+    this._language.follow(hass?.language);
     this._watchConnection();
     if (!old && this.isConnected) this._start();
     else if (old && (hass?.locale !== old.locale || hass?.config?.time_zone !== old.config?.time_zone)) this._render();
@@ -308,6 +352,7 @@ export class SatellitePassesView extends BaseElement {
     clearTimeout(this._overlayTimer);
     this._overlayTimer = null;
     this._build();
+    if (this._hass) this._applyTheme();
     document.addEventListener("visibilitychange", this._onVisibility);
     this._watchConnection();
     if (this._hass) this._start();
@@ -345,6 +390,10 @@ export class SatellitePassesView extends BaseElement {
     this._tick();
   }
 
+  _applyTheme() {
+    this.toggleAttribute("light", cardIsLight(this, this._hass));
+  }
+
   /** Refresh when Home Assistant's connection comes back. */
   _watchConnection() {
     const connection = this.isConnected ? this._hass?.connection : null;
@@ -369,11 +418,16 @@ export class SatellitePassesView extends BaseElement {
     this._refreshTimer = null;
     if (!this._hass || !this._started) return;
     const gen = ++this._gen;
-    const sent = Date.now();
     try {
-      const payload = await this._client.passes(this._config.entry_id);
+      const { payload, offsetMs, newSearch } = await this._client.fetchPasses(this._config.entry_id, this._offsetMs);
       if (gen !== this._gen || !this._started) return;
-      this._offsetMs = client.nextClockOffset(this._offsetMs, payload?.server_time, sent, Date.now());
+      this._offsetMs = offsetMs;
+      if (newSearch) {
+        // The same pass can take another way across the sky now.
+        this._detail = null;
+        this._detailFor = null;
+        this._chartKey = null;
+      }
       this._payload = payload;
       this._error = null;
       this._delay = 0;
@@ -414,18 +468,6 @@ export class SatellitePassesView extends BaseElement {
     if (Date.now() >= (this._refreshAt ?? 0)) this._refresh();
     else this._schedule(this._refreshAt - Date.now());
     this._tick();
-  }
-
-  async _useLanguage() {
-    const language = this._hass?.language || "en";
-    if (language === this._language) return;
-    this._language = language;
-    const strings = await i18n.loadStrings(language);
-    if (this._language !== language) return;
-    this._fmt.update(this._hass, strings);
-    // English standing in for a translation that did not download: ask again next time.
-    if (strings.language !== i18n.resolveLanguage(language)) this._language = undefined;
-    this._render();
   }
 
   /** The pass track of the pass on screen, for its sky chart and where to look. */
@@ -509,7 +551,8 @@ export class SatellitePassesView extends BaseElement {
   /** What the card shows now: {kind, pass}; kind is live, next, paused, empty, loading or error. */
   _state(nowS) {
     const p = this._payload;
-    if (!p) return { kind: this._error ? "error" : "loading" };
+    // A location that has gone away is said at once, not counted down to the passes it had.
+    if (!p || GONE.includes(client.errorCode(this._error))) return { kind: this._error ? "error" : "loading" };
     if (p.paused) return { kind: "paused" };
     const filters = this._filters();
     const passes = p.passes || [];
@@ -559,7 +602,8 @@ export class SatellitePassesView extends BaseElement {
           .slice(0, Math.max(0, Number(this._config.count) || 5))
       : [];
     e.list.hidden = !rest.length;
-    this._list.render(rest, { nowS, filters: {}, days: this._payload?.settings?.days ?? 5, location: this._payload?.location });
+    // Simulating takes the globe, which is the panel's: without it a row has only the street view to offer.
+    this._list.render(rest, { nowS, filters: {}, days: this._payload?.settings?.days ?? 5, location: this._payload?.location, simulate: panel });
     e.foot.hidden = !panel || !pass;
     e.all.querySelector("span").textContent = t("card.all_passes");
 
@@ -613,7 +657,8 @@ export class SatellitePassesView extends BaseElement {
     const { level, word } = fmt.brightness(pass.magnitude);
     let bars = "";
     for (let i = 0; i < 5; i++) bars += `<i class="${i <= level ? "on" : ""}"></i>`;
-    const facts = `<span class="mag"><span class="meter l${level}" aria-hidden="true">${bars}</span>${esc(word)} ${esc(fmt.magnitude(pass.magnitude))}</span>`;
+    const rating = fmt.rating(pass);
+    const facts = `${rating ? `<span class="rate ${esc(rating.level)}" title="${esc(rating.says)}">${esc(rating.word)}</span>` : ""}<span class="mag"><span class="meter l${level}" aria-hidden="true">${bars}</span>${esc(word)} ${esc(fmt.magnitude(pass.magnitude))}</span>`;
     const path = [
       from && to ? `<span>${esc(from)}<span class="arrow" aria-hidden="true">→</span>${esc(to)}</span>` : "",
       `<span>${around(t("passes.up_to", { elevation: MARK }), `<b class="el">${esc(fmt.degrees(pass.peak?.elevation))}</b>`)}</span>`,
@@ -780,6 +825,8 @@ export class SatellitePassesView extends BaseElement {
       this._renderPass(state, nowS);
       this._renderChart(state, nowS);
       this._list.setNow(nowS);
+      // Its track did not come: asked for again here, as nothing else draws the card for a while.
+      if (!this._primaryRows()) this._loadDetail(state.pass);
     }
     const ms = Date.now() + this._offsetMs;
     this._tickTimer = setTimeout(() => this._tick(), 1000 - (ms % 1000) + 5);
@@ -828,10 +875,11 @@ export class SatellitePassesView extends BaseElement {
     overlay.requestFullscreen?.({ navigationUI: "hide" })?.catch?.(() => {});
     overlay.querySelector(".close").focus();
     try {
+      // Without its path the street view still opens: it asks again, and says if that fails.
       const [, clockModule, detail] = await Promise.all([
         import(`./sat-street.js${VERSION}`),
         import(`./sat-clock.js${VERSION}`),
-        this._client.passTrack(pass.id, { entryId: this._config.entry_id }),
+        this._client.passTrack(pass.id, { entryId: this._config.entry_id }).catch(() => null),
       ]);
       if (this._overlay !== overlay) return;
       const clock = new clockModule.PassClock({ now: () => Date.now() + this._offsetMs });
@@ -839,27 +887,26 @@ export class SatellitePassesView extends BaseElement {
       const { passIsLive, PASS_LEAD_S, PASS_TAIL_S } = clockModule;
       if (passIsLive(pass, this._nowS())) clock.live();
       else clock.simulate({ fromS: pass.start - PASS_LEAD_S, toS: pass.end + PASS_TAIL_S, visibleStartS: pass.start, visibleEndS: pass.end });
-      const street = document.createElement("satellite-street-view");
-      street.hass = this._hass;
-      street.formatter = this._fmt;
-      street.location = this._payload?.location;
-      street.units = this._payload?.settings?.units;
-      const options = loadStreetOptions();
-      if (options) street.options = options;
-      street.clock = clock;
-      // No globe behind this view: its time bar offers only the close button.
-      street.globeToggle = false;
-      street.pass = pass;
-      street.detail = detail;
-      street.addEventListener("close", () => this._closeStreet());
-      street.addEventListener("need-detail", async (ev) => {
-        const id = ev.detail?.passId ?? pass.id;
-        const next = (this._payload?.passes || []).find((p) => p.id === id) ?? pass;
-        try {
-          street.setPass?.(next, await this._client.passTrack(id, { entryId: this._config.entry_id }));
-        } catch {
-          // The street view keeps what it has.
-        }
+      const street = streetHost.makeStreetView({
+        hass: this._hass,
+        formatter: this._fmt,
+        location: this._payload?.location,
+        units: this._payload?.settings?.units,
+        clock,
+        // No globe behind this view: its time bar offers only the close button.
+        globeToggle: false,
+        pass,
+        detail,
+        onClose: () => this._closeStreet(),
+        onNeedDetail: async (passId) => {
+          const id = passId ?? pass.id;
+          const next = (this._payload?.passes || []).find((p) => p.id === id) ?? pass;
+          try {
+            street.setPass?.(next, await this._client.passTrack(id, { entryId: this._config.entry_id }));
+          } catch {
+            // The street view keeps what it has.
+          }
+        },
       });
       overlay.querySelector(".loading").replaceWith(street);
       overlay.classList.add("ready");
@@ -871,7 +918,7 @@ export class SatellitePassesView extends BaseElement {
     } catch (err) {
       if (this._overlay !== overlay) return;
       console.warn("Satellite Spotter: could not open the street view", err);
-      overlay.querySelector(".loading").innerHTML = `<span>${esc(this._fmt.t("card.failed", { error: client.errorMessage(err, this._fmt.t("globe.connection_lost")) }))}</span>`;
+      overlay.querySelector(".loading").innerHTML = `<span>${esc(this._fmt.t("globe.street_failed", { error: client.errorMessage(err, this._fmt.t("globe.connection_lost")) }))}</span>`;
     }
   }
 
@@ -914,7 +961,7 @@ export class SatellitePassesView extends BaseElement {
   _focusIn(ev) {
     const overlay = this._overlay;
     if (!overlay || ev.composedPath?.().includes(overlay)) return;
-    (overlay.querySelector("satellite-street-view") ?? overlay.querySelector(".close"))?.focus?.();
+    this._focusOverlay();
   }
 }
 

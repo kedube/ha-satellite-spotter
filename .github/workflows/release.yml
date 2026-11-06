@@ -78,7 +78,8 @@ jobs:
     outputs:
       sha: ${{ steps.bump.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      # By commit, as this job can write.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.plan.outputs.sha }}
       - id: bump
@@ -108,14 +109,18 @@ jobs:
       VERSION: ${{ needs.plan.outputs.version }}
       PREVIOUS: ${{ needs.plan.outputs.previous }}
     steps:
-      - uses: actions/checkout@v7
+      # By commit, as this job can write.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.bump.outputs.sha || needs.plan.outputs.sha }}
           # The history, for the commits since the last release.
           fetch-depth: 0
+          persist-credentials: false
       - name: Package
         run: python3 scripts/release.py package dist/satellite_spotter.zip
       - name: Notes
+        # Bash, as GitHub then has a pipe fail if any part of it does: no release with empty notes.
+        shell: bash
         run: python3 scripts/release.py notes "$VERSION" "$PREVIOUS" | tee dist/notes.md
       - name: Publish
         run: >-

@@ -22,7 +22,7 @@ from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import DOMAIN
 from custom_components.satellite_spotter.coordinator import SatelliteSpotterCoordinator
 
-from .common import DENVER, HONOLULU, NOW, add_location, advance, aged, satellites, set_options
+from .common import DENVER, HONOLULU, NOW, add_location, advance, set_options
 
 STORE_KEY = "satellite_spotter.catalog"
 PANEL = "satellite-spotter"
@@ -37,12 +37,15 @@ EVERY_ENTITY = {
     "sensor.home_next_visible_pass_brightness",
     "sensor.home_next_visible_pass_duration",
     "sensor.home_next_visible_pass_cloud_cover",
+    "sensor.home_next_visible_pass_rating",
     "sensor.home_next_visible_satellite_name",
     "sensor.home_next_bright_pass",
     "sensor.home_satellite_elevation",
     "sensor.home_visible_passes_next_24_hours",
     "sensor.home_orbital_elements_epoch",
 }
+# Disabled until someone wants it, as it changes all the time.
+ENABLED_AT_FIRST = EVERY_ENTITY - {"device_tracker.home_satellite_position"}
 EVERY_KEY = {
     entity_id.partition(".")[2].removeprefix("home_"): entity_id for entity_id in EVERY_ENTITY
 }
@@ -70,7 +73,8 @@ async def test_one_location_is_set_up_with_all_its_entities(
 ) -> None:
     assert init_integration.state is ConfigEntryState.LOADED
     assert entity_ids(hass, init_integration) == EVERY_ENTITY
-    assert all(hass.states.get(entity_id) is not None for entity_id in EVERY_ENTITY)
+    assert all(hass.states.get(entity_id) is not None for entity_id in ENABLED_AT_FIRST)
+    assert hass.states.get("device_tracker.home_satellite_position") is None
     assert isinstance(init_integration.runtime_data, SatelliteSpotterCoordinator)
     mock_downloads["fetch_catalog"].assert_awaited_once()
     mock_downloads["fetch_forecast"].assert_awaited_once()
@@ -209,7 +213,8 @@ async def test_a_failed_setup_leaves_no_listener_behind_on_the_catalog(
     predicted = mock_downloads["fetch_forecast"].await_count
     # Should the catalog come from elsewhere, the retrying setup's first coordinator is gone.
     mock_downloads["fetch_catalog"].side_effect = None
-    await hass.data[SHARED_CATALOG].async_satellites(retry_now=True)
+    hass.data[SHARED_CATALOG].forget_failed_download()
+    await hass.data[SHARED_CATALOG].async_satellites()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_downloads["fetch_forecast"].await_count == predicted
 
@@ -233,7 +238,7 @@ async def test_unloading_takes_the_entities_away_and_stops_the_work(
     assert await hass.config_entries.async_unload(init_integration.entry_id)
     await hass.async_block_till_done()
     assert init_integration.state is ConfigEntryState.NOT_LOADED
-    for entity_id in EVERY_ENTITY:
+    for entity_id in ENABLED_AT_FIRST:
         state = hass.states.get(entity_id)
         assert state is not None
         assert state.state == "unavailable"
@@ -490,7 +495,7 @@ async def test_removing_the_last_clears_the_repair_and_one_of_two_does_not(
 ) -> None:
     home = await add_location(hass, HONOLULU)
     cabin = await add_location(hass, DENVER, title="Cabin")
-    mock_downloads["fetch_catalog"].return_value = aged(satellites(), timedelta(0))
+    mock_downloads["fetch_catalog"].side_effect = CatalogError("no route")
     await advance(hass, freezer, NOW + timedelta(days=20))
     issues = ir.async_get(hass)
     assert issues.async_get_issue(DOMAIN, "catalog_stale") is not None

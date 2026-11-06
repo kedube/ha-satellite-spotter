@@ -1,6 +1,9 @@
 {
   "domain": "satellite_spotter",
   "name": "Satellite Spotter",
+  "after_dependencies": [
+    "weather"
+  ],
   "categories": [
     "vehicles_transport.flights",
     "weather_alerts.forecasts"

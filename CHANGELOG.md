@@ -6,6 +6,54 @@ commits instead.
 
 ## 1.14
 
+- **Licences.** The MIT notice for the code that came from See A Satellite Tonight is back, in
+  `LICENSES/MIT-see-a-satellite.txt`, and the release zip now carries it and the GPL.
+- **Fixed: the street view could restart every five seconds, for good,** after stepping to another
+  photo, or when the nearest photo could not be used. With Google Street View that also meant fetching
+  the photo again each time.
+- **A rating for every pass:** great, good, fair or poor, weighing how bright it looks against the sky
+  at that moment, how high it climbs, how long it lasts, the Moon and the clouds. It is on the page, the
+  cards and the calendar, as `sensor.home_next_visible_pass_rating`, and in the pass attributes.
+- **Minimum height, by location:** raise it from 10° if trees or buildings hide your horizon.
+- **A new action, `satellite_spotter.get_passes`,** lists a location's passes for scripts and voice
+  assistants, by time, rating, cloud, kind or name.
+- **Clouds from your own weather entity,** if you choose one, so that Open-Meteo is not asked.
+  Otherwise Open-Meteo now gets each location's coordinates rounded to about a kilometre, not 10 m.
+- **A location can follow a person or tracker,** for travel.
+- **The notification blueprint has more to go on. Import it again to use it,** as an imported copy does
+  not update itself: a minimum rating, which replaces bright passes as the default, only some kinds of
+  satellite or names, quiet hours, and a picture of the pass's path across the sky.
+- **Home Assistant starts faster on a bad network.** With a catalogue stored, a location no longer waits
+  for CelesTrak or Open-Meteo while starting up, which on a network that accepts and never answers held
+  up the whole start by minutes. The new catalogue and the clouds come along just after.
+- **A restart with very old orbits keeps the entity that says so,** and the page says why in your
+  language, instead of the location retrying setup with no explanation.
+- **`device_tracker.home_satellite_position` is disabled for new locations.** It changes all the time,
+  and most have no use for it. Enable it in the entity's settings if you want it on a map card.
+- **The repair about CelesTrak's own data being old is gone,** as there is nothing to repair. The page
+  and the epoch sensor still say so.
+- **Short passes are no longer missed.** A window that fell between two minutes of the search, such as
+  a satellite rising just as it enters the Earth's shadow, was lost. About one sighting in twenty-five was.
+- **A pass that only looked like one is gone.** A Starlink left out for being alone could join two
+  unrelated flyovers into one.
+- **Fixed on the globe:** the atmosphere glowed on the wrong hemisphere; the satellites stayed away for up
+  to five minutes after returning to a dashboard; map tiles that failed stayed black until a reload; Follow
+  and Chase were forgotten after a rebuild; the Earth did not fit the screen at high latitudes; and without
+  WebGL only one sentence showed, where now everything but the globe does.
+- **Fixed in orbit lines:** tick marks could sit thousands of kilometres off the orbit for part of each
+  hour, and the satellite drifted along a straight line if Home Assistant could not be reached.
+- **Fixed in the street view:** it could stay on "Loading your street…" when a photo server stalled; a
+  bright cloud could turn a photo by any angle; turning a phone while a photo loaded left it stretched; a
+  restart during a search reported photos as unavailable.
+- **Fixed on the passes card:** wrong colours on classic dark themes and on light themes per view; a missing
+  chart during a pass waited up to five minutes; a location that was deleted went on counting down; and a row
+  offered Simulate where only the street view could open.
+- **Less battery:** a pass going on that is not the one shown no longer redraws the globe at full speed.
+- **Fixed: a pass across the autumn clock change** became a one-second calendar event. It now ends just
+  before the change, as Home Assistant's calendars can hold no more.
+- **CelesTrak's two-hour limit now holds for broken answers too,** which were being asked for again at once.
+- **Safer against a bad server:** downloads stop at a sensible size, and forecast values out of range are
+  ignored. A burst of requests from a logged-in user can no longer fill Home Assistant's memory.
 - **Medium confidence** no longer says a pass's orbit data is a few days old, as the data is usually
   fresh and the pass simply days ahead. It now reads "a few days from its latest orbit data, so times
   may shift", in every language.

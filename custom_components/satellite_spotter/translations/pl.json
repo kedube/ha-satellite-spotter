@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Wprowadź szerokość geograficzną z zakresu od -90° do 90° i prawidłową długość geograficzną.",
+      "name_required": "Podaj nazwę tej lokalizacji.",
+      "invalid_elevation": "Podaj wysokość jako liczbę metrów.",
       "cannot_connect": "Nie udało się pobrać katalogu satelitów. Sprawdź, czy Home Assistant ma dostęp do internetu, i spróbuj ponownie.",
       "download_limited": "CelesTrak, skąd pochodzą dane orbitalne, nie pozwala jeszcze na kolejne pobranie. Spróbuj ponownie za dwie godziny.",
       "unknown": "Nieoczekiwany błąd podczas wczytywania katalogu satelitów. Szczegóły są w dzienniku."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Próg jasności",
           "cloud_forecast": "Prognoza chmur",
+          "weather_entity": "Encja pogody dla zachmurzenia",
           "alert_lead_minutes": "Wyprzedzenie powiadomienia",
+          "min_elevation": "Minimalna wysokość",
+          "follow_entity": "Podążaj za osobą lub urządzeniem śledzącym",
           "show_in_sidebar": "Pokaż Satellite Spotter na pasku bocznym",
           "show_in_calendar": "Pokaż przeloty w kalendarzu",
           "units": "Jednostki"
         },
         "data_description": {
           "brightness_cutoff": "Przelot pojawia się na liście tylko wtedy, gdy osiąga co najmniej taką jasność. Skala biegnie odwrotnie, więc mniejsza liczba oznacza jaśniejszy obiekt: 2,25 pasuje do nieba na przedmieściach, 1 zostawia te łatwe, a poniżej 0 tylko olśniewające.",
-          "cloud_forecast": "Pokazuje, jakiego zachmurzenia Open-Meteo spodziewa się podczas każdego przelotu. Open-Meteo otrzymuje co godzinę współrzędne tej lokalizacji (z dokładnością do czterech miejsc po przecinku).",
+          "cloud_forecast": "Pokazuje przewidywane zachmurzenie podczas każdego przelotu. Jeśli nie wybierzesz poniżej encji pogody, Open-Meteo co godzinę otrzymuje współrzędne tej lokalizacji, zaokrąglone do około kilometra.",
+          "weather_entity": "Opcjonalnie. Pobiera zachmurzenie z prognozy godzinowej tej encji, bez pytania Open-Meteo. Jeśli ta prognoza go nie zawiera, przeloty go nie pokazują.",
           "alert_lead_minutes": "Sensory „Widoczny przelot wkrótce” i „Jasny przelot wkrótce” włączają się z takim wyprzedzeniem przed pojawieniem się najjaśniejszego satelity przelotu.",
+          "min_elevation": "Satelita liczy się tylko wtedy, gdy jest co najmniej na tej wysokości. Zwiększ ją, jeśli drzewa lub budynki zasłaniają horyzont.",
+          "follow_entity": "Opcjonalnie, na czas podróży. Przeloty są obliczane dla miejsca, w którym jest ta osoba lub to urządzenie, gdy oddali się o ponad 25 km, i najwyżej co pół godziny. Open-Meteo pozna wtedy przybliżone położenie, chyba że używasz encji pogody, a zobaczy je każdy, kto może otworzyć stronę.",
           "show_in_sidebar": "Dodaje do paska bocznego stronę Satellite Spotter z przelotami, globusem 3D i widokiem nieba z poziomu ulicy. Widok z ulicy wczytuje kafelki mapy okolicy z OpenFreeMap i AWS (a ze zdjęciami lotniczymi także z Esri). Karty dashboardu działają w każdym przypadku.",
           "show_in_calendar": "Dodaje kalendarz przelotów z najbliższych pięciu dni, każdy z informacją, kiedy i gdzie patrzeć. Wyzwalacze kalendarza mogą wtedy uruchamiać automatyzacje przed przelotem.",
           "units": "Dla odległości i prędkości na globusie i w widoku z ulicy. „Automatycznie” stosuje system jednostek Home Assistant."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Podaj liczbę z podanego zakresu.",
       "google_key_needed": "Wpisz klucz API Google Cloud, aby pokazywać zdjęcia z Google Street View.",
       "mapillary_token_needed": "Wpisz token dostępu Mapillary, aby pokazywać zdjęcia z Mapillary.",
       "mapillary_token_format": "Token dostępu Mapillary wygląda tak: MLY|1234…|abcd…. Skopiuj token klienta swojej aplikacji z mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Bez zdjęć: model 3D"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Świetny",
+        "good": "Dobry",
+        "fair": "Przeciętny",
+        "poor": "Słaby"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Stopnie rakiet",
+        "debris": "Odłamki",
+        "satellite": "Inne satelity"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Zachmurzenie następnego widocznego przelotu"
       },
+      "next_visible_pass_rating": {
+        "name": "Ocena następnego widocznego przelotu",
+        "state": {
+          "great": "Świetny",
+          "good": "Dobry",
+          "fair": "Przeciętny",
+          "poor": "Słaby"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Nazwa następnego widocznego satelity"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "Elementy orbitalne w katalogu satelitów mają {age} dni, a dane CelesTrak są równie stare; prognozy są wstrzymane do czasu pobrania aktualnego katalogu"
+    },
+    "unknown_location": {
+      "message": "Ta lokalizacja Satellite Spotter nie istnieje."
+    },
+    "location_not_loaded": {
+      "message": "Ta lokalizacja Satellite Spotter nie jest jeszcze gotowa."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Prognozy satelitów są wstrzymane",
       "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a nie udało się pobrać nowszego katalogu ({error}). Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki pobieranie się nie powiedzie. Sprawdź, czy Home Assistant ma dostęp do internetu: dane orbitalne pochodzą z CelesTrak. Ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
-    },
-    "catalog_stale_upstream": {
-      "title": "Prognozy satelitów są wstrzymane",
-      "description": "Elementy orbitalne w katalogu satelitów mają {age} dni (mediana dla wszystkich satelitów), a same dane CelesTrak są równie stare: nie ma niczego nowszego do pobrania. Prognozy oparte na tak starych elementach byłyby mylące, dlatego encje Satellite Spotter są niedostępne, dopóki CelesTrak nie opublikuje aktualnych danych. W Home Assistant nie ma nic do naprawienia: ten komunikat zniknie sam, gdy nadejdzie aktualny katalog."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Najlepszy widok o {time}: {direction}, wysokość {elevation}°, jasność {magnitude} mag.",
     "calendar_disappears": "Ostatnio widoczny o {time} w kierunku {direction}, wysokość {elevation}°.",
     "calendar_together": "Ten przelot obejmuje {count} satelitów.",
+    "calendar_rating": "Ocena: {rating}.",
+    "rating_great": "Świetny",
+    "rating_good": "Dobry",
+    "rating_fair": "Przeciętny",
+    "rating_poor": "Słaby",
     "calendar_cloud_cover": "Zachmurzenie podczas przelotu: {cloud_cover}%.",
     "calendar_about": "Obiekt: {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "zach. płn.-zach.",
     "compass_nw": "płn.-zach.",
     "compass_nnw": "płn. płn.-zach."
+  },
+  "services": {
+    "get_passes": {
+      "name": "Pobierz przeloty",
+      "description": "Wyświetla przewidywane przeloty lokalizacji, najbliższe najpierw, z opcjonalnymi filtrami.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Lokalizacja",
+          "description": "Lokalizacja, której przeloty mają zostać wyświetlone."
+        },
+        "pass_id": {
+          "name": "Przelot",
+          "description": "Tylko ten przelot, według identyfikatora: uid wydarzenia kalendarza lub pass_id czujnika."
+        },
+        "start": {
+          "name": "Od",
+          "description": "Tylko przeloty trwające jeszcze po tej chwili. Domyślnie te, które się jeszcze nie skończyły."
+        },
+        "end": {
+          "name": "Do",
+          "description": "Tylko przeloty zaczynające się przed tą chwilą."
+        },
+        "min_rating": {
+          "name": "Minimalna ocena",
+          "description": "Tylko przeloty z co najmniej taką oceną."
+        },
+        "max_cloud_cover": {
+          "name": "Maksymalne zachmurzenie",
+          "description": "Pomija przeloty z większym przewidywanym zachmurzeniem. Przeloty bez prognozy pozostają."
+        },
+        "bright_only": {
+          "name": "Tylko jasne przeloty",
+          "description": "Tylko przeloty uznawane za jasne."
+        },
+        "kinds": {
+          "name": "Rodzaje satelitów",
+          "description": "Tylko przeloty zawierające jeden z tych rodzajów."
+        },
+        "satellite": {
+          "name": "Nazwa satelity",
+          "description": "Tylko przeloty z satelitą, którego nazwa zawiera ten tekst."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Największa liczba przelotów do wyświetlenia."
+        }
+      }
+    }
   }
 }

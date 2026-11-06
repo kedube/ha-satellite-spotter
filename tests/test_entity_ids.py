@@ -30,6 +30,7 @@ ENTITIES = {
     ("sensor", "next_visible_pass_brightness"),
     ("sensor", "next_visible_pass_duration"),
     ("sensor", "next_visible_pass_cloud_cover"),
+    ("sensor", "next_visible_pass_rating"),
     ("sensor", "next_visible_satellite_name"),
     ("sensor", "next_bright_pass"),
     ("sensor", "satellite_elevation"),
@@ -98,6 +99,8 @@ async def test_friendly_names_join_the_location_and_the_english_name(
     hass: HomeAssistant, init_integration: MockConfigEntry
 ) -> None:
     for entity in entries_of(hass, init_integration):
+        if entity.disabled_by is not None:
+            continue
         state = hass.states.get(entity.entity_id)
         assert state is not None
         assert entity.translation_key is not None
@@ -243,6 +246,8 @@ async def test_every_entity_credits_its_sources(
 ) -> None:
     # The Mini-MegaTORTORA team asks for attribution and citation (const.py, README).
     for entity in entries_of(hass, init_integration):
+        if entity.disabled_by is not None:
+            continue
         state = hass.states.get(entity.entity_id)
         assert state is not None
         attribution = state.attributes["attribution"]

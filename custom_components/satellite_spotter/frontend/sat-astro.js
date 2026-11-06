@@ -45,7 +45,7 @@ export function centuriesTT(date) {
   return (julianDate(date) + TT_UTC_S / 86400 - J2000) / 36525;
 }
 
-/** Greenwich mean sidereal time in degrees (IAU 1982, UT1 = UTC): sat-geo.js's gmst. */
+/** Greenwich mean sidereal time in degrees (IAU 1982, UT1 = UTC). */
 export function greenwichSiderealTime(date) {
   const t = (julianDate(date) - J2000) / 36525;
   const seconds =
@@ -147,11 +147,6 @@ export function toHorizon(matrix, ra, dec) {
   return azimuthElevation(applyMatrix(matrix, raDecVector(ra, dec)));
 }
 
-/** Where a J2000 RA/Dec (a star) is in the observer's sky at a date. */
-export function raDecToAzEl(ra, dec, date, observer) {
-  return toHorizon(horizonMatrix(date, observer), ra, dec);
-}
-
 /**
  * J2000 unit vectors of the stars of stars.json ([ra, dec, mag, bv, ...]), as
  * Float32Array [x, y, z, ...]. Made once; any moment's sky is then one matrix
@@ -175,11 +170,6 @@ export function horizonVectors(matrix, vectors, out = new Float32Array(vectors.l
     out[i + 2] = m[6] * x + m[7] * y + m[8] * z;
   }
   return out;
-}
-
-/** J2000 RA/Dec of a point on the ecliptic (latitude 0 by default): the path of the Sun and planets. */
-export function eclipticToRaDec(longitude, latitude = 0) {
-  return vectorRaDec(eclipticToEquatorial(longitude, latitude, OBLIQUITY_J2000));
 }
 
 /** J2000 RA/Dec of galactic coordinates, for the band of the Milky Way (b = 0). */
@@ -207,7 +197,7 @@ function meanObliquity(t) {
 // ---------------------------------------------------------------- Sun
 
 /**
- * The Sun by the same low-precision formula as sat-geo.js's subsolarPoint
+ * The Sun by a low-precision formula, as for the globe's subsolarPoint
  * (Astronomical Almanac, 0.01 deg in 1950-2050), so the sky agrees with the
  * globe's day and night: RA/Dec of date, ecliptic longitude, distance in au.
  */
@@ -392,20 +382,6 @@ export function moonLitPath(r, fraction, litSide) {
   );
 }
 
-const MOON_STATES = [
-  [0.5, "new_moon"], [6.5, "waxing_crescent"], [7.5, "first_quarter"], [13.5, "waxing_gibbous"],
-  [14.5, "full_moon"], [20.5, "waning_gibbous"], [21.5, "last_quarter"], [27.5, "waning_crescent"],
-];
-
-/**
- * Home Assistant's name for a phase (moonPhase().cycle), the states of its
- * moon sensor, so hass.localize can name it: the four main phases take a day
- * of a 28 day cycle each, as there.
- */
-export function moonPhaseState(cycle) {
-  const day = wrap360(cycle * 360) / 360 * 28;
-  return (MOON_STATES.find(([end]) => day < end) || MOON_STATES[0])[1];
-}
 
 // ---------------------------------------------------------------- planets
 
@@ -678,21 +654,6 @@ export function skyColor(azimuth, elevation, sun, palette = skyPalette(sun.eleva
     c = mix(c, [255, 250, 240], 0.7 * day * Math.exp(-away / 6));
   }
   return c.map((x) => Math.round(clamp(x, 0, 255)));
-}
-
-/**
- * Stops of a vertical sky gradient looking towards an azimuth, horizon to
- * zenith: [{elevation, color: [r, g, b]}]. Map elevation to the screen with
- * the camera (CSS, canvas, SVG); for a sky dome use skyColor per vertex.
- */
-export function skyGradient(azimuth, sun, elevations = [0, 2, 5, 10, 18, 30, 50, 90]) {
-  const palette = skyPalette(sun.elevation);
-  return elevations.map((elevation) => ({ elevation, color: skyColor(azimuth, elevation, sun, palette) }));
-}
-
-/** CSS colour of [r, g, b], with an optional alpha. */
-export function cssColor([r, g, b], alpha = 1) {
-  return alpha < 1 ? `rgb(${r} ${g} ${b} / ${+alpha.toFixed(3)})` : `rgb(${r} ${g} ${b})`;
 }
 
 // ---------------------------------------------------------------- stars

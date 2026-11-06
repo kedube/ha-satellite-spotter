@@ -22,7 +22,7 @@
 
 const VERSION = new URL(import.meta.url).search;
 // Like any of these, a time bar that does not load fails the module, which the host reports.
-const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, timebarModule, clockModule, magneticModule, photoModule, photoSceneModule, astroModule, sourcesModule] =
+const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, timebarModule, clockModule, magneticModule, photoModule, photoSceneModule, astroModule, sourcesModule, lifeModule] =
   await Promise.all([
     import(`./sat-theme.js${VERSION}`),
     import(`./sat-planetarium.js${VERSION}`),
@@ -36,6 +36,7 @@ const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, tim
     import(`./sat-photo-scene.js${VERSION}`),
     import(`./sat-astro.js${VERSION}`),
     import(`./sat-photo-sources.js${VERSION}`),
+    import(`./sat-scene-life.js${VERSION}`),
   ]);
 const { BUTTON_CSS, CHIP_CSS, FOCUS_CSS, GLASS_CSS, MOTION_CSS, TOKENS_CSS, UTIL_CSS, kindIcon, svgIcon } = theme;
 const { Planetarium, frameView, makeProjector, trackFromRows } = planetariumModule;
@@ -49,6 +50,7 @@ const { PHOTO_MAX_M, findPhotos, hiddenByPhoto } = photoModule;
 const { PhotoScene } = photoSceneModule;
 const { sunAzEl } = astroModule;
 const { PHOTO_SOURCES, SOURCE_NAMES, findGooglePhotos, findMapillaryPhotos, rankPhotos } = sourcesModule;
+const { SceneLife } = lifeModule;
 
 const STORAGE_KEY = "satellite-spotter:street";
 // The photo chosen for each place: {"lat,lon": id}.
@@ -82,6 +84,11 @@ const FOV_MAX = 90;
 const SLOW_FRAME_MS = 80;
 // Wait this long for the map to settle before showing it anyway (ms).
 const VEIL_MAX_MS = 15000;
+// How long a photo may take to load before the next is tried, the ground's height before it is left
+// out, and anything else a start waits for (the text, the map library) before going on without it.
+const PHOTO_LOAD_MS = 20000;
+const GROUND_MS = 8000;
+const STEP_MS = 20000;
 // Ask the host for the pass's path first; fetch it ourselves if nobody answers.
 const DETAIL_GRACE_MS = 2500;
 // A path that does not come is asked for again after these waits (ms), then
@@ -120,7 +127,7 @@ const wrap360 = (x) => ((x % 360) + 360) % 360;
 /** Shortest signed turn from a to b, degrees. */
 const turn = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
 const compass16 = (az) => COMPASS16[Math.round(wrap360(az) / 22.5) % 16];
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const { esc: escapeHtml } = await import(`./sat-text.js${VERSION}`);
 const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 
 function prefersReducedMotion() {
@@ -142,13 +149,19 @@ function readStoredOptions() {
   }
 }
 
-/** A place's key for the photo chosen there (about 10 m). */
+/** A place's key for the photos found there (about 10 m). */
 export const placeKey = (l) => `${(+l.latitude).toFixed(4)},${(+l.longitude).toFixed(4)}`;
+
+// What older versions kept a choice under: where home is, which the browser need not remember.
+const COORDINATES_KEY = /^-?\d+\.\d+,-?\d+\.\d+$/;
+
+/** What a location's chosen photo is kept under: which location it is, not where. */
+const choiceKey = (location) => location.entry_id ?? "default";
 
 function storedPhotoChoice(location) {
   try {
     const stored = JSON.parse(globalThis.localStorage?.getItem(PHOTO_STORAGE_KEY) ?? "{}");
-    return typeof stored?.[placeKey(location)] === "string" ? stored[placeKey(location)] : null;
+    return typeof stored?.[choiceKey(location)] === "string" ? stored[choiceKey(location)] : null;
   } catch {
     return null;
   }
@@ -157,8 +170,8 @@ function storedPhotoChoice(location) {
 function storePhotoChoice(location, id) {
   try {
     const stored = JSON.parse(globalThis.localStorage?.getItem(PHOTO_STORAGE_KEY) ?? "{}");
-    const next = stored && typeof stored === "object" ? stored : {};
-    next[placeKey(location)] = id;
+    const next = Object.fromEntries(Object.entries(stored && typeof stored === "object" ? stored : {}).filter(([key]) => !COORDINATES_KEY.test(key)));
+    next[choiceKey(location)] = id;
     globalThis.localStorage?.setItem(PHOTO_STORAGE_KEY, JSON.stringify(next));
   } catch {
     // Private mode or storage full: the choice lasts until the page closes.
@@ -412,16 +425,19 @@ export class SatelliteStreetView extends BaseElement {
     this._options = normalizeOptions(readStoredOptions());
     this._units = null;
     this._opened = false;
-    this._mode = null; // "photo" | "3d" | "2d" once something shows
     this._view = { bearing: 180, pitch: 100, fov: 60, roll: 0 };
     this._userMoved = false;
     this._following = false;
     this._followPausedUntil = 0;
     this._timers = new Set();
     this._raf = null;
-    // Generations: of open/dispose, and of the scene (a new place restarts only the scene).
+    // Of open/dispose: a new place restarts only the scene, which has a life of its own.
     this._gen = 0;
-    this._sceneGen = 0;
+    this._life = new SceneLife({
+      later: (fn, ms) => this._later(fn, ms),
+      restoreMs: CONTEXT_RESTORE_MS,
+      onStillLost: () => this._opened && this._restartScene(),
+    });
     this._drawn = null;
     this._hudAt = 0;
     this._lastFrame = null;
@@ -599,6 +615,16 @@ export class SatelliteStreetView extends BaseElement {
     return this._globeToggle !== false;
   }
 
+  /** The scene showing. */
+  get _scene() {
+    return this._life.scene;
+  }
+
+  /** "photo", "3d" or "2d" once something shows. */
+  get _mode() {
+    return this._life.mode;
+  }
+
   // -- public methods ----------------------------------------------------------
 
   /** Start loading and showing (idempotent). */
@@ -639,13 +665,11 @@ export class SatelliteStreetView extends BaseElement {
     if (!this._opened && !this._scene) return;
     this._opened = false;
     this._gen++;
-    this._sceneGen++;
     this._stopLoop();
+    this._life.clear();
     for (const id of this._timers) clearTimeout(id);
     this._timers.clear();
     this._stopAsking();
-    this._abort?.abort();
-    this._abort = null;
     globalThis.document?.removeEventListener("visibilitychange", this._onVisibility);
     this.removeEventListener?.("keydown", this._onKeyDown);
     this._watchConnection();
@@ -660,15 +684,9 @@ export class SatelliteStreetView extends BaseElement {
     this._unsubscribeClock = null;
     this._timebar?.destroy?.();
     this._timebar = null;
-    this._scene?.remove();
-    this._scene = null;
-    this._pendingScene?.remove();
-    this._pendingScene = null;
     this._planetarium?.dispose();
     this._planetarium = null;
-    this._mode = null;
     this._skylineData = null;
-    this._settled = false;
     this._size = null;
     this._drawn = null;
     this._state = null;
@@ -1314,46 +1332,49 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   async _startScene() {
-    const gen = ++this._sceneGen;
+    const start = this._life.start();
+    const here = () => start.isCurrent() && !!this._els;
     const loc = this._location;
     if (!loc || !Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) {
       this._showVeil("street.no_location");
       return;
     }
     this._showVeil("street.loading", this._options.street !== "model" ? "street.loading_photo" : "street.loading_detail");
-    await this._ready?.catch(() => {});
-    if (gen !== this._sceneGen) return;
+    // Nothing below is allowed to leave the veil up for good: each step has a time limit, and the
+    // street view moves on to the next photo, the model or the plain sky when it runs out.
+    if (this._ready) await timeLimit(this._ready, STEP_MS).catch(() => {});
+    if (!start.isCurrent()) return;
     // Where the photos come from (and the keys) are the integration's options.
     const settings = await this._streetSettings();
-    if (gen !== this._sceneGen || !this._els) return;
+    if (!here()) return;
     const photo = wantsPhoto(this._options, settings);
     this._syncControls();
     if (!photo) this._showVeil("street.loading", "street.loading_detail");
-    this._abort = globalThis.AbortController ? new AbortController() : null;
-    const signal = this._abort?.signal;
-    if (photo && (await this._startPhoto(gen, signal))) return;
-    if (gen !== this._sceneGen || !this._els) return;
+    const { signal } = start;
+    if (photo && (await this._startPhoto(start))) return;
+    if (!here()) return;
     if (photo) this._showVeil("street.loading", "street.loading_detail");
     // The ground under the eye comes from the terrain tiles (Home Assistant's elevation is typed in by hand).
-    const ground = this._groundElevation(loc.latitude, loc.longitude, { signal }).catch(() => null);
+    const ground = timeLimit(this._groundElevation(loc.latitude, loc.longitude, { signal }), GROUND_MS).catch(() => null);
     if (!this._supportsWebGL2()) {
-      this._fallback("webgl", await ground, gen);
+      this._fallback("webgl", await ground, start);
       return;
     }
     let ml;
     try {
-      ml = await this._loadMapLibre();
+      ml = await timeLimit(this._loadMapLibre(), STEP_MS);
     } catch (err) {
       console.warn("Satellite Spotter: could not load the map library:", err?.message || err);
-      if (gen === this._sceneGen) this._fallback("failed", await ground, gen);
+      if (start.isCurrent()) this._fallback("failed", await ground, start);
       return;
     }
     const groundM = await ground;
-    if (gen !== this._sceneGen || !this._els) return;
+    if (!here()) return;
     const tS = this._timeS();
     const sky = this._planetarium.skyAt(tS);
+    let scene;
     try {
-      this._scene = this._createScene(this._els.map, {
+      scene = this._createScene(this._els.map, {
         ml,
         latitude: loc.latitude,
         longitude: loc.longitude,
@@ -1375,16 +1396,16 @@ export class SatelliteStreetView extends BaseElement {
     } catch (err) {
       console.warn("Satellite Spotter: the 3D street view is not available here:", err?.message || err);
       this._els.map.replaceChildren();
-      this._fallback("webgl", groundM, gen);
+      this._fallback("webgl", groundM, start);
       return;
     }
-    this._mode = "3d";
-    const map = this._scene.map;
-    this._scene.resize();
+    this._life.show(scene, "3d");
+    const { map } = scene;
+    scene.resize();
     map.on("render", () => this._draw());
     map.on("idle", () => this._idle());
-    map.on("webglcontextlost", () => this._contextLost());
-    map.on("webglcontextrestored", () => this._contextRestored());
+    map.on("webglcontextlost", () => this._contextLost(scene));
+    map.on("webglcontextrestored", () => this._contextRestored(scene));
     map.once("load", () => {
       // Credits are in the info sheet; MapLibre's stay a small button.
       map.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
@@ -1400,19 +1421,20 @@ export class SatelliteStreetView extends BaseElement {
    * superseded); false sends the street view on to the 3D model, with a
    * word in the layers menu about why.
    */
-  async _startPhoto(gen, signal) {
+  async _startPhoto(start) {
     const loc = this._location;
+    const here = () => start.isCurrent() && !!this._els;
     let list;
     try {
-      list = await this._photoList(loc, photoSource(this._options, this._settings?.value), signal);
+      list = await this._photoList(loc, photoSource(this._options, this._settings?.value), start.signal);
     } catch (err) {
-      if (gen !== this._sceneGen) return true;
+      if (!start.isCurrent()) return true;
       console.info("Satellite Spotter: no street photos (no service answered):", err?.message || err);
       this._photoNote = "street.photo_unavailable";
       this._syncControls();
       return false;
     }
-    if (gen !== this._sceneGen || !this._els) return true;
+    if (!here()) return true;
     if (!list.length) {
       this._photoNote = "street.photo_none";
       this._syncControls();
@@ -1426,8 +1448,8 @@ export class SatelliteStreetView extends BaseElement {
           photo,
           view: this._view,
           sunAt: (ms, place) => sunAzEl(ms, place),
-          onContextLost: () => this._contextLost(),
-          onContextRestored: () => this._contextRestored(),
+          onContextLost: () => this._contextLost(scene),
+          onContextRestored: () => this._contextRestored(scene),
         });
       } catch (err) {
         console.warn("Satellite Spotter: the street photo cannot be drawn here:", err?.message || err);
@@ -1435,24 +1457,23 @@ export class SatelliteStreetView extends BaseElement {
       }
       if (sky) scene.setLook(scene.lookFor(sky.sun, sky.moon));
       // Loading, it is not the scene yet; a close or a restart meanwhile frees it (and its downloads).
-      this._pendingScene = scene;
+      this._life.loading(scene);
       try {
-        await scene.load();
+        await timeLimit(scene.load(), PHOTO_LOAD_MS);
       } catch (err) {
-        scene.remove();
-        if (this._pendingScene === scene) this._pendingScene = null;
-        if (gen !== this._sceneGen || !this._els) return true;
+        this._life.discard(scene);
+        if (!here()) return true;
         console.info(`Satellite Spotter: street photo ${photo.id} not used:`, err?.message || err);
         continue;
       }
-      if (this._pendingScene === scene) this._pendingScene = null;
-      if (gen !== this._sceneGen || !this._els) {
-        scene.remove();
+      if (!here()) {
+        this._life.discard(scene);
         return true;
       }
-      this._scene = scene;
-      this._mode = "photo";
+      this._life.show(scene, "photo");
       this._photoNote = null;
+      // The screen may have turned since it was made: its size only follows while it is showing.
+      scene.resize();
       scene.setView(this._view);
       this._lookAt = 0;
       this._updateLook(this._timeS());
@@ -1484,13 +1505,19 @@ export class SatelliteStreetView extends BaseElement {
     const locale = { language: this._hass?.locale?.language || this._hass?.language || "en", region: this._hass?.config?.country || "US" };
     const lists = await Promise.all(
       sources.map(async (s) => {
-        if (!photos.searches.has(s)) photos.searches.set(s, this._findPhotos({ latitude: loc.latitude, longitude: loc.longitude }, { source: s, keys: settings, signal, ...locale }));
+        let search = photos.searches.get(s);
+        // One stopped by a restart says nothing about this start, whichever hears of it first.
+        if (!search || (!search.done && search.signal?.aborted)) {
+          search = { signal, done: false, found: this._findPhotos({ latitude: loc.latitude, longitude: loc.longitude }, { source: s, keys: settings, signal, ...locale }) };
+          photos.searches.set(s, search);
+        }
         try {
-          const list = await photos.searches.get(s);
+          const list = await search.found;
+          search.done = true;
           photos.failed.delete(s);
           return list;
         } catch (err) {
-          if (photos.searches.has(s)) photos.searches.delete(s);
+          if (photos.searches.get(s) === search) photos.searches.delete(s);
           if (err?.name !== "AbortError") {
             // A refusal is about the key; anything else, the service is out of reach.
             photos.failed.set(s, err?.refused ? "refused" : "failed");
@@ -1547,18 +1574,17 @@ export class SatelliteStreetView extends BaseElement {
   async _idle() {
     const scene = this._scene;
     if (!scene || !this._opened) return;
-    if (!this._settled) {
-      this._settled = true;
+    if (!this._life.settled) {
+      this._life.settled = true;
       this._hideVeil();
       this._announce(this._t("street.ready"));
-      const gen = this._sceneGen;
+      const start = this._life.current;
       const median = await scene.benchmark();
-      if (gen !== this._sceneGen || this._scene !== scene) return;
+      if (!start.isCurrent() || this._scene !== scene) return;
       if (median > SLOW_FRAME_MS) {
         console.info(`Satellite Spotter: the 3D street view draws a frame in ${Math.round(median)} ms here; showing the 2D sky instead`);
-        this._scene.remove();
-        this._scene = null;
-        this._fallback("slow", scene.ground, gen);
+        this._life.discard(scene);
+        this._fallback("slow", scene.ground, start);
         return;
       }
     }
@@ -1595,9 +1621,9 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   /** No 3D street here: the sky over the terrain skyline, with a word about why. */
-  async _fallback(reason, groundM, gen) {
-    if (gen !== this._sceneGen || !this._els) return;
-    this._mode = "2d";
+  async _fallback(reason, groundM, start) {
+    if (!start.isCurrent() || !this._els) return;
+    this._life.showSky();
     this._fallbackReason = reason;
     this._banner(this._t("street.fallback", { reason: this._t(`street.reason_${reason}`) }));
     this._hideVeil();
@@ -1605,14 +1631,14 @@ export class SatelliteStreetView extends BaseElement {
     const loc = this._location;
     const eye = (Number.isFinite(groundM) ? groundM : loc.elevation ?? 0) + this._options.eyeHeightM;
     try {
-      const data = await this._skyline(loc.latitude, loc.longitude, eye, { signal: this._abort?.signal });
-      if (gen !== this._sceneGen || !this._planetarium) return;
+      const data = await this._skyline(loc.latitude, loc.longitude, eye, { signal: start.signal });
+      if (!start.isCurrent() || !this._planetarium) return;
       this._skylineData = data;
       this._planetarium.setSkyline(data);
       this._terrainOcclusion();
       this._kick();
     } catch (err) {
-      if (gen !== this._sceneGen) return;
+      if (!start.isCurrent()) return;
       console.warn("Satellite Spotter: could not load the terrain skyline:", err?.message || err);
     }
   }
@@ -1633,12 +1659,7 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   _restartScene() {
-    this._scene?.remove();
-    this._scene = null;
-    this._pendingScene?.remove();
-    this._pendingScene = null;
-    this._settled = false;
-    this._mode = null;
+    this._life.clear();
     this._renderCredit();
     this._skylineData = null;
     this._photoNote = null;
@@ -1646,18 +1667,16 @@ export class SatelliteStreetView extends BaseElement {
     this._planetarium?.setSkyline(null);
     this._planetarium?.setOcclusion(null);
     this._banner(null);
-    this._abort?.abort();
     this._startScene();
   }
 
-  _contextLost() {
-    this._showVeil("street.reloading");
-    clearTimeout(this._contextTimer);
-    this._contextTimer = this._later(() => this._opened && this._restartScene(), CONTEXT_RESTORE_MS);
+  /** A scene's WebGL context went: it has a little while to come back, and then it starts over. */
+  _contextLost(scene) {
+    if (this._life.lost(scene)) this._showVeil("street.reloading");
   }
 
-  _contextRestored() {
-    clearTimeout(this._contextTimer);
+  _contextRestored(scene) {
+    if (!this._life.restored(scene)) return;
     this._hideVeil();
     this._scene?.setView(this._view);
   }

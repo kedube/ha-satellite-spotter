@@ -11,7 +11,9 @@ import { HOME, T0, fakeHass, flush, installClock, makeDetail, makePass, makePayl
 
 installDom();
 const globe = await import("../../custom_components/satellite_spotter/frontend/sat-globe.js");
-const { SatelliteGlobeView, mergeRows, rowsCover, simulationWindow, speedFromRows, tickStepMinutes, transitPositionAt, transitRows } = globe;
+const { SatelliteGlobeView, simulationWindow, speedFromRows, tickStepMinutes, transitPositionAt } = globe;
+const { mergeRows, rowsCover, transitRows } = await import("../../custom_components/satellite_spotter/frontend/sat-course.js");
+const { nextClockOffset } = await import("../../custom_components/satellite_spotter/frontend/sat-client.js");
 const passesModule = await import("../../custom_components/satellite_spotter/frontend/sat-passes.js");
 const GERMAN = JSON.parse(readFileSync(new URL("../../custom_components/satellite_spotter/frontend/translations/de.json", import.meta.url), "utf8"));
 
@@ -79,6 +81,7 @@ function stubView(clock) {
     setCloudFlags() {},
     pick: () => -1,
   };
+  view._cloud.attach(view._space);
   view._els = { mission: fakeEl(), simBtn: fakeEl(), lookBtn: fakeEl(), streetBtn: fakeEl(), timebarHost: fakeEl() };
   view._loaded = true;
   view._mapSize = [800, 600];
@@ -206,7 +209,17 @@ test("the orbital speed comes from the track, Earth's rotation added back", () =
     const a = (2 * Math.PI * t) / P;
     const [x, y, z] = [Math.cos(a), Math.sin(a) * Math.cos(inc), Math.sin(a) * Math.sin(inc)];
     const lon = ((Math.atan2(y, x) - 7.2921159e-5 * t) * 180) / Math.PI;
-    track.push([T0 + t, (Math.asin(z) * 180) / Math.PI, ((((lon + 180) % 360) + 360) % 360) - 180, 420, 1]);
+    // As the integration gives them: latitude and height on WGS84.
+    const [e2, a0] = [0.00669437999014, 6378.137];
+    const across = R * Math.hypot(x, y);
+    let lat = Math.atan2(R * z, across * (1 - e2));
+    let height = 420;
+    for (let i = 0; i < 5; i++) {
+      const n = a0 / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
+      height = across / Math.cos(lat) - n;
+      lat = Math.atan2(R * z, across * (1 - (e2 * n) / (n + height)));
+    }
+    track.push([T0 + t, (lat * 180) / Math.PI, ((((lon + 180) % 360) + 360) % 360) - 180, height, 1]);
   }
   for (const t of [T0 + 100, T0 + 1500, T0 + 2900, T0 + 4300]) {
     const v = speedFromRows(track, t);
@@ -666,7 +679,7 @@ test("a language that fails to apply does not hold up the globe", async () => {
 test("a clock about two seconds off is corrected steadily, not on and off", () => {
   const view = new SatelliteGlobeView();
   // The server's clock, ahead of the device's by this much (round trip 100 ms).
-  const ahead = (ms) => view._syncClock(2000 + ms / 1000, 1_999_950, 2_000_050);
+  const ahead = (ms) => (view._clockOffset = nextClockOffset(view._clockOffset, 2000 + ms / 1000, 1_999_950, 2_000_050));
   ahead(2500);
   assert.equal(view._clockOffset, 2500);
   ahead(1500); // the same clock, measured a little differently
@@ -681,12 +694,13 @@ test("a device clock that is off is corrected from the server's time, for the sh
   const clock = installClock(2_000_050);
   try {
     const view = new SatelliteGlobeView();
-    view._syncClock(1000, 2_000_000, 2_000_100); // 1000 s server time vs 2000 s device time
+    const sync = (...at) => (view._clockOffset = nextClockOffset(view._clockOffset, ...at));
+    sync(1000, 2_000_000, 2_000_100); // 1000 s server time vs 2000 s device time
     assert.equal(view._clockOffset, 1_000_000 - 2_000_050);
     assert.equal(view._clock.simMs, 1_000_000, "live, the shared clock is Home Assistant's time");
-    view._syncClock(2000.5, 2_000_000, 2_000_100); // half a second: left alone
+    sync(2000.5, 2_000_000, 2_000_100); // half a second: left alone
     assert.equal(view._clockOffset, 0);
-    view._syncClock(1000, 2_000_000, 2_005_000); // too slow a round trip to trust
+    sync(1000, 2_000_000, 2_005_000); // too slow a round trip to trust
     assert.equal(view._clockOffset, 0);
   } finally {
     clock.restore();
@@ -1602,7 +1616,7 @@ test("every satellite's position: every five minutes while shown, around the pas
     await view._loadCloud();
     assert.deepEqual(asked().map((m) => [m.span, m.step, m.start]), [[600, 60, undefined]]);
     assert.equal(clouds, 1, "the cloud gets its satellites once per catalogue");
-    assert.equal(view._catalogById.get(25544).name, "ISS");
+    assert.equal(view._cloud.byId.get(25544).name, "ISS");
     await view._loadCloud();
     clock.now += 4 * 60 * 1000;
     await view._loadCloud();
@@ -1613,7 +1627,7 @@ test("every satellite's position: every five minutes while shown, around the pas
     assert.equal(clouds, 1);
     // A hidden tab came back after the positions ran out: at once.
     clock.now += 20 * 60 * 1000;
-    view._positionsAt = performance.now();
+    view._cloud.positionsAt = performance.now();
     await view._loadCloud();
     assert.equal(asked().length, 3);
     // Simulating: the minutes around the pass.
@@ -1679,9 +1693,9 @@ test("a satellite clicked in the cloud is followed, and its next pass shown", as
     const b = makePass(T0 + 7200, T0 + 7500, { ids: [48274], kind: "tiangong", title: "Tiangong" });
     const { view, calls } = passView(clock, [a, b]);
     view._reconcileSelection();
-    view._positions = { start: T0, step: 60, count: 11, catalog_version: 3, ids: [25544, 48274] };
-    view._cloudIndex = new Map([[25544, 0], [48274, 1]]);
-    view._catalogById = new Map([[48274, { norad_id: 48274, name: "Tiangong", kind: "tiangong", period_s: 5520 }]]);
+    view._cloud.positions = { start: T0, step: 60, count: 11, catalog_version: 3, ids: [25544, 48274] };
+    view._cloud._index = new Map([[25544, 0], [48274, 1]]);
+    view._cloud.byId = new Map([[48274, { norad_id: 48274, name: "Tiangong", kind: "tiangong", period_s: 5520 }]]);
     view._config = { panel: true };
     view._space.pick = (x, y) => (x === 10 && y === 20 ? 1 : -1);
     view._onMapClick({ x: 300, y: 300 });
@@ -1744,6 +1758,9 @@ test("following or chasing a satellite far out, the camera stays beyond it at an
     // Zoomed in past a satellite far out while following it: the next frame backs out.
     view._courseRows = () => [
       [T0 - 600, 56, 10, 38000, 1],
+      [T0 - 300, 56.25, 10.5, 38125, 1],
+      [T0, 56.5, 11, 38250, 1],
+      [T0 + 300, 56.75, 11.5, 38375, 1],
       [T0 + 600, 57, 12, 38500, 1],
     ];
     view._mode = "follow";
@@ -1763,8 +1780,8 @@ test("the cloud's flags: the pass's satellites gold, those in the sky now breath
     const pass = makePass(T0 - 60, T0 + 240, { ids: [25544, 48274], kind: "iss" });
     const { view } = passView(clock, [pass]);
     view._selectedId = pass.id;
-    view._cloudIndex = new Map([[25544, 0], [48274, 1], [20580, 2]]);
-    view._cloudFlagBits = new Uint8Array(3);
+    view._cloud._index = new Map([[25544, 0], [48274, 1], [20580, 2]]);
+    view._cloud._bits = new Uint8Array(3);
     let flags = null;
     view._space.setCloudFlags = (f) => (flags = Array.from(f));
     view._updateCloudFlags();
@@ -1830,9 +1847,9 @@ test("a simulation the street view's own time bar ends or starts is followed", a
     assert.ok(view._simRows.length > 100, "the orbit and the pass's own rows");
     assert.equal(view._shownPass().id, pass.id);
     // Clicks on the cloud do not change the satellite while a pass plays.
-    view._positions = { ids: [48274] };
-    view._cloudIndex = new Map([[48274, 0]]);
-    view._catalogById = new Map([[48274, { norad_id: 48274, name: "Tiangong", kind: "tiangong" }]]);
+    view._cloud.positions = { ids: [48274] };
+    view._cloud._index = new Map([[48274, 0]]);
+    view._cloud.byId = new Map([[48274, { norad_id: 48274, name: "Tiangong", kind: "tiangong" }]]);
     view._config = { panel: true };
     view._space.pick = () => 0;
     view._onMapClick({ x: 1, y: 1 });
@@ -1909,7 +1926,168 @@ test("positions that fail to load are asked for again after a back-off, not ever
     await flush();
     await flush();
     assert.equal(asked(), 2);
-    assert.ok(view._positions, "in at last");
+    assert.ok(view._cloud.positions, "in at last");
+  } finally {
+    clock.restore();
+  }
+});
+
+// ---- what a real browser showed, and the fakes could not ------------------------------
+
+/** Run the fake clock on by so much in one go. */
+const advanceClock = (clock, ms) => clock.step(ms);
+
+test("the light on the globe is where the Sun is, in both hemispheres", () => {
+  // Spherical coordinates MapLibre takes: [radial, azimuth, polar]; north is the polar axis's other end.
+  const heightOfSun = (date) => {
+    const [, , polar] = globe.sunLight(date).position;
+    return Math.cos((polar * Math.PI) / 180);
+  };
+  const toward = (date) => {
+    const [, az, polar] = globe.sunLight(date).position;
+    const p = (polar * Math.PI) / 180;
+    const a = ((az + 90) * Math.PI) / 180;
+    return [Math.sin(p) * Math.cos(a), Math.sin(p) * Math.sin(a), Math.cos(p)];
+  };
+  const june = new Date("2026-06-21T12:00:00Z");
+  const december = new Date("2026-12-21T12:00:00Z");
+  // In its frame: x east of the far meridian, y to the *south*, z away from the prime meridian.
+  assert.ok(toward(june)[1] < -0.3, "in June the Sun is to the north");
+  assert.ok(toward(december)[1] > 0.3, "in December to the south");
+  assert.ok(Number.isFinite(heightOfSun(june)));
+  // East and west are as they were: at noon over Greenwich it looks along the prime meridian.
+  assert.ok(Math.abs(toward(new Date("2026-03-20T12:07:00Z"))[0]) < 0.05);
+});
+
+test("failed map tiles from any service are asked for again, later and at once when the internet is back", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    const asked = [];
+    Object.assign(view._map, { getSource: () => ({}), refreshTiles: (id, tiles) => asked.push([id, tiles.length]) });
+    view._haUrl = (path) => `http://ha.local${path}`;
+    view._whenShown = (kind, fn) => fn();
+    const fail = (sourceId, status) =>
+      view._onMapError({ sourceId, error: { status, url: "https://gibs.earthdata.nasa.gov/x" }, tile: { tileID: { canonical: { x: 1, y: 2, z: 3 } } } });
+    fail("night", undefined); // no internet
+    assert.deepEqual(asked, []);
+    advanceClock(clock, 30000);
+    assert.deepEqual(asked, [["night", 1]], "a while later");
+    // Again, and the wait doubles.
+    fail("night", 503);
+    advanceClock(clock, 30000);
+    assert.equal(asked.length, 1);
+    advanceClock(clock, 30000);
+    assert.equal(asked.length, 2);
+    // The internet is back: at once, and from the start.
+    fail("day", undefined);
+    view._onOnline();
+    assert.deepEqual(asked.at(-1), ["day", 1]);
+    assert.equal(view._tileRetryTimer, null);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a tile a service simply does not have is not asked for again", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    const asked = [];
+    Object.assign(view._map, { getSource: () => ({}), refreshTiles: (...args) => asked.push(args) });
+    view._haUrl = (path) => `http://ha.local${path}`;
+    view._onMapError({ sourceId: "day", error: { status: 404, url: "https://x" }, tile: { tileID: { canonical: { x: 1, y: 2, z: 3 } } } });
+    advanceClock(clock, 600000);
+    view._retryTilesNow();
+    assert.deepEqual(asked, []);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a ring that only breathes is drawn often enough to look smooth, and no more", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    view._screenSpeed = () => 0;
+    assert.ok(view._frameDelay() >= 350, "nothing moves: now and then");
+    Object.defineProperty(view._space, "animating", { value: true, configurable: true });
+    assert.equal(view._frameDelay(), 60, "about 16 frames a second, not every frame");
+    view._screenSpeed = () => 100;
+    assert.equal(view._frameDelay(), 0, "something crossing the screen still gets them all");
+    view._screenSpeed = () => 0;
+    view._clock.simulate({ fromS: T0, toS: T0 + 600, visibleStartS: T0 + 100, visibleEndS: T0 + 200 });
+    assert.equal(view._frameDelay(), 0, "and so does a simulation");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a reconnect ends the waits after failures, so that nothing stays missing for minutes", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = passView(clock, [makePass(T0 + 600, T0 + 900)]);
+    view.isConnected = true;
+    view._focusFailed = 25544;
+    view._focusRetryAt = performance.now() + 300000;
+    view._focusDelay = 300000;
+    view._cloud._failed = "live";
+    view._cloud._retryAt = performance.now() + 300000;
+    view._whenShown = (kind, fn) => fn();
+    view._refresh = async () => {};
+    view._refreshMapToken = async () => {};
+    view._onReady();
+    assert.equal(view._focusFailed, null);
+    assert.equal(view._focusRetryAt, 0);
+    assert.equal(view._cloud._failed, null);
+    assert.equal(view._cloud._retryAt, 0);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("only so many approach lines are kept", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const passes = Array.from({ length: 40 }, (_, i) => makePass(T0 + 600 + i * 1800, T0 + 900 + i * 1800));
+    const { view } = passView(clock, passes);
+    for (const pass of passes) {
+      view._selectedPass = () => pass;
+      await view._loadApproach();
+    }
+    assert.equal(view._approaches.size, 24);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("new predictions drop the tracks of the old ones, as a pass can keep its id and change its way", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 900);
+    const { view, fake } = passView(clock, [pass]);
+    view._payload = null;
+    fake.hass.callWS = ((callWS) => (msg) => (msg.type === "satellite_spotter/passes" ? Promise.resolve({ ...makePayload([pass]), searched_at: searched }) : callWS(msg)))(fake.hass.callWS);
+    let searched = 100;
+    await view._refresh(true);
+    await view._loadDetail(pass);
+    assert.ok(view._details.has(pass.id));
+    await view._refresh(true);
+    assert.ok(view._details.has(pass.id), "the same predictions: nothing changes");
+    searched = 200;
+    view._loadDetail = async () => null;
+    await view._refresh(true);
+    assert.equal(view._details.has(pass.id), false);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a pin that has stepped aside is out of the keyboard's way too", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const source = globe.SatelliteGlobeView.prototype._placeLabels.toString();
+    assert.match(source, /el\.inert = away/);
   } finally {
     clock.restore();
   }

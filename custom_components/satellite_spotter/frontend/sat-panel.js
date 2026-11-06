@@ -119,25 +119,20 @@ export class SatelliteSpotterPanel extends BaseElement {
 
   /** Load the panel's text in Home Assistant's language (the globe loads its own). */
   async _useLanguage() {
-    const language = this._hass?.language || "en";
-    if (language === this._language || Date.now() < (this._languageRetryAt || 0)) return;
-    this._language = language;
+    if (Date.now() < (this._languageRetryAt || 0)) return;
     try {
-      // Browsers remember a failed module fetch, so a retry asks under a new URL.
-      const query = [VERSION && `v=${VERSION}`, this._languageAttempt && `retry=${this._languageAttempt}`].filter(Boolean).join("&");
-      const i18n = await import(`./sat-i18n.js${query ? `?${query}` : ""}`);
-      const strings = await i18n.loadStrings(language);
-      if (this._language !== language) return;
-      this._strings = strings;
-      this._applyStrings();
-      if (strings.language !== i18n.resolveLanguage(language)) {
-        // English stands in for a translation that did not download: try it again later.
-        this._language = undefined;
-        this._languageRetryAt = Date.now() + RETRY_MS;
+      if (!this._language) {
+        // Browsers remember a failed module fetch, so a retry asks under a new URL.
+        const query = [VERSION && `v=${VERSION}`, this._languageAttempt && `retry=${this._languageAttempt}`].filter(Boolean).join("&");
+        const i18n = await import(`./sat-i18n.js${query ? `?${query}` : ""}`);
+        this._language ??= new i18n.StringsFollower((strings) => {
+          this._strings = strings;
+          this._applyStrings();
+        });
       }
+      await this._language.follow(this._hass?.language);
     } catch (err) {
       // Let an update after RETRY_MS try again, not every update fail at once.
-      if (this._language === language) this._language = undefined;
       this._languageAttempt = (this._languageAttempt || 0) + 1;
       this._languageRetryAt = Date.now() + RETRY_MS;
       console.warn("Satellite Spotter:", err);
@@ -267,6 +262,7 @@ export class SatelliteSpotterPanel extends BaseElement {
           color: #cbd5e1; font-family: var(--ha-font-family-body, Roboto, sans-serif);
           background: radial-gradient(ellipse at 50% 42%, #0b1a3a 0%, #040814 58%, #000 100%); }
         .error p { max-width: 420px; margin: 0; line-height: 1.5; }
+        .booting { display: grid; place-items: center; height: 100%; color: #94a3b8; font: 14px var(--ha-font-family-body, Roboto, system-ui, sans-serif); }
       </style>
       <header>
         <button class="menu" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${MENU_ICON}"/></svg></button>
@@ -276,7 +272,7 @@ export class SatelliteSpotterPanel extends BaseElement {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"/></svg>
         </div>
       </header>
-      <main></main>`;
+      <main><div class="booting" role="status" aria-label="Loading">Loading…</div></main>`;
     this._menu = root.querySelector("button.menu");
     this._title = root.querySelector("h1");
     this._title.textContent = TITLE;

@@ -8,9 +8,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
-from homeassistant.components.calendar import CalendarEntity
+from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.components.calendar.const import DATA_COMPONENT
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -19,9 +20,9 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from custom_components.satellite_spotter.calendar import (
     PassText,
     event_times,
-    resolve_language,
 )
 from custom_components.satellite_spotter.celestrak import CatalogError
+from custom_components.satellite_spotter.texts import resolve_language
 
 from .common import (
     INTEGRATION,
@@ -290,7 +291,7 @@ async def test_every_language_fills_in_the_whole_description(
     description = text_in(language).description(_worked_example())
     assert "{" not in description
     assert "}" not in description
-    best, first, last, clouds, others, link = description.split("\n")
+    best, first, last, rating, clouds, others, link = description.split("\n")
     assert all(when in line for when, line in zip(
         ("06:02:30", "06:00:00", "06:05:00"), (best, first, last), strict=True
     ))  # fmt: skip
@@ -301,6 +302,7 @@ async def test_every_language_fills_in_the_whole_description(
     assert f"-2{words['decimal_separator']}5" in best
     assert words["compass_w"] in first
     assert words["compass_e"] in last
+    assert words["rating_great"] in rating
     assert "12" in clouds
     assert "2" in others
     assert link.endswith("https://en.wikipedia.org/wiki/International_Space_Station")
@@ -311,6 +313,7 @@ async def test_the_description_in_english_worked_out_by_hand(hass: HomeAssistant
         "Best view at 06:02:30: NW, 40° high, magnitude -2.5.",
         "First visible at 06:00:00 toward W, 21° high.",
         "Last visible at 06:05:00 toward E, 10° high.",
+        "Rating: Great.",
         "Cloud cover near the pass: 12%.",
         "This pass includes 2 satellites.",
         "Object: ISS — https://en.wikipedia.org/wiki/International_Space_Station",
@@ -322,6 +325,7 @@ async def test_the_description_in_german_worked_out_by_hand(hass: HomeAssistant)
         "Beste Sicht um 06:02:30: NW, 40° hoch, Helligkeit -2,5.",
         "Zuerst sichtbar um 06:00:00 in Richtung W, 21° hoch.",
         "Zuletzt sichtbar um 06:05:00 in Richtung O, 10° hoch.",
+        "Bewertung: Großartig.",
         "Bewölkung während des Überflugs: 12 %.",
         "Zu diesem Überflug gehören 2 Satelliten.",
         "Objekt: ISS — https://en.wikipedia.org/wiki/International_Space_Station",
@@ -337,14 +341,14 @@ async def test_the_description_in_french_uses_french_winds_and_a_comma(hass: Hom
 
 async def test_a_single_satellite_says_nothing_about_a_group(hass: HomeAssistant) -> None:
     lines = text_in("en").description(bright_pass(NOW, cloud_cover=5)).split("\n")
-    assert len(lines) == 5
+    assert len(lines) == 6
     assert not any("includes" in line for line in lines)
     assert any("Cloud cover" in line for line in lines)
 
 
 async def test_no_forecast_says_nothing_about_clouds(hass: HomeAssistant) -> None:
     lines = text_in("en").description(bright_pass(NOW)).split("\n")
-    assert len(lines) == 4
+    assert len(lines) == 5
     assert not any("Cloud cover" in line for line in lines)
 
 
@@ -550,3 +554,92 @@ async def test_the_event_is_the_first_not_over_by_its_own_times(
     freezer.move_to(start + timedelta(seconds=60))
     assert entity.event is not None
     assert entity.event.summary == "🔭 SECOND"
+
+
+# Across a change of the clocks.
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "local_start", "local_end"),
+    [
+        pytest.param(
+            "2026-11-01T05:58:30+00:00",
+            "2026-11-01T06:01:30+00:00",
+            "2026-11-01T01:58:30-04:00",
+            "2026-11-01T01:59:59-04:00",
+            id="across the clock going back: it ends just before the change",
+        ),
+        pytest.param(
+            "2026-11-01T05:58:30+00:00",
+            "2026-11-01T05:59:30+00:00",
+            "2026-11-01T01:58:30-04:00",
+            "2026-11-01T01:59:30-04:00",
+            id="just before it",
+        ),
+        pytest.param(
+            "2026-11-01T06:02:00+00:00",
+            "2026-11-01T06:05:00+00:00",
+            "2026-11-01T01:02:00-05:00",
+            "2026-11-01T01:05:00-05:00",
+            id="in the hour that repeats",
+        ),
+        pytest.param(
+            "2026-03-08T06:58:30+00:00",
+            "2026-03-08T07:01:30+00:00",
+            "2026-03-08T01:58:30-05:00",
+            "2026-03-08T03:01:30-04:00",
+            id="across the clock going forward: nothing lost",
+        ),
+    ],
+)
+async def test_a_pass_across_a_clock_change_keeps_as_much_as_a_calendar_can_hold(
+    hass: HomeAssistant, start: str, end: str, local_start: str, local_end: str
+) -> None:
+    await hass.config.async_set_time_zone("America/New_York")
+    first, last = datetime.fromisoformat(start), datetime.fromisoformat(end)
+    p = bright_pass(first, (last - first).total_seconds())
+    event_start, event_end = event_times(p)
+    assert event_start.isoformat() == local_start
+    assert event_end.isoformat() == local_end
+    # Home Assistant's own checks of an event, which go by the wall clock.
+    assert CalendarEvent(start=event_start, end=event_end, summary="ISS").summary == "ISS"
+
+
+async def test_a_pass_starting_in_the_last_second_before_the_clock_goes_back_still_has_an_event(
+    hass: HomeAssistant,
+) -> None:
+    await hass.config.async_set_time_zone("America/New_York")
+    p = bright_pass(datetime.fromisoformat("2026-11-01T05:59:59+00:00"), 120)
+    start, end = event_times(p)
+    assert CalendarEvent(start=start, end=end, summary="ISS").summary == "ISS"
+
+
+async def test_a_calendar_asked_about_the_hour_that_repeats_goes_by_real_time(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    await hass.config.async_set_time_zone("America/New_York")
+    freezer.move_to("2026-10-31T12:00:00+00:00")
+    # 01:30 the second time round, which reads earlier than the range's end at 01:40 the first.
+    p = bright_pass(datetime.fromisoformat("2026-11-01T06:30:00+00:00"), 60)
+    predict_passes.return_value = [p]
+    entry = await add_location(hass)
+    calendar = next(
+        e
+        for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if e.domain == "calendar"
+    )
+    answer = await hass.services.async_call(
+        "calendar",
+        "get_events",
+        {
+            "entity_id": calendar.entity_id,
+            "start_date_time": "2026-11-01T05:00:00+00:00",
+            "end_date_time": "2026-11-01T05:40:00+00:00",
+        },
+        blocking=True,
+        return_response=True,
+    )
+    assert answer[calendar.entity_id]["events"] == []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 import csv
 from types import SimpleNamespace
 from typing import Any
@@ -27,7 +28,7 @@ from custom_components.satellite_spotter.celestrak import (
 )
 from custom_components.satellite_spotter.const import ATTRIBUTION, USER_AGENT
 
-from .common import INTEGRATION, gp_csv
+from .common import INTEGRATION, gp_csv, unreadable_csv
 
 # A circular orbit about 300 km up, and one about 550 km up.
 LOW = 15.9
@@ -350,9 +351,61 @@ async def test_no_answer_at_all_is_only_a_failure(
 
 async def test_a_redirect_is_an_answer_rather_than_something_to_follow() -> None:
     """CelesTrak asks software to stop at any answer but 200, and a redirect is one."""
-    answer = SimpleNamespace(status=200, text=AsyncMock(return_value="NORAD_CAT_ID"))
+
+    async def chunks(_size: int) -> AsyncIterator[bytes]:
+        yield b"NORAD_CAT_ID"
+
+    answer = SimpleNamespace(status=200, content=SimpleNamespace(iter_chunked=chunks))
     session = MagicMock()
     session.get.return_value.__aenter__ = AsyncMock(return_value=answer)
     session.get.return_value.__aexit__ = AsyncMock(return_value=False)
     await _async_download(session, GP_URL, QUERIES[0])
     assert session.get.call_args.kwargs["allow_redirects"] is False
+
+
+# Answers that are not what they say.
+
+
+@pytest.mark.usefixtures("usual_csv_limit")
+def test_an_answer_csv_cannot_read_counts_as_a_refusal() -> None:
+    with pytest.raises(DownloadRefused, match="could not be read"):
+        build_catalog([unreadable_csv()])
+
+
+def test_an_object_twice_with_no_date_counts_as_a_refusal() -> None:
+    with pytest.raises(DownloadRefused, match="could not be read"):
+        build_catalog(["NORAD_CAT_ID,OBJECT_NAME\n1,A\n1,A\n"])
+
+
+@pytest.mark.usefixtures("usual_csv_limit")
+def test_a_supplement_csv_cannot_read_costs_nothing_else() -> None:
+    answer = gp_csv([_row(25544, "ISS (ZARYA)")])
+    table = {25544: -1.0}
+    with patch(
+        "custom_components.satellite_spotter.celestrak.brightness_table", return_value=table
+    ):
+        built = build_catalog([answer], [unreadable_csv()])
+    assert [sat.norad_id for sat in built] == [25544]
+
+
+async def test_too_much_of_an_answer_stops_the_download_and_counts_as_a_refusal(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    with patch("custom_components.satellite_spotter.celestrak.MAX_CATALOG_BYTES", 100):
+        _mock_answers(aioclient_mock, text="NORAD_CAT_ID" + "x" * 200_000)
+        with pytest.raises(DownloadRefused, match="too much"):
+            await async_fetch_catalog(hass)
+    assert aioclient_mock.call_count == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "says"),
+    [(TimeoutError(), "TimeoutError"), (aiohttp.ClientError("no route"), "no route")],
+)
+async def test_an_error_with_nothing_to_say_is_named(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, error: Exception, says: str
+) -> None:
+    _mock_answers(aioclient_mock, exc=error)
+    with pytest.raises(CatalogError) as caught:
+        await async_fetch_catalog(hass)
+    assert str(caught.value) == f"Could not reach CelesTrak: {says}"

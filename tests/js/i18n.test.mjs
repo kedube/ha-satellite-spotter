@@ -111,6 +111,7 @@ const BUILT = [
   ...["morning", "afternoon"].flatMap((p) => [`time.this_${p}`, `time.yesterday_${p}`]),
   ...["morning", "afternoon", "evening"].flatMap((p) => [`time.tomorrow_${p}`, `time.weekday_${p}`]),
   ...["faint", "easy", "bright", "very_bright", "dazzling"].map((b) => `brightness.${b}`),
+  ...["great", "good", "fair", "poor"].map((r) => `rating.${r}`),
   ...["clear", "partly", "cloudy"].map((c) => `passes.cloud_${c}`),
   ...["iss", "tiangong", "hubble", "starlink", "rocket", "debris", "satellite"].map((k) => `kinds.${k}`),
   // sat-passes.js (D2): the buttons on each pass.

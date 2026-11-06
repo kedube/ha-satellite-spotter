@@ -134,8 +134,10 @@ async def test_nothing_is_asked_during_the_wait(
 ) -> None:
     await refused_first_use(manager)
     freezer.move_to(NOW + later)
+    if retry_now:
+        manager.forget_failed_download()
     with pytest.raises(DownloadRefused, match="two hours"):
-        await manager.async_satellites(retry_now=retry_now)
+        await manager.async_satellites()
     assert fetch.await_count == 1
 
 
@@ -203,7 +205,8 @@ async def test_a_refusal_during_a_refresh_keeps_the_old_catalog_and_waits(
     assert manager.last_error == REFUSAL
     assert fetch.await_count == 2
     freezer.move_to(refused_at + TWO_HOURS - SECOND)
-    assert await manager.async_satellites(retry_now=True) == catalog
+    manager.forget_failed_download()
+    assert await manager.async_satellites() == catalog
     assert fetch.await_count == 2
     freezer.move_to(refused_at + TWO_HOURS)
     await manager.async_satellites()
@@ -234,8 +237,9 @@ async def test_a_refusal_replaces_a_pending_retry_with_the_longer_wait(
     with pytest.raises(CatalogError):
         await manager.async_satellites()
     fetch.side_effect = DownloadRefused(REFUSAL)
+    manager.forget_failed_download()
     with pytest.raises(DownloadRefused):
-        await manager.async_satellites(retry_now=True)
+        await manager.async_satellites()
     assert fetch.await_count == 2
     freezer.move_to(NOW + timedelta(minutes=5))
     with pytest.raises(DownloadRefused):
@@ -353,8 +357,9 @@ async def test_someone_adding_a_location_after_a_restart_does_not_shorten_the_wa
 ) -> None:
     await refused_first_use(manager)
     again = await restart(hass)
+    again.forget_failed_download()
     with pytest.raises(DownloadRefused):
-        await again.async_satellites(retry_now=True)
+        await again.async_satellites()
     assert fetch.await_count == 1
 
 
@@ -662,8 +667,9 @@ async def test_removing_the_last_location_within_the_delayed_write_keeps_the_wai
     assert stored(hass_storage)["refused_until"] == (NOW + TWO_HOURS).isoformat()
     assert SHARED_CATALOG not in hass.data
 
+    async_shared_catalog(hass).forget_failed_download()
     with pytest.raises(DownloadRefused, match="two hours"):
-        await async_shared_catalog(hass).async_satellites(retry_now=True)
+        await async_shared_catalog(hass).async_satellites()
     assert fetch.await_count == 1
 
 
@@ -727,7 +733,8 @@ async def test_removing_keeps_the_catalog_beside_a_refusal(
     await manager.async_satellites()
     await async_remove_catalog(hass)
     again = async_shared_catalog(hass)
-    assert await again.async_satellites(retry_now=True) == catalog
+    again.forget_failed_download()
+    assert await again.async_satellites() == catalog
     assert fetch.await_count == 2
     assert again.updated == NOW
 
@@ -740,7 +747,8 @@ async def test_a_download_within_two_hours_needs_no_second_after_removing_and_ad
     fetch.return_value = catalog
     await manager.async_satellites()
     await async_remove_catalog(hass)
-    assert await async_shared_catalog(hass).async_satellites(retry_now=True) == catalog
+    async_shared_catalog(hass).forget_failed_download()
+    assert await async_shared_catalog(hass).async_satellites() == catalog
     assert fetch.await_count == 1
 
 
@@ -1087,5 +1095,8 @@ async def test_a_stale_stored_catalog_does_not_get_around_a_stored_refusal(
         },
     )
     entry = await add_location(hass)
-    assert entry.state is ConfigEntryState.SETUP_RETRY
+    await hass.async_block_till_done(wait_background_tasks=True)
+    # Set up, to say why there are no passes, and CelesTrak left alone.
+    assert entry.state is ConfigEntryState.LOADED
+    assert not entry.runtime_data.last_update_success
     fetch.assert_not_awaited()

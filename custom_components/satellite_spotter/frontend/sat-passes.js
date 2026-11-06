@@ -31,7 +31,7 @@ const MOON_LIT = 0.4;
 // The Moon's state is worked out once per pass and place (the list redraws often).
 const MOON_CACHE_SIZE = 256;
 
-const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+export const { esc } = await import(`./sat-text.js${VERSION}`);
 const byStart = (a, b) => a.start - b.start || a.end - b.end;
 
 // ---- Helpers shared by the views ---------------------------------------------------
@@ -246,6 +246,7 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
   const cloud = fmt.cloud(pass.cloud_cover);
   const member = notableMember(pass);
   const moonSays = moonText(moon, fmt);
+  const rating = fmt.rating?.(pass) ?? null;
 
   const badges = [
     pass.bright ? `<span class="badge star" title="${esc(fmt.t("passes.bright"))}">${theme.svgIcon("star")}</span>` : "",
@@ -266,6 +267,7 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
           <span class="title">${esc(title)}</span>${badges}
         </span>
         <span class="line meta">
+          ${rating ? `<span class="rate ${esc(rating.level)}" title="${esc(rating.says)}">${esc(rating.word)}</span>` : ""}
           <span class="mag" title="${esc(`${word} (${fmt.t("passes.magnitude", { magnitude })})`)}">${meterHtml(level)}<span class="word">${esc(word)}</span><span class="num">${esc(magnitude)}</span></span>
           ${from && to ? `<span class="dir">${esc(from)}<span class="arrow" aria-hidden="true">→</span>${esc(to)}</span>` : ""}
           <span class="dur">${esc(duration)}</span>
@@ -287,6 +289,7 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
     pass.bright ? fmt.t("passes.bright") : "",
     pass.sun_up ? fmt.t("passes.daylight") : "",
     member ? fmt.t("passes.with", { name: member.name }) : "",
+    rating?.says ?? "",
     `${word}, ${fmt.t("passes.magnitude", { magnitude })}`,
     elevation ? fmt.t("passes.up_to", { elevation }) : "",
     from && to ? fmt.t("passes.from_to", { from, to }) : "",
@@ -404,6 +407,10 @@ ol { list-style: none; margin: 0; padding: 0; }
   font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; -webkit-tap-highlight-color: transparent;
   color: var(--sat-pl-btn-ink, #e0f2fe); background: rgba(56,189,248,.14); border: 1px solid rgba(56,189,248,.45);
   transition: background .15s, border-color .15s, color .15s, transform .15s; }
+.rate { font-weight: 650; }
+.rate.great { color: var(--sat-gold-ink, #fcd34d); }
+.rate.good { color: var(--sat-sky-ink, #7dd3fc); }
+.rate.poor { color: var(--sat-ink-3, #94a3b8); font-weight: 500; }
 .act.sim { color: var(--sat-pl-sim-ink, #fae8ff); background: rgba(240,171,252,.13); border-color: rgba(240,171,252,.5); }
 .act svg { width: 15px; height: 15px; }
 @media (hover: hover) { .act:hover { background: rgba(56,189,248,.26); } .act.sim:hover { background: rgba(240,171,252,.24); } }
@@ -541,7 +548,7 @@ export class PassList {
    * @param {{latitude: number, longitude: number, elevation?: number}} [o.location] where the passes are
    *   seen from, for the Moon (passMoon)
    */
-  render(passes, { selectedId = null, nowS, filters, emptyText, days = 5, location = null } = {}) {
+  render(passes, { selectedId = null, nowS, filters, emptyText, days = 5, location = null, simulate = true } = {}) {
     if (!this._root) return;
     this._passes = Array.isArray(passes) ? passes : [];
     if (Number.isFinite(nowS)) this._now = nowS;
@@ -551,7 +558,7 @@ export class PassList {
     if (changed) this._cursor = selectedId;
     const reveal = changed && selectedId !== this._picked;
     this._picked = null;
-    this._opts = { selectedId, emptyText, days, location };
+    this._opts = { selectedId, emptyText, days, location, simulate };
     this._draw({ reveal: reveal ? "start" : null });
   }
 
@@ -720,7 +727,7 @@ export class PassList {
       this._rows.set(pass.id, row);
     }
     const acts = [
-      this._on.simulate ? ["sim", "play", "simulate"] : null,
+      this._on.simulate && this._opts.simulate !== false ? ["sim", "play", "simulate"] : null,
       this._on.street ? ["street", "street", "street"] : null,
     ]
       .filter(Boolean)
@@ -729,7 +736,8 @@ export class PassList {
           `<button class="act ${cls}" type="button" data-action="${cls}" aria-label="${esc(fmt.t(`passes.${key}`, parts))}" title="${esc(fmt.t(`passes.${key}_hint`))}">${theme.svgIcon(icon)}<span class="lbl" aria-hidden="true">${esc(fmt.t(`passes.${key}_short`))}</span></button>`
       )
       .join("");
-    const html = parts.html.replace('<span class="acts"></span>', `<span class="acts">${acts}</span>`);
+    // As a function: in text, $ means something to replace(), and a name can hold one.
+    const html = parts.html.replace('<span class="acts"></span>', () => `<span class="acts">${acts}</span>`);
     if (html !== row.html) {
       row.li.innerHTML = html;
       row.html = html;

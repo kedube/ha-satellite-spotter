@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Enter a latitude between -90° and 90° and a valid longitude.",
+      "name_required": "Enter a name for this location.",
+      "invalid_elevation": "Enter the elevation as a number of metres.",
       "cannot_connect": "Could not download the satellite catalog. Check that Home Assistant can reach the internet, then try again.",
       "download_limited": "CelesTrak, where the orbital data comes from, is not allowing another download yet. Try again in two hours.",
       "unknown": "Unexpected error while loading the satellite catalog. The log has the details."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Brightness cutoff",
           "cloud_forecast": "Cloud forecast",
+          "weather_entity": "Weather entity for clouds",
           "alert_lead_minutes": "Advance notice",
+          "min_elevation": "Minimum height",
+          "follow_entity": "Follow a person or tracker",
           "show_in_sidebar": "Show Satellite Spotter in the sidebar",
           "show_in_calendar": "Show the passes in the calendar",
           "units": "Units"
         },
         "data_description": {
           "brightness_cutoff": "A pass is listed only if it gets at least this bright. Magnitudes run backwards, so a lower number means brighter: 2.25 suits a suburban sky, 1 leaves the easy ones, and below 0 only the dazzling ones.",
-          "cloud_forecast": "Shows how cloudy Open-Meteo expects it to be at each pass. Open-Meteo receives this location's coordinates (to four decimals) every hour.",
+          "cloud_forecast": "Shows how cloudy it is expected to be at each pass. Unless you choose a weather entity below, Open-Meteo receives this location's coordinates, rounded to about a kilometre, every hour.",
+          "weather_entity": "Optional. Takes the clouds from this entity's hourly forecast, and Open-Meteo is not asked. Without cloud coverage in that forecast, passes show no clouds.",
           "alert_lead_minutes": "The \"Visible pass soon\" and \"Bright pass soon\" sensors turn on this long before the brightest satellite of the pass appears.",
+          "min_elevation": "A satellite counts only while it is at least this high. Raise it if trees or buildings hide your horizon.",
+          "follow_entity": "Optional, for travel. Passes are worked out for wherever this person or tracker is, once more than 25 km away, and at most every half hour. Open-Meteo then learns roughly where they are, unless you use a weather entity, and everyone who can open the page can see it.",
           "show_in_sidebar": "Adds a Satellite Spotter page to the sidebar with the passes, a 3D globe and a street-level view of the sky. The street view loads map tiles of the area around the location from OpenFreeMap and AWS (and from Esri with aerial imagery). The dashboard cards work either way.",
           "show_in_calendar": "Adds a calendar of the passes of the next five days, each with when and where to look. Calendar triggers can then start automations before a pass.",
           "units": "For distances and speeds on the globe and in the street view. \"Automatic\" follows Home Assistant's unit system."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Enter a number within the range shown.",
       "google_key_needed": "Enter a Google Cloud API key to show Google Street View photos.",
       "mapillary_token_needed": "Enter a Mapillary access token to show Mapillary photos.",
       "mapillary_token_format": "A Mapillary access token looks like MLY|1234…|abcd…: copy the client token of your application on mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "No photos: the 3D model"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Great",
+        "good": "Good",
+        "fair": "Fair",
+        "poor": "Poor"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Rocket stages",
+        "debris": "Debris",
+        "satellite": "Other satellites"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Next visible pass cloud cover"
       },
+      "next_visible_pass_rating": {
+        "name": "Next visible pass rating",
+        "state": {
+          "great": "Great",
+          "good": "Good",
+          "fair": "Fair",
+          "poor": "Poor"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Next visible satellite name"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "The satellite catalog's orbital elements are {age} days old, and CelesTrak's own data is just as old; predictions are paused until a fresh catalog downloads"
+    },
+    "unknown_location": {
+      "message": "This Satellite Spotter location does not exist."
+    },
+    "location_not_loaded": {
+      "message": "This Satellite Spotter location is not ready yet."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Satellite predictions are paused",
       "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and no fresher catalog could be downloaded ({error}). Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until a download succeeds. Check that Home Assistant can reach the internet: the orbital data comes from CelesTrak. This message goes away by itself once a fresh catalog arrives."
-    },
-    "catalog_stale_upstream": {
-      "title": "Satellite predictions are paused",
-      "description": "The orbital elements in the satellite catalog are {age} days old (the median over all satellites), and CelesTrak's own data is just as old: there is nothing fresher to download. Predictions from elements this old would be misleading, so the Satellite Spotter entities are unavailable until CelesTrak publishes fresher data. There is nothing to fix in Home Assistant: this message goes away by itself once a fresh catalog arrives."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Best view at {time}: {direction}, {elevation}° high, magnitude {magnitude}.",
     "calendar_disappears": "Last visible at {time} toward {direction}, {elevation}° high.",
     "calendar_together": "This pass includes {count} satellites.",
+    "calendar_rating": "Rating: {rating}.",
+    "rating_great": "Great",
+    "rating_good": "Good",
+    "rating_fair": "Fair",
+    "rating_poor": "Poor",
     "calendar_cloud_cover": "Cloud cover near the pass: {cloud_cover}%.",
     "calendar_about": "Object: {name} — {url}",
     "decimal_separator": ".",
@@ -207,5 +251,53 @@
     "compass_wnw": "WNW",
     "compass_nw": "NW",
     "compass_nnw": "NNW"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Get passes",
+      "description": "Lists a location's predicted passes, soonest first, with optional filters.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Location",
+          "description": "The location to list passes for."
+        },
+        "pass_id": {
+          "name": "Pass",
+          "description": "Only this pass, by its id: a calendar event's uid or a sensor's pass_id."
+        },
+        "start": {
+          "name": "From",
+          "description": "Only passes still going after this moment. By default, those not yet over."
+        },
+        "end": {
+          "name": "Until",
+          "description": "Only passes starting before this moment."
+        },
+        "min_rating": {
+          "name": "Minimum rating",
+          "description": "Only passes rated at least this."
+        },
+        "max_cloud_cover": {
+          "name": "Maximum cloud cover",
+          "description": "Leave out passes forecast to be cloudier than this. Passes without a forecast are kept."
+        },
+        "bright_only": {
+          "name": "Bright passes only",
+          "description": "Only passes that count as bright."
+        },
+        "kinds": {
+          "name": "Kinds of satellite",
+          "description": "Only passes that include one of these."
+        },
+        "satellite": {
+          "name": "Satellite name",
+          "description": "Only passes with a satellite whose name contains this."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "The most passes to list."
+        }
+      }
+    }
   }
 }

@@ -17,7 +17,7 @@ const VERSION = new URL(import.meta.url).search;
 
 // Modules with a top-level await of their own are kept as namespaces and read
 // when used (see sat-format.js).
-const [maplibreModule, geo, spaceModule, skyModule, i18n, theme, client, clockModule, timebarModule, formatModule, passesModule] =
+const [maplibreModule, geo, spaceModule, skyModule, i18n, theme, client, clockModule, timebarModule, formatModule, passesModule, course, cloudModule, streetHost] =
   await Promise.all([
     import(`./sat-maplibre.js${VERSION}`),
     import(`./sat-geo.js${VERSION}`),
@@ -30,11 +30,16 @@ const [maplibreModule, geo, spaceModule, skyModule, i18n, theme, client, clockMo
     import(`./sat-timebar.js${VERSION}`),
     import(`./sat-format.js${VERSION}`),
     import(`./sat-passes.js${VERSION}`),
+    import(`./sat-course.js${VERSION}`),
+    import(`./sat-cloud.js${VERSION}`),
+    import(`./sat-street-host.js${VERSION}`),
   ]);
 const {
-  bearing, circleRing, closestApproach, compass, displayAltitudeKm, esc, frameDelay, groundDistanceKm, interpolatePositions,
+  bearing, circleRing, closestApproach, compass, displayAltitudeKm, ecef, esc, frameDelay, groundDistanceKm,
   lookAngles, orbitalSpeed, positionAt, semiMajorAxisKm, subsolarPoint, sunVector, visibilityRadius, wrapLongitude,
 } = geo;
+const { courseOf, mergeRows, orbitIsEnough, orbitSpan, rowsBetween, rowsCover, tickTimes, transitRows } = course;
+const { CLOUD_MS, SatelliteCloud } = cloudModule;
 const { skyChartSvg, skyDotTransform, skyDotXY, skyPoints, SKY_STYLE } = skyModule;
 const { MAPLIBRE_DIR, loadMapLibre, mapLibreAttempts, mapLibreLocale, mapLibreNeedsReload } = maplibreModule;
 const { svgIcon, kindIcon } = theme;
@@ -42,7 +47,6 @@ export { loadMapLibre, mapLibreNeedsReload };
 
 const DEG = Math.PI / 180;
 const EARTH_ROTATION = 7.2921159e-5; // rad/s
-const WGS84_A_KM = 6378.137;
 
 // Zoomed out the map is a globe; zooming in morphs it into a flat map.
 const GLOBE_PROJECTION = ["interpolate", ["linear"], ["zoom"], 4.5, "vertical-perspective", 6, "mercator"];
@@ -89,7 +93,13 @@ const IDLE_REPAINT_MS = 5000;
 // The passes are asked for this often (Home Assistant answers from its cache),
 // and so are the positions of every satellite while they are shown.
 const REFRESH_MS = 5 * 60 * 1000;
-const CLOUD_MS = 5 * 60 * 1000;
+// A frame while a visible satellite's ring only breathes: enough to look smooth, and a phone rests.
+const BREATHING_FRAME_MS = 60;
+// Below this the satellites cross the screen too slowly to see from frame to frame (px per s).
+const HARDLY_MOVING_PX_S = 1;
+// Failed map tiles are asked for again after this long, doubling.
+const TILE_RETRY_MIN_MS = 30000;
+const TILE_RETRY_MAX_MS = 5 * 60000;
 // Passes closer than this get the dashed approach line and the fast-forward.
 const APPROACH_MAX_S = 36 * 3600;
 // The approach line: the last 50 minutes of orbit leading into the pass.
@@ -108,10 +118,16 @@ const ISS_NORAD_ID = 25544;
 // The other satellites of a pass: lines for this many, dots for up to the other number.
 const MAX_MEMBER_LINES = 6;
 const MAX_MEMBER_DOTS = 60;
+// How many passes' tracks are kept at once.
+const KEPT_PASSES = 24;
 // Chips in the pass strip.
 const STRIP_MAX = 16;
-// The street view's options, kept per browser by the street view itself (sat-street.js).
-const STREET_STORAGE = "satellite-spotter:street";
+
+/**
+ * What to add to a zoom chosen at FRAME_LATITUDE for the Earth to look the same size elsewhere:
+ * MapLibre's globe is 1/cos(latitude) times larger at the same zoom.
+ */
+const zoomAtLatitude = (latitude) => Math.log2(Math.max(Math.cos(latitude * DEG), 0.15) / Math.cos(FRAME_LATITUDE * DEG));
 
 const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -120,14 +136,14 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
  * MapLibre light pointing at the real Sun, so the atmosphere glows on the day
  * side. Live updates apply at once; the simulation eases its bigger jumps.
  */
-function sunLight(date, transitionMs = 0) {
+export function sunLight(date, transitionMs = 0) {
   const s = subsolarPoint(date);
   const lat = s.lat * DEG;
   const lon = s.lon * DEG;
-  // A map-anchored light is expressed in a globe frame turned half a turn
-  // about the poles from the one tiles are drawn in (found by rendering the
-  // four candidate axis conventions over known day and night views).
-  const v = [-Math.sin(lon) * Math.cos(lat), Math.sin(lat), -Math.cos(lon) * Math.cos(lat)];
+  // A map-anchored light is expressed in a frame of its own, in which north points the opposite way
+  // to the Sun's declination and the longitudes run half a turn off. Checked in real MapLibre, by
+  // which limb glows in June and in December, and over known day and night views.
+  const v = [-Math.sin(lon) * Math.cos(lat), -Math.sin(lat), -Math.cos(lon) * Math.cos(lat)];
   const polar = Math.acos(Math.max(-1, Math.min(1, v[2]))) / DEG;
   const az = (((Math.atan2(v[1], v[0]) / DEG - 90) % 360) + 360) % 360;
   return {
@@ -157,50 +173,9 @@ function setHtml(el, html) {
 /** The satellite a pass is named after (the first of its transits). */
 const leader = (pass) => pass?.transits?.[0] ?? null;
 
-/** Rows within [from, to] (unix s), the part of a pass that can be seen. */
-function rowsBetween(rows, from, to) {
-  return (rows || []).filter((r) => r[0] >= from - 1 && r[0] <= to + 1);
-}
-
-/** One satellite's rows of a pass_track payload, or null if it could not be placed. */
-export function transitRows(detail, index) {
-  return detail?.transits?.[index]?.rows ?? null;
-}
-
 /** Where one satellite of a pass_track payload is at t, for every frame. */
 export function transitPositionAt(detail, index, t) {
   return positionAt(transitRows(detail, index), t);
-}
-
-/**
- * Tracks of one satellite merged in time order, finer ones winning where
- * they overlap: the orbit at 30 s, the pass itself at 2 s.
- */
-export function mergeRows(...tracks) {
-  const parts = tracks.filter((t) => t?.length > 1);
-  if (!parts.length) return [];
-  if (parts.length === 1) return parts[0];
-  // Finest last: it replaces the coarser rows over its own span.
-  parts.sort((a, b) => (b[1][0] - b[0][0]) - (a[1][0] - a[0][0]));
-  let merged = parts[0];
-  for (const fine of parts.slice(1)) {
-    const lo = fine[0][0];
-    const hi = fine[fine.length - 1][0];
-    merged = [...merged.filter((r) => r[0] < lo || r[0] > hi), ...fine].sort((a, b) => a[0] - b[0]);
-  }
-  return merged;
-}
-
-/** Whether rows cover [from, to] without a gap longer than `gap` seconds. */
-export function rowsCover(rows, from, to, gap = 300) {
-  if (!rows?.length || rows[0][0] > from + gap || rows[rows.length - 1][0] < to - gap) return false;
-  for (let i = 1; i < rows.length; i++) if (rows[i][0] - rows[i - 1][0] > gap) return false;
-  return true;
-}
-
-function ecef(lat, lon, altKm) {
-  const r = WGS84_A_KM + altKm;
-  return [r * Math.cos(lat * DEG) * Math.cos(lon * DEG), r * Math.cos(lat * DEG) * Math.sin(lon * DEG), r * Math.sin(lat * DEG)];
 }
 
 /**
@@ -473,8 +448,14 @@ export class SatelliteGlobeView extends BaseElement {
     this._skyCharts = new WeakMap();
     // English until Home Assistant's language has loaded (see _useLanguage).
     this._strings = i18n.english;
-    this._language = "en";
-    this._languageReady = Promise.resolve();
+    this._language = new i18n.StringsFollower(
+      (strings) => {
+        this._strings = strings;
+        this._fmt.update(this._hass, strings);
+        this._applyStrings();
+      },
+      { have: i18n.english }
+    );
     this._fmt = new formatModule.Formatter(null, i18n.english);
     this._clockOffset = 0;
     this._gen = 0;
@@ -504,19 +485,39 @@ export class SatelliteGlobeView extends BaseElement {
     this._sim = null;
     this._simRows = null;
     this._showCloud = null;
+    this._cloud = new SatelliteCloud({
+      canAsk: () => this._cloudWanted() && !!this._hass && !!this._loaded && !this._payload?.paused,
+      request: () => this._cloudRequest(),
+      fetchPositions: (want) => this._client.positions({ ...want, step: 60, entryId: this._entryId() }),
+      fetchCatalog: (version) => this._client.catalog({ version, entryId: this._entryId() }),
+      nowS: () => this._now() / 1000,
+      cloudOf: (catalog, ids) => spaceModule.cloudFromCatalog(catalog, ids),
+      toLayer: (ll, out) => spaceModule.cloudPositions(ll, out),
+      onLoaded: () => {
+        this._updateCloudFlags();
+        this._courseChanged = true;
+      },
+      whenShown: (fn) => this._whenShown("cloud", fn),
+      describe: (err) => this._errorMessage(err),
+    });
     this._onVisibility = () => (document.hidden ? this._pause() : this._resume());
+    this._onOnline = () => this._retryTilesNow();
     // Work put off while the globe cannot be seen, by kind (see _whenShown).
     this._pendingShown = new Map();
     this._onReady = () =>
       this._whenShown("ready", () => {
-        // Home Assistant is back after a restart or a dropped connection.
+        // Home Assistant is back after a restart or a dropped connection: nothing waits for it now.
         this._staleDelay = this._staleRetryAt = 0;
+        this._focusFailed = null;
+        this._focusRetryAt = this._focusDelay = 0;
+        this._cloud.retrySoon();
         if (!this._map) {
           if (this.isConnected) this._start();
           return;
         }
         this._refreshMapToken(true);
         this._refresh();
+        this._retryTilesNow();
       });
   }
 
@@ -587,6 +588,7 @@ export class SatelliteGlobeView extends BaseElement {
   connectedCallback() {
     clearTimeout(this._teardownTimer);
     document.addEventListener("visibilitychange", this._onVisibility);
+    globalThis.addEventListener?.("online", this._onOnline);
     if (this._hass) {
       this._watchConnection();
       this._start();
@@ -603,7 +605,8 @@ export class SatelliteGlobeView extends BaseElement {
     clearTimeout(this._retryTimer);
     clearTimeout(this._refreshTimer);
     clearTimeout(this._teardownTimer);
-    clearTimeout(this._cloudTimer);
+    this._cloud.stopRetrying();
+    globalThis.removeEventListener?.("online", this._onOnline);
     // Coming back starts, or refreshes, whatever is needed then.
     this._pendingShown.clear();
     // Free the WebGL context if the view stays away (dashboards rebuild cards).
@@ -676,7 +679,7 @@ export class SatelliteGlobeView extends BaseElement {
         </section>
         <div class="hud glass telemetry" hidden></div>
         <div class="hud timebar-host" hidden></div>
-        <div class="hud loader"><div><div class="orbit"></div><div class="msg"></div>
+        <div class="hud loader" role="status"><div><div class="orbit"></div><div class="msg"></div>
           <button class="btn reload-btn" type="button" hidden data-t="globe.reload"></button></div></div>
       </div>`;
     const $ = (sel) => root.querySelector(sel);
@@ -795,22 +798,8 @@ export class SatelliteGlobeView extends BaseElement {
    * text stays English and the language is tried again after a minute.
    */
   _useLanguage(hass) {
-    const language = i18n.resolveLanguage(hass?.language || hass?.locale?.language);
-    const retry = this._strings.language !== language && !(performance.now() - this._languageAt < 60000);
-    if (language === this._language && !retry) return this._languageReady;
-    this._language = language;
-    this._languageAt = performance.now();
-    this._languageReady = i18n
-      .loadStrings(language)
-      .then((strings) => {
-        if (this._language !== language || strings === this._strings) return;
-        this._strings = strings;
-        this._fmt.update(this._hass, strings);
-        this._applyStrings();
-      })
-      // Never rejects: starting the globe waits on it.
-      .catch((err) => console.error("Satellite Spotter: could not apply the language:", err));
-    return this._languageReady;
+    // Never rejects: starting the globe waits on it.
+    return this._language.follow(hass?.language || hass?.locale?.language);
   }
 
   /** Put the text into the page in the current language, and redraw what shows it. */
@@ -925,10 +914,13 @@ export class SatelliteGlobeView extends BaseElement {
     clearTimeout(this._lightsTimer);
     clearTimeout(this._tilesTimer);
     clearTimeout(this._contextTimer);
-    clearTimeout(this._cloudTimer);
+    clearTimeout(this._tileRetryTimer);
+    this._tileRetryTimer = null;
+    this._cloud.detach();
     cancelAnimationFrame(this._hoverRaf);
     this._hoverRaf = null;
     this._failedTiles = {};
+    this._modeToKeep = this._mode === "follow" || this._mode === "chase" ? this._mode : null;
     this._menu?.remove();
     this._menu = null;
     this._homeMarker?.remove();
@@ -948,11 +940,10 @@ export class SatelliteGlobeView extends BaseElement {
       // Already gone.
     }
     this._map = null;
+    this._noMap = false;
     this._loaded = false;
     this._starting = false;
     this._space = this._night = null;
-    // The new layer needs the cloud handed to it again.
-    this._cloudIdsKey = null;
     for (const el of this._labels.values()) el.remove();
     this._labels.clear();
   }
@@ -982,6 +973,10 @@ export class SatelliteGlobeView extends BaseElement {
 
   _resume() {
     this._runPendingShown();
+    if (this._noMap) {
+      this._resumeWithoutMap();
+      return;
+    }
     if (!this.isConnected || !this._map || !this._loaded || this._running || document.hidden || this._onScreen === false) {
       return;
     }
@@ -999,11 +994,30 @@ export class SatelliteGlobeView extends BaseElement {
     const elsewhere = !!this._config.entry_id && this._payload?.location.entry_id !== this._config.entry_id;
     if (elsewhere || !(performance.now() - this._payloadAt < REFRESH_MS)) this._refresh();
     this._loadCloud();
+    this._retryTilesNow();
     this._updateLight();
     this._map.resize();
     this._mapSize = [this._els.map.clientWidth, this._els.map.clientHeight];
     this._frame();
     this._scheduleFrames();
+    this._tick();
+  }
+
+  /** No WebGL: the globe stays away, while the countdown and the passes carry on without it. */
+  _showWithoutMap() {
+    this._noMap = true;
+    this._applyLayout();
+    this._reconcileSelection();
+    this._renderList();
+    this._renderStrip();
+    this._resumeWithoutMap();
+  }
+
+  _resumeWithoutMap() {
+    if (this._running || !this._shown()) return;
+    this._running = true;
+    this._timers.push(setInterval(() => this._tick(), 1000));
+    this._timers.push(setInterval(() => this._refresh(), REFRESH_MS));
     this._tick();
   }
 
@@ -1040,9 +1054,11 @@ export class SatelliteGlobeView extends BaseElement {
   _frameDelay() {
     // Kept for _frame: 0 while the satellite is out of sight.
     this._onScreenSpeed = this._screenSpeed();
-    // A simulation that plays, and the breathing rings of satellites visible now, need every frame.
-    const animating = (this._clock.mode === "sim" && this._clock.playing) || !!this._space?.animating;
-    return frameDelay(this._onScreenSpeed, { chase: this._mode === "chase", preview: animating });
+    // A simulation that plays needs every frame.
+    const simulating = this._clock.mode === "sim" && this._clock.playing;
+    const delay = frameDelay(this._onScreenSpeed, { chase: this._mode === "chase", preview: simulating });
+    // The rings of satellites visible now only breathe.
+    return this._space?.animating ? Math.min(delay, BREATHING_FRAME_MS) : delay;
   }
 
   /** How fast things move across the screen, in CSS pixels per second (0 when nothing is in sight). */
@@ -1089,10 +1105,6 @@ export class SatelliteGlobeView extends BaseElement {
     return Date.now() + this._clockOffset;
   }
 
-  _syncClock(serverTime, sentMs, receivedMs) {
-    this._clockOffset = client.nextClockOffset(this._clockOffset, serverTime, sentMs, receivedMs);
-  }
-
   _entryId() {
     return this._payload?.location?.entry_id ?? this._config.entry_id;
   }
@@ -1105,12 +1117,14 @@ export class SatelliteGlobeView extends BaseElement {
     const entry = this._config.entry_id;
     let payload;
     let relocated;
+    let newSearch;
     try {
-      const sent = Date.now();
-      payload = await this._client.passes(entry);
+      const fetched = await this._client.fetchPasses(entry, this._clockOffset);
       if (gen !== this._gen) return false; // The location changed meanwhile.
-      this._syncClock(payload.server_time, sent, Date.now());
+      ({ payload, newSearch } = fetched);
+      this._clockOffset = fetched.offsetMs;
       relocated = !!this._payload && payload.location?.entry_id !== this._payload.location?.entry_id;
+      if (newSearch) this._newPredictions();
       this._gone = false;
       this._payload = payload;
       this._payloadAt = performance.now();
@@ -1135,13 +1149,17 @@ export class SatelliteGlobeView extends BaseElement {
     } finally {
       if (gen === this._gen) this._fetching = false;
     }
-    if (!this._loaded) return true;
+    if (!this._loaded && !this._noMap) return true;
     // Drawn apart from the request: a drawing bug is not a failed request, so
     // it is not shown as one, and the new data stays in.
     try {
-      this._showMessage("");
+      if (this._loaded) this._showMessage("");
       this._dataChanged();
       if (relocated) this._setMode("home");
+      // The pass on show may have kept its id and taken another way across the sky.
+      if (newSearch) this._loadDetail(this._shownPass()).catch(() => {});
+      // A location that follows someone has moved with them.
+      if (this._street) this._street.location = { ...this._street.location, ...payload.location };
     } catch (err) {
       console.error("Satellite Spotter: could not draw the new data:", err);
     }
@@ -1196,10 +1214,10 @@ export class SatelliteGlobeView extends BaseElement {
       this._mapToken = token;
       this._mapTokenAt = performance.now();
       if (retryTiles) {
-        this._refreshHaTiles();
+        this._refreshFailedTiles();
         // Requests already under way with the old token fail a moment later.
         clearTimeout(this._tilesTimer);
-        this._tilesTimer = setTimeout(() => this._refreshHaTiles(), 2000);
+        this._tilesTimer = setTimeout(() => this._refreshFailedTiles(), 2000);
       }
     } catch (err) {
       // Keep a token that may still be valid; only an older Home Assistant has none.
@@ -1207,12 +1225,31 @@ export class SatelliteGlobeView extends BaseElement {
     }
   }
 
+  /** Everything that could not be had is worth another try: the internet or Home Assistant is back. */
+  _retryTilesNow() {
+    clearTimeout(this._tileRetryTimer);
+    this._tileRetryTimer = null;
+    this._tileDelay = 0;
+    this._refreshFailedTiles();
+  }
+
+  /** Tiles that failed for a reason that passes are asked for again later, backing off. */
+  _retryTilesLater() {
+    if (this._tileRetryTimer) return;
+    this._tileDelay = client.nextDelay(this._tileDelay, TILE_RETRY_MIN_MS, TILE_RETRY_MAX_MS);
+    this._tileRetryTimer = setTimeout(() => {
+      this._tileRetryTimer = null;
+      this._whenShown("tiles", () => this._refreshFailedTiles());
+    }, this._tileDelay);
+  }
+
   /**
-   * Fetch again the Home Assistant tiles that failed (an expired token, or a
-   * restart). They are named one by one: refreshing a whole vector source
-   * leaves its failed tiles waiting for a reply that never comes.
+   * Fetch again the tiles that failed (no internet, an expired token, a
+   * restart). They are named one by one: MapLibre never asks for a failed tile
+   * again by itself, and refreshing a whole vector source leaves its failed
+   * tiles waiting for a reply that never comes.
    */
-  _refreshHaTiles() {
+  _refreshFailedTiles() {
     const map = this._map;
     if (!map || !this._loaded) return;
     for (const [id, tiles] of Object.entries(this._failedTiles)) {
@@ -1244,7 +1281,7 @@ export class SatelliteGlobeView extends BaseElement {
     const detail = await this._client.passTrack(pass.id, { entryId: this._entryId() });
     if (gen !== this._gen || !detail?.transits) return null;
     this._details.set(pass.id, detail);
-    while (this._details.size > 24) this._details.delete(this._details.keys().next().value);
+    while (this._details.size > KEPT_PASSES) this._details.delete(this._details.keys().next().value);
     this._detailArrived(pass);
     return detail;
   }
@@ -1276,6 +1313,7 @@ export class SatelliteGlobeView extends BaseElement {
       const rows = await this._track(lead.norad_id, Math.max(now, pass.start - APPROACH_LINE_S), pass.start, 30);
       if (gen !== this._gen) return;
       this._approaches.set(pass.id, rows);
+      while (this._approaches.size > KEPT_PASSES) this._approaches.delete(this._approaches.keys().next().value);
       if (this._selectedId === pass.id && this._loaded && this._clock.mode === "live") {
         this._space?.setLine("approach", rows, this._baseT);
         this._courseChanged = true;
@@ -1295,6 +1333,13 @@ export class SatelliteGlobeView extends BaseElement {
     }
   }
 
+  /** New predictions: the tracks kept are of the old ones. */
+  _newPredictions() {
+    this._details.clear();
+    this._clearApproach();
+    this._courseCache = null;
+  }
+
   /** A different location: drop everything that belonged to the old one. */
   _locationChanged() {
     this._gen++;
@@ -1310,8 +1355,7 @@ export class SatelliteGlobeView extends BaseElement {
     this._focusTrack = null;
     this._focusFailed = null;
     this._focusDelay = 0;
-    this._positions = null;
-    this._cloudFor = null;
+    this._cloud.reset();
     this._selectedId = null;
     this._userSelected = false;
     this._pendingSelect = null;
@@ -1400,7 +1444,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (!pass && this._selectedId) {
       // Refreshed predictions move a pass by a few seconds, and so its id.
       const start = Number(this._selectedId);
-      pass = this._passes().find((p) => Math.abs(p.start - start) <= 120) ?? null;
+      pass = this._passes().find((p) => Math.abs(p.start - start) <= (this._payload?.settings?.pass_id_tolerance ?? 120)) ?? null;
     }
     // The user's pass stays until it is over (and while it is simulated or in the street view).
     const busy = this._clock.mode === "sim" || !!this._street;
@@ -1507,7 +1551,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (this._focus) return this._focus;
     const lead = leader(this._shownPass());
     if (lead) return { norad_id: lead.norad_id, name: lead.name, kind: lead.kind, period_s: lead.period_s };
-    const iss = this._catalogById?.get(ISS_NORAD_ID);
+    const iss = this._cloud.byId?.get(ISS_NORAD_ID);
     return { norad_id: ISS_NORAD_ID, name: iss?.name ?? "ISS", kind: "iss", period_s: iss?.period_s ?? DEFAULT_PERIOD_S };
   }
 
@@ -1522,13 +1566,12 @@ export class SatelliteGlobeView extends BaseElement {
     const P = f.period_s || DEFAULT_PERIOD_S;
     const now = this._now() / 1000;
     const have = this._focusTrack;
-    if (!force && have?.norad === f.norad_id && have.from <= now && have.to >= now + 0.75 * P) return;
+    if (!force && orbitIsEnough(have, f.norad_id, now, P)) return;
     if (!force && this._focusFailed === f.norad_id && performance.now() < (this._focusRetryAt || 0)) return;
     if (this._focusLoading === f.norad_id) return;
     this._focusLoading = f.norad_id;
     const gen = this._gen;
-    const from = Math.floor(now - P / 2);
-    const to = Math.ceil(now + 1.25 * P);
+    const { from, to } = orbitSpan(now, P);
     try {
       const rows = await this._track(f.norad_id, from, to, 30);
       if (gen !== this._gen || this._focusInfo()?.norad_id !== f.norad_id) return;
@@ -1561,17 +1604,16 @@ export class SatelliteGlobeView extends BaseElement {
     const detail = pass && this._details.get(pass.id);
     // Near home during its pass the 2 s rows move the satellite smoothly (a
     // train member's are made from the leader's, so they are kept by payload).
-    const index = detail ? detail.transits.findIndex((t) => t.norad_id === f?.norad_id) : -1;
     const c = this._courseCache;
-    if (c && c.orbit === orbit && c.detail === detail && c.index === index) return c.rows;
-    const rows = mergeRows(orbit, index >= 0 ? transitRows(detail, index) : null);
-    this._courseCache = { orbit, detail, index, rows };
+    if (c && c.orbit === orbit && c.detail === detail && c.norad === f?.norad_id) return c.rows;
+    const rows = courseOf(orbit, detail, f?.norad_id);
+    this._courseCache = { orbit, detail, norad: f?.norad_id, rows };
     return rows;
   }
 
   /** Follow a satellite picked in the cloud; show its next pass, if it has one. */
   _focusSatellite(noradId) {
-    const sat = this._catalogById?.get(noradId);
+    const sat = this._cloud.byId?.get(noradId);
     if (!sat) return;
     this._focus = { norad_id: noradId, name: sat.name, kind: sat.kind, period_s: sat.period_s || DEFAULT_PERIOD_S, picked: true };
     this._focusTrack = null;
@@ -1767,8 +1809,7 @@ export class SatelliteGlobeView extends BaseElement {
     // 1/cos(latitude) times larger at the same zoom (see the fast-forward in
     // _drawFrame), so elsewhere that is taken back out; never so close that the
     // globe starts to flatten into the map (from zoom 4.5).
-    const atLatitude = Math.log2(Math.max(Math.cos(center[1] * DEG), 0.15) / Math.cos(FRAME_LATITUDE * DEG));
-    const zoom = Math.min(4.2, clamp(3.55 - Math.log2(Math.max(reach, 400) / 900), 2.1, 4.2) + atLatitude);
+    const zoom = Math.min(4.2, clamp(3.55 - Math.log2(Math.max(reach, 400) / 900), 2.1, 4.2) + zoomAtLatitude(center[1]));
     this._mode = "free";
     this._syncControls();
     // Clear of the cards at the top as well: the pass is what this is for.
@@ -1791,16 +1832,6 @@ export class SatelliteGlobeView extends BaseElement {
   }
 
   /** The street view's options as it keeps them (only it writes them); none: its own defaults. */
-  _streetOptions() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(STREET_STORAGE) || "null");
-      if (saved && typeof saved === "object") return saved;
-    } catch {
-      // Private window, or blocked storage: its defaults.
-    }
-    return {};
-  }
-
   /**
    * See a pass from the street: the street view opens over the globe, on the
    * same clock. A pass about to start or going on is shown live; a later one
@@ -1826,22 +1857,22 @@ export class SatelliteGlobeView extends BaseElement {
     }
     if (this._streetPending !== token || !this._wrap) return;
     this._streetPending = null;
-    const el = document.createElement("satellite-street-view");
     const home = this._payload.location;
-    el.hass = this._hass;
-    el.formatter = this._fmt;
-    el.location = { entry_id: home.entry_id, latitude: home.latitude, longitude: home.longitude, elevation: home.elevation, title: home.title };
-    el.units = this._payload.settings?.units ?? "auto";
-    el.clock = this._clock;
-    el.options = this._streetOptions();
-    el.pass = pass;
-    el.detail = this._details.get(pass.id) ?? null;
-    el.addEventListener("close", () => this._closeStreet({ user: true }));
-    el.addEventListener("need-detail", (ev) => {
-      const wanted = this._passById(ev.detail?.passId) ?? pass;
-      this._loadDetail(wanted)
-        .then((detail) => detail && el.setPass?.(wanted, detail))
-        .catch(() => {});
+    const el = streetHost.makeStreetView({
+      hass: this._hass,
+      formatter: this._fmt,
+      location: { entry_id: home.entry_id, latitude: home.latitude, longitude: home.longitude, elevation: home.elevation, title: home.title },
+      units: this._payload.settings?.units,
+      clock: this._clock,
+      pass,
+      detail: this._details.get(pass.id) ?? null,
+      onClose: () => this._closeStreet({ user: true }),
+      onNeedDetail: (passId) => {
+        const wanted = this._passById(passId) ?? pass;
+        this._loadDetail(wanted)
+          .then((detail) => detail && el.setPass?.(wanted, detail))
+          .catch(() => {});
+      },
     });
     this._streetReturn = user ? this.shadowRoot?.activeElement ?? null : null;
     this._street = el;
@@ -1922,7 +1953,7 @@ export class SatelliteGlobeView extends BaseElement {
   }
 
   _cloudShown() {
-    return this._cloudWanted() && !!this._positions && !!this._cloudIndex;
+    return this._cloudWanted() && this._cloud.ready;
   }
 
   /** The positions the cloud needs: the next ten minutes live, or those around the pass being simulated. */
@@ -1937,84 +1968,18 @@ export class SatelliteGlobeView extends BaseElement {
    * Positions of every satellite: every five minutes for the next ten
    * minutes live, or around the pass being simulated.
    */
-  async _loadCloud(force = false) {
-    if (!this._cloudWanted() || !this._hass || !this._loaded || this._payload?.paused) return;
-    const { key, want } = this._cloudRequest();
-    const have = this._positions;
-    const nowS = this._now() / 1000;
-    const end = have ? have.start + (have.count - 1) * have.step : -Infinity;
-    const fresh =
-      !!have &&
-      this._cloudFor === key &&
-      (key !== "live" || (performance.now() - this._positionsAt < CLOUD_MS - 1000 && end >= nowS + 60));
-    if ((fresh && !force) || this._cloudLoading === key) return;
-    // After a failure, frames that find the positions run out wait for the retry.
-    if (!force && this._cloudFailed === key && performance.now() < (this._cloudRetryAt || 0)) return;
-    this._cloudLoading = key;
-    clearTimeout(this._cloudTimer);
-    const gen = this._gen;
-    // Another location, or another moment: a simulation that started or ended
-    // meanwhile has asked for its own, and these would hide the cloud.
-    const unwanted = () => gen !== this._gen || this._cloudRequest().key !== key;
-    try {
-      const positions = await this._client.positions({ ...want, step: 60, entryId: this._entryId() });
-      if (unwanted()) return;
-      // The satellites first: positions in a new order need the catalogue's order too.
-      await this._ensureCloudCatalog(positions);
-      if (unwanted()) return;
-      this._positions = positions;
-      this._positionsAt = performance.now();
-      this._cloudFor = key;
-      this._cloudDelay = 0;
-      this._cloudFailed = null;
-      this._updateCloudFlags();
-      this._courseChanged = true;
-    } catch (err) {
-      if (unwanted()) return;
-      // Try again later, backing off; the satellites that are shown stay.
-      this._cloudFailed = key;
-      this._cloudDelay = client.nextDelay(this._cloudDelay, 30000, CLOUD_MS);
-      this._cloudRetryAt = performance.now() + this._cloudDelay;
-      this._cloudTimer = setTimeout(() => this._whenShown("cloud", () => this._loadCloud()), this._cloudDelay);
-      console.debug("Satellite Spotter: positions:", this._errorMessage(err));
-    } finally {
-      if (this._cloudLoading === key) this._cloudLoading = null;
-    }
-  }
-
-  /** Hand the cloud its satellites (kinds, magnitudes) when they change. */
-  async _ensureCloudCatalog(positions) {
-    const ids = positions.ids || [];
-    const key = `${positions.catalog_version}|${ids.length}|${ids[0]}|${ids[ids.length - 1]}`;
-    if (key === this._cloudIdsKey && this._catalog) return;
-    const catalog = await this._client.catalog({ version: positions.catalog_version, entryId: this._entryId() });
-    this._catalog = catalog;
-    this._catalogById = new Map((catalog?.satellites || []).map((s) => [s.norad_id, s]));
-    this._cloudIndex = new Map(ids.map((id, i) => [id, i]));
-    this._cloudFlagBits = new Uint8Array(ids.length);
-    this._cloudLL = this._cloudXY = null;
-    this._space?.setCloud(spaceModule.cloudFromCatalog(catalog, ids));
-    this._cloudIdsKey = key;
+  _loadCloud(force = false) {
+    return this._cloud.load(force);
   }
 
   /** Move the cloud to time t (each frame). */
   _updateCloud(t) {
-    const space = this._space;
-    const pos = this._positions;
-    if (!space?.setCloudPositions) return;
-    if (!this._cloudWanted() || !pos || !this._cloudIndex) {
-      space.setCloudPositions(null, { visible: false });
-      return;
-    }
-    const end = pos.start + (pos.count - 1) * pos.step;
-    const covered = t >= pos.start - 30 && t <= end + 30;
-    // Hidden during the fast-forward: the positions are for the pass, not on the way to it.
-    const visible = covered && this._clock.phase !== "approach";
-    if (visible) {
-      this._cloudLL = interpolatePositions(pos, t, this._cloudLL);
-      this._cloudXY = spaceModule.cloudPositions(this._cloudLL, this._cloudXY);
-    }
-    space.setCloudPositions(visible ? this._cloudXY : null, { visible });
+    const covered = this._cloud.moveTo(t, {
+      wanted: this._cloudWanted(),
+      // During the fast-forward: the positions are for the pass, not on the way to it.
+      hidden: this._clock.phase === "approach",
+      slow: !(this._clock.mode === "sim" && this._clock.playing) && !(this._onScreenSpeed > HARDLY_MOVING_PX_S),
+    });
     if (!covered && this._clock.mode === "live") this._loadCloud();
   }
 
@@ -2024,36 +1989,26 @@ export class SatelliteGlobeView extends BaseElement {
    * one under the pointer stands out.
    */
   _updateCloudFlags() {
-    const index = this._cloudIndex;
-    const bits = this._cloudFlagBits;
-    if (!index || !bits || !this._space?.setCloudFlags) return;
-    const before = Uint8Array.from(bits);
-    bits.fill(0);
-    const set = (id, bit) => {
-      const i = index.get(id);
-      if (i !== undefined) bits[i] |= bit;
-    };
     const t = this._simNow();
     const pass = this._shownPass();
     const detail = pass && this._details.get(pass.id);
-    for (const [i, tr] of (pass?.transits || []).entries()) {
-      set(tr.norad_id, 8);
-      // Drawn as sprites while their rows reach (see _memberObjects).
-      const d = detail?.transits?.[i];
-      if (d && t >= d.horizon_rise && t <= d.horizon_set) set(tr.norad_id, 1);
-    }
-    // Every satellite in the sky from home right now, in any pass.
-    const passes = this._clock.mode === "sim" ? (pass ? [pass] : []) : this._passes();
-    for (const p of passes) {
-      if (!(p.start <= t && t < p.end)) continue;
-      for (const tr of p.transits || []) if (tr.start <= t && t < tr.end) set(tr.norad_id, 4);
-    }
-    if (this._position) set(this._focusInfo()?.norad_id, 1);
-    if (this._hover) set(this._hover, 2);
-    if (bits.some((b, i) => b !== before[i])) {
-      this._space.setCloudFlags(bits);
-      this._courseChanged = true;
-    }
+    const changed = this._cloud.setFlags((set) => {
+      for (const [i, tr] of (pass?.transits || []).entries()) {
+        set(tr.norad_id, 8);
+        // Drawn as sprites while their rows reach (see _memberObjects).
+        const d = detail?.transits?.[i];
+        if (d && t >= d.horizon_rise && t <= d.horizon_set) set(tr.norad_id, 1);
+      }
+      // Every satellite in the sky from home right now, in any pass.
+      const passes = this._clock.mode === "sim" ? (pass ? [pass] : []) : this._passes();
+      for (const p of passes) {
+        if (!(p.start <= t && t < p.end)) continue;
+        for (const tr of p.transits || []) if (tr.start <= t && t < tr.end) set(tr.norad_id, 4);
+      }
+      if (this._position) set(this._focusInfo()?.norad_id, 1);
+      if (this._hover) set(this._hover, 2);
+    });
+    if (changed) this._courseChanged = true;
   }
 
   _onPointerMove(point) {
@@ -2067,8 +2022,7 @@ export class SatelliteGlobeView extends BaseElement {
       this._hoverRaf = null;
       const pt = this._hoverPoint;
       if (!pt || !this._space || !this._mapSize) return;
-      const i = this._space.pick(pt.x, pt.y, this._mapSize[0], this._mapSize[1], 10);
-      this._setHover(i >= 0 ? this._positions?.ids?.[i] ?? null : null, pt);
+      this._setHover(this._cloud.pick(pt.x, pt.y, this._mapSize[0], this._mapSize[1], 10), pt);
     });
   }
 
@@ -2100,9 +2054,8 @@ export class SatelliteGlobeView extends BaseElement {
 
   /** The hover tooltip: name, kind and altitude, and when it can be seen. */
   _tipHtml(noradId) {
-    const sat = this._catalogById?.get(noradId);
-    const i = this._cloudIndex?.get(noradId);
-    const alt = i !== undefined && this._cloudLL ? this._cloudLL[i * 4 + 2] : null;
+    const sat = this._cloud.byId?.get(noradId);
+    const alt = this._cloud.altitudeOf(noradId);
     const fmt = this._fmt;
     const t = this._simNow();
     const live = this._passes().find((p) => p.start <= t && t < p.end && (p.transits || []).some((tr) => tr.norad_id === noradId));
@@ -2120,8 +2073,7 @@ export class SatelliteGlobeView extends BaseElement {
   _onMapClick(point) {
     // While a pass is simulated the globe shows that pass's satellites.
     if (!point || !this._cloudShown() || !this._space || !this._mapSize || this._clock.mode === "sim") return;
-    const i = this._space.pick(point.x, point.y, this._mapSize[0], this._mapSize[1], 12);
-    const id = i >= 0 ? this._positions?.ids?.[i] : null;
+    const id = this._cloud.pick(point.x, point.y, this._mapSize[0], this._mapSize[1], 12);
     if (id) this._focusSatellite(id);
   }
 
@@ -2250,7 +2202,7 @@ export class SatelliteGlobeView extends BaseElement {
         container: this._els.map,
         style: this._buildStyle(),
         center: [home.longitude, home.latitude],
-        zoom: this.hasAttribute("compact") ? 1.25 : 1.65,
+        zoom: (this.hasAttribute("compact") ? 1.25 : 1.65) + zoomAtLatitude(home.latitude),
         maxPitch: 80,
         pixelRatio: Math.min(globalThis.devicePixelRatio || 1, 2),
         // Resizing is handled here, a frame later (see _resizeObserver).
@@ -2267,7 +2219,9 @@ export class SatelliteGlobeView extends BaseElement {
       });
     } catch (err) {
       this._starting = false;
-      this._showMessage(this._t("globe.no_webgl", { error: err?.message || err }));
+      // The passes are in, and need no map: everything but the globe still shows, and a tap tries again.
+      this._showMessage(this._t("globe.no_webgl", { error: err?.message || err }), { reload: true });
+      this._showWithoutMap();
       return;
     }
     this._map = map;
@@ -2303,7 +2257,6 @@ export class SatelliteGlobeView extends BaseElement {
 
     this._night = new spaceModule.NightLayer({ getState: () => this._nightState });
     this._space = new spaceModule.SpaceLayer();
-    this._cloudIdsKey = null;
     this._mapSize = [this._els.map.clientWidth, this._els.map.clientHeight];
     // The map element rather than the host: in fullscreen only the map grows.
     this._resizeObserver = new ResizeObserver(() => {
@@ -2326,13 +2279,17 @@ export class SatelliteGlobeView extends BaseElement {
       if (this._map !== map) return;
       map.addLayer(this._night, map.getLayer("borders-country") ? "borders-country" : undefined);
       map.addLayer(this._space);
+      // What is known of the cloud goes straight to the new layer.
+      this._cloud.attach(this._space);
       this._loaded = true;
       this._starting = false;
       if (this._closeupKey !== this._imageryKey()) this._setImagery();
       this._applyLayout();
       this._dataChanged();
       this._frame();
-      this._setMode(this._config.view || "home", true);
+      // Following a satellite before the map was rebuilt, it still does.
+      this._setMode(this._modeToKeep ?? (this._config.view || "home"), true);
+      this._modeToKeep = null;
       this._resume();
       map.once("render", () => this._map === map && this._showMessage(""));
     });
@@ -2372,10 +2329,13 @@ export class SatelliteGlobeView extends BaseElement {
       e?.sourceId === "osm" ||
       (e?.sourceId === "closeup" && !!IMAGERY[this._closeupKey]?.homeAssistantTiles);
     const tile = e?.tile?.tileID?.canonical;
-    if (haTiles && tile && e.sourceId) {
-      // Remember it, to fetch again with a fresh token or once Home Assistant is back.
+    // A tile the service does not have is not going to appear; no internet or a busy server passes.
+    const passing = !status || status >= 500 || status === 408 || status === 429;
+    if ((haTiles || passing) && tile && e.sourceId) {
+      // Remember it, to fetch again with a fresh token, or once the internet or Home Assistant is back.
       const { x, y, z } = tile;
       (this._failedTiles[e.sourceId] ??= new Map()).set(`${z}/${x}/${y}`, { x, y, z });
+      if (passing) this._retryTilesLater();
     }
     if (status === 403 && haTiles) {
       // Home Assistant's tiles token rotated: get a new one and fetch again.
@@ -2385,7 +2345,7 @@ export class SatelliteGlobeView extends BaseElement {
       } else if (this._mapTokenAt > this._tokenRetryAt) {
         // Sent with the old token just before the new one came: try once more.
         clearTimeout(this._tilesTimer);
-        this._tilesTimer = setTimeout(() => this._refreshHaTiles(), 1000);
+        this._tilesTimer = setTimeout(() => this._refreshFailedTiles(), 1000);
       }
       return;
     }
@@ -2633,7 +2593,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (mode === "home" && home) {
       map.flyTo({
         center: [home.longitude, home.latitude],
-        zoom: initial ? map.getZoom() : Math.max(Math.min(map.getZoom(), 3), 1.8),
+        zoom: initial ? map.getZoom() : Math.max(Math.min(map.getZoom(), 3), 1.8 + zoomAtLatitude(home.latitude)),
         pitch: 0,
         bearing: 0,
         padding,
@@ -2777,11 +2737,8 @@ export class SatelliteGlobeView extends BaseElement {
   _ticks(now) {
     if (this._clock.mode === "sim" || this._config.show_track === false) return [];
     const rows = this._courseRows();
-    if (!rows.length) return [];
-    const step = tickStepMinutes(this._periodS()) * 60;
     const out = [];
-    const last = Math.min(now + this._periodS(), rows[rows.length - 1][0]);
-    for (let t = Math.ceil((now + 120) / step) * step; t <= last; t += step) {
+    for (const t of tickTimes(rows, now, this._periodS(), tickStepMinutes(this._periodS()) * 60)) {
       const pos = positionAt(rows, t);
       if (pos) out.push({ t, ...pos });
     }
@@ -2991,7 +2948,10 @@ export class SatelliteGlobeView extends BaseElement {
       // panel it would peek out in pieces: it steps aside.
       const box = pt && { left: pt.x + dx, top: pt.y - el._size[1] - 12, right: pt.x + dx + el._size[0], bottom: pt.y - 12 };
       const covered = !!box && (this._hudRects || []).some((r) => box.left < r.right && r.left < box.right && box.top < r.bottom && r.top < box.bottom);
-      el.classList.toggle("away", covered || (t >= pin.start - 30 && t <= pin.end + 30));
+      const away = covered || (t >= pin.start - 30 && t <= pin.end + 30);
+      el.classList.toggle("away", away);
+      // Out of the keyboard's way too, as nobody could see where the focus went.
+      el.inert = away;
       show(el, pt, dx, -el._size[1] - 12);
     }
     const keep = new Set();
@@ -3052,6 +3012,8 @@ export class SatelliteGlobeView extends BaseElement {
    */
   _conditions(pass) {
     const out = [];
+    const rating = this._fmt.rating?.(pass);
+    if (rating) out.push({ cls: { great: "gold", poor: "dim" }[rating.level] ?? "", icon: "star", text: rating.says });
     const cloud = this._fmt.cloud(pass.cloud_cover);
     if (cloud) out.push({ cls: cloud.level, icon: "cloud", text: passesModule.cloudText(pass, this._fmt) });
     const moon = passesModule.passMoon(pass, this._payload?.location);
@@ -3069,7 +3031,7 @@ export class SatelliteGlobeView extends BaseElement {
 
   _tick() {
     const p = this._payload;
-    if (!p || !this._els || !this._loaded) return;
+    if (!p || !this._els || !(this._loaded || this._noMap)) return;
     const realS = this._now() / 1000;
     this._measureHud();
     // As time passes, the live or next pass changes.

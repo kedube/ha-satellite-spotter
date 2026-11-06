@@ -33,6 +33,8 @@
     },
     "error": {
       "invalid_location": "Saisissez une latitude comprise entre -90° et 90° et une longitude valide.",
+      "name_required": "Saisissez un nom pour ce lieu.",
+      "invalid_elevation": "Saisissez l'altitude sous forme de nombre de mètres.",
       "cannot_connect": "Impossible de télécharger le catalogue des satellites. Vérifiez que Home Assistant accède à Internet, puis réessayez.",
       "download_limited": "CelesTrak, d'où viennent les données orbitales, n'autorise pas encore un nouveau téléchargement. Réessayez dans deux heures.",
       "unknown": "Erreur inattendue lors du chargement du catalogue des satellites. Le journal contient les détails."
@@ -49,15 +51,21 @@
         "data": {
           "brightness_cutoff": "Seuil de luminosité",
           "cloud_forecast": "Prévision des nuages",
+          "weather_entity": "Entité météo pour les nuages",
           "alert_lead_minutes": "Préavis",
+          "min_elevation": "Hauteur minimale",
+          "follow_entity": "Suivre une personne ou un traceur",
           "show_in_sidebar": "Afficher Satellite Spotter dans la barre latérale",
           "show_in_calendar": "Afficher les passages dans le calendrier",
           "units": "Unités"
         },
         "data_description": {
           "brightness_cutoff": "Un passage n'est listé que s'il atteint au moins cette luminosité. L'échelle va à l'envers : plus le nombre est petit, plus c'est brillant. 2,25 convient au ciel d'une banlieue, 1 laisse les plus faciles, et en dessous de 0 seulement les éblouissants.",
-          "cloud_forecast": "Indique la couverture nuageuse qu'Open-Meteo prévoit à chaque passage. Open-Meteo reçoit les coordonnées de ce lieu (à quatre décimales) toutes les heures.",
+          "cloud_forecast": "Indique la couverture nuageuse prévue à chaque passage. À moins de choisir une entité météo ci-dessous, Open-Meteo reçoit chaque heure les coordonnées de ce lieu, arrondies à environ un kilomètre.",
+          "weather_entity": "Facultatif. Prend la couverture nuageuse dans les prévisions horaires de cette entité, sans interroger Open-Meteo. Si ces prévisions n'en indiquent pas, les passages n'en affichent pas.",
           "alert_lead_minutes": "Les capteurs « Passage visible imminent » et « Passage brillant imminent » s'activent avec cette avance sur l'apparition du satellite le plus brillant du passage.",
+          "min_elevation": "Un satellite ne compte que tant qu'il est au moins à cette hauteur. Augmentez-la si des arbres ou des bâtiments masquent votre horizon.",
+          "follow_entity": "Facultatif, pour les voyages. Les passages sont calculés pour l'endroit où se trouve cette personne ou ce traceur, dès qu'il est à plus de 25 km, et au plus toutes les demi-heures. Open-Meteo apprend alors approximativement où il se trouve, sauf si vous utilisez une entité météo, et toute personne pouvant ouvrir la page peut le voir.",
           "show_in_sidebar": "Ajoute à la barre latérale une page Satellite Spotter avec les passages, un globe 3D et une vue du ciel au niveau de la rue. La vue de rue charge des tuiles de carte des environs depuis OpenFreeMap et AWS (et depuis Esri avec l'imagerie aérienne). Les cartes de tableau de bord fonctionnent dans tous les cas.",
           "show_in_calendar": "Ajoute un calendrier des passages des cinq prochains jours, chacun avec quand et où regarder. Les déclencheurs de calendrier peuvent alors lancer des automatisations avant un passage.",
           "units": "Pour les distances et vitesses du globe et de la vue de rue. « Automatique » suit le système d'unités de Home Assistant."
@@ -81,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_number": "Saisissez un nombre dans la plage indiquée.",
       "google_key_needed": "Saisissez une clé d'API Google Cloud pour afficher les photos de Google Street View.",
       "mapillary_token_needed": "Saisissez un jeton d'accès Mapillary pour afficher les photos de Mapillary.",
       "mapillary_token_format": "Un jeton d'accès Mapillary ressemble à MLY|1234…|abcd… : copiez le jeton client de votre application sur mapillary.com.",
@@ -103,6 +112,25 @@
         "mapillary": "Mapillary",
         "panoramax": "Panoramax",
         "model": "Pas de photos : le modèle 3D"
+      }
+    },
+    "rating": {
+      "options": {
+        "great": "Excellent",
+        "good": "Bon",
+        "fair": "Moyen",
+        "poor": "Faible"
+      }
+    },
+    "kind": {
+      "options": {
+        "iss": "ISS",
+        "tiangong": "Tiangong",
+        "hubble": "Hubble",
+        "starlink": "Starlink",
+        "rocket": "Étages de fusée",
+        "debris": "Débris",
+        "satellite": "Autres satellites"
       }
     }
   },
@@ -144,6 +172,15 @@
       "next_visible_pass_cloud_cover": {
         "name": "Couverture nuageuse du prochain passage visible"
       },
+      "next_visible_pass_rating": {
+        "name": "Note du prochain passage visible",
+        "state": {
+          "great": "Excellent",
+          "good": "Bon",
+          "fair": "Moyen",
+          "poor": "Faible"
+        }
+      },
       "next_visible_satellite_name": {
         "name": "Nom du prochain satellite visible"
       },
@@ -171,16 +208,18 @@
     },
     "catalog_stale_upstream": {
       "message": "Les éléments orbitaux du catalogue des satellites datent de {age} jours, et les données de CelesTrak sont tout aussi anciennes ; les prédictions sont en pause jusqu'au téléchargement d'un catalogue récent"
+    },
+    "unknown_location": {
+      "message": "Ce lieu de Satellite Spotter n'existe pas."
+    },
+    "location_not_loaded": {
+      "message": "Ce lieu de Satellite Spotter n'est pas encore prêt."
     }
   },
   "issues": {
     "catalog_stale": {
       "title": "Les prédictions des satellites sont en pause",
       "description": "Les éléments orbitaux du catalogue des satellites datent de {age} jours (la médiane de tous les satellites), et aucun catalogue plus récent n'a pu être téléchargé ({error}). Des prédictions fondées sur des éléments aussi anciens seraient trompeuses : les entités Satellite Spotter restent donc indisponibles jusqu'à ce qu'un téléchargement réussisse. Vérifiez que Home Assistant accède à Internet : les données orbitales viennent de CelesTrak. Ce message disparaît de lui-même dès qu'un catalogue récent arrive."
-    },
-    "catalog_stale_upstream": {
-      "title": "Les prédictions des satellites sont en pause",
-      "description": "Les éléments orbitaux du catalogue des satellites datent de {age} jours (la médiane de tous les satellites), et les données de CelesTrak elles-mêmes sont tout aussi anciennes : il n'y a rien de plus récent à télécharger. Des prédictions fondées sur des éléments aussi anciens seraient trompeuses : les entités Satellite Spotter restent donc indisponibles jusqu'à ce que CelesTrak publie des données récentes. Il n'y a rien à corriger dans Home Assistant : ce message disparaît de lui-même dès qu'un catalogue récent arrive."
     }
   },
   "common": {
@@ -188,6 +227,11 @@
     "calendar_brightest": "Meilleure vue à {time} : {direction}, à {elevation}° de hauteur, magnitude {magnitude}.",
     "calendar_disappears": "Dernière visibilité à {time} vers {direction}, à {elevation}° de hauteur.",
     "calendar_together": "Ce passage comprend {count} satellites.",
+    "calendar_rating": "Note : {rating}.",
+    "rating_great": "Excellent",
+    "rating_good": "Bon",
+    "rating_fair": "Moyen",
+    "rating_poor": "Faible",
     "calendar_cloud_cover": "Couverture nuageuse pendant le passage : {cloud_cover} %.",
     "calendar_about": "Objet : {name} — {url}",
     "decimal_separator": ",",
@@ -207,5 +251,53 @@
     "compass_wnw": "O-NO",
     "compass_nw": "NO",
     "compass_nnw": "N-NO"
+  },
+  "services": {
+    "get_passes": {
+      "name": "Obtenir les passages",
+      "description": "Liste les passages prévus d'un lieu, les plus proches d'abord, avec des filtres facultatifs.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Lieu",
+          "description": "Le lieu dont les passages sont listés."
+        },
+        "pass_id": {
+          "name": "Passage",
+          "description": "Uniquement ce passage, par son identifiant : l'uid d'un événement du calendrier ou le pass_id d'un capteur."
+        },
+        "start": {
+          "name": "À partir de",
+          "description": "Uniquement les passages encore en cours après ce moment. Par défaut, ceux qui ne sont pas terminés."
+        },
+        "end": {
+          "name": "Jusqu'à",
+          "description": "Uniquement les passages commençant avant ce moment."
+        },
+        "min_rating": {
+          "name": "Note minimale",
+          "description": "Uniquement les passages ayant au moins cette note."
+        },
+        "max_cloud_cover": {
+          "name": "Couverture nuageuse maximale",
+          "description": "Écarte les passages dont la couverture nuageuse prévue est supérieure. Les passages sans prévision sont conservés."
+        },
+        "bright_only": {
+          "name": "Passages brillants uniquement",
+          "description": "Uniquement les passages considérés comme brillants."
+        },
+        "kinds": {
+          "name": "Types de satellite",
+          "description": "Uniquement les passages comprenant l'un de ces types."
+        },
+        "satellite": {
+          "name": "Nom du satellite",
+          "description": "Uniquement les passages avec un satellite dont le nom contient ce texte."
+        },
+        "limit": {
+          "name": "Limite",
+          "description": "Le nombre maximal de passages à lister."
+        }
+      }
+    }
   }
 }

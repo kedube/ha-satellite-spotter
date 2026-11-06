@@ -9,8 +9,6 @@ import {
   azimuthElevation,
   bvToRgb,
   bvToTemperature,
-  cssColor,
-  eclipticToRaDec,
   extinction,
   galacticToRaDec,
   greenwichSiderealTime,
@@ -20,18 +18,15 @@ import {
   moonAzEl,
   moonLitPath,
   moonPhase,
-  moonPhaseState,
   moonPosition,
   planetPositions,
   precessionMatrix,
   applyMatrix,
-  raDecToAzEl,
   raDecVector,
   refraction,
   skyAt,
   skyColor,
   skyDirection,
-  skyGradient,
   skyPalette,
   starAlpha,
   starRadius,
@@ -85,10 +80,6 @@ test("stars are within 0.1 deg of Skyfield", () => {
       close(p.elevation, s.elevation, 0.1, label);
     }
   }
-  // The same through the batch path the renderers use.
-  const c = REF.cases[6];
-  const p = raDecToAzEl(c.stars[0].ra, c.stars[0].dec, new Date(c.time), c.observer);
-  assert.ok(apart(p, c.stars[0]) <= 0.1);
 });
 
 test("star vectors turned in bulk match one at a time", () => {
@@ -213,14 +204,6 @@ test("sky directions and great-circle steps", () => {
   close(apart(towards(a, b, 5), a), 5, 1e-9);
 });
 
-test("moon phase names follow Home Assistant's moon sensor", () => {
-  const states = [0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 0.99].map(moonPhaseState);
-  assert.deepEqual(states, [
-    "new_moon", "waxing_crescent", "first_quarter", "waxing_gibbous", "full_moon",
-    "waning_gibbous", "last_quarter", "waning_crescent", "new_moon",
-  ]);
-});
-
 test("the lit part of the Moon as a path", () => {
   assert.equal(moonLitPath(10, 0.5, 90), "M0 -10A10 10 0 0 1 0 10A0 10 0 0 0 0 -10Z");
   assert.equal(moonLitPath(10, 1, 90), "M0 -10A10 10 0 0 1 0 10A10 10 0 0 1 0 -10Z");
@@ -244,17 +227,11 @@ test("the sky darkens through twilight and glows on the Sun's side", () => {
   const sun = { azimuth: 250, elevation: -4 };
   assert.ok(lum(skyColor(250, 3, sun)) > lum(skyColor(70, 3, sun)) + 20, "glow");
   assert.ok(lum(skyColor(250, 3, sun)) > lum(skyColor(250, 60, sun)), "glow hugs the horizon");
-  const stops = skyGradient(250, sun);
-  assert.equal(stops[0].elevation, 0);
-  assert.equal(stops.at(-1).elevation, 90);
-  assert.ok(stops.every((s) => s.color.every((x) => Number.isInteger(x) && x >= 0 && x <= 255)));
   // A high full Moon lights the night and hides the faint stars.
   const moonlit = skyPalette(-30, { elevation: 50, fraction: 1 });
   assert.ok(lum(moonlit.zenith) > lum(skyPalette(-30).zenith) + 5);
   assert.ok(moonlit.limit < 4.5);
   assert.equal(skyPalette(-30, { elevation: -10, fraction: 1 }).limit, 6);
-  assert.equal(cssColor([1, 2, 3]), "rgb(1 2 3)");
-  assert.equal(cssColor([1, 2, 3], 0.5), "rgb(1 2 3 / 0.5)");
 });
 
 test("star colours, sizes and opacities", () => {
@@ -272,16 +249,13 @@ test("star colours, sizes and opacities", () => {
   assert.ok(starAlpha(5.9) > 0 && starAlpha(5.9) < 1);
 });
 
-test("ecliptic and galactic coordinates", () => {
+test("galactic coordinates", () => {
   const centre = galacticToRaDec(0, 0);
   close(centre.ra, 266.405, 0.001);
   close(centre.dec, -28.936, 0.001);
   const pole = galacticToRaDec(123, 90);
   close(pole.ra, 192.8595, 0.001);
   close(pole.dec, 27.1283, 0.001);
-  const solstice = eclipticToRaDec(90);
-  close(solstice.ra, 90, 1e-9);
-  close(solstice.dec, 23.4393, 1e-4);
 });
 
 test("the sky at a moment, in one call", () => {

@@ -41,10 +41,12 @@ jobs:
         shell: bash
     env:
       BRANCH: brightness-update
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      # By commit, as this job can write. No credentials for the step that reads what MMT sends.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.14"
       - name: Update the table
@@ -53,11 +55,14 @@ jobs:
           --out custom_components/satellite_spotter/brightness.csv
           | tee "$RUNNER_TEMP/summary.txt" "$GITHUB_STEP_SUMMARY"
       - name: Propose it
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet; then
             echo "Nothing to propose."
             exit 0
           fi
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git switch --create "$BRANCH"

@@ -30,6 +30,8 @@ class SatellitePositionTracker(LiveEntity, TrackerEntity):
     """The ground point beneath the satellite of the pass under way, or the next."""
 
     _attr_source_type = SourceType.GPS
+    # It changes every minute, and every 10 seconds during a pass, and most have no use for it.
+    _attr_entity_registry_enabled_default = False
     # The latitude and longitude stay recorded, for the trail on map cards.
     _unrecorded_attributes = frozenset({"satellite", "catalog_number", "altitude_km", "sunlit"})
 

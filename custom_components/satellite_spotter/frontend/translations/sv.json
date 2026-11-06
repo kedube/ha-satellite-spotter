@@ -302,6 +302,13 @@
     "easy": "lätt att se",
     "faint": "ljussvag"
   },
+  "rating": {
+    "says": "Betyg: {rating}",
+    "great": "Utmärkt",
+    "good": "Bra",
+    "fair": "Okej",
+    "poor": "Dålig"
+  },
   "timebar": {
     "name": "Simuleringskontroller",
     "simulation": "Simulering",

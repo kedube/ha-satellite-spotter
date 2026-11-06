@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Satellite Spotter in a real browser</title>
+<body style="margin:0;background:#000;width:1200px;height:800px">
+<div id="host" style="position:absolute;inset:0"></div>
+<script>
+// Everything that goes wrong on the page, for run.mjs to read.
+window.__errors = [];
+window.addEventListener("error", (e) => e.message && window.__errors.push(`${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => window.__errors.push(`rejection: ${e.reason?.message ?? JSON.stringify(e.reason)}`));
+</script>
+<script type="module" src="./harness.mjs"></script>

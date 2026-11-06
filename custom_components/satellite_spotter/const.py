@@ -27,6 +27,11 @@ CONF_ALERT_LEAD_MINUTES: Final = "alert_lead_minutes"
 CONF_SHOW_PANEL: Final = "show_in_sidebar"
 CONF_SHOW_CALENDAR: Final = "show_in_calendar"
 CONF_UNITS: Final = "units"
+CONF_MIN_ELEVATION: Final = "min_elevation"
+# Clouds from this weather entity's hourly forecast, rather than from Open-Meteo.
+CONF_WEATHER_ENTITY: Final = "weather_entity"
+# A person or tracker whose whereabouts the location follows, for travel.
+CONF_FOLLOW_ENTITY: Final = "follow_entity"
 # The street view's photos: an options section with where they come from and
 # the keys of the services that need one.
 CONF_STREET_VIEW: Final = "street_view"
@@ -101,8 +106,19 @@ LIVE_EVERY_DURING_PASS: Final = timedelta(seconds=10)
 # The location form's limits: from below the shore of the Dead Sea to above the top of Everest.
 ELEVATION_MIN_M: Final = -450
 ELEVATION_MAX_M: Final = 8900
-# Satellites lower than this count as hidden.
-MIN_ELEVATION: Final = 10
+# Satellites lower than this count as hidden, unless a location's options say otherwise: trees and
+# buildings can hide more.
+DEFAULT_MIN_ELEVATION: Final = 10
+MIN_ELEVATION_LOWEST: Final = 5
+MIN_ELEVATION_HIGHEST: Final = 60
+# A location following someone searches again once they have gone this far, and at most this often.
+FOLLOW_MIN_MOVE_KM: Final = 25.0
+FOLLOW_MIN_INTERVAL: Final = timedelta(minutes=30)
+# With nothing stored, setup waits this long for a download, which goes on either way, and then
+# retries, so that a network that accepts and never answers does not hold up Home Assistant's start.
+FIRST_DOWNLOAD_WAIT: Final = timedelta(seconds=20)
+# How worth going outside for a pass is, best first.
+RATINGS: Final = ("great", "good", "fair", "poor")
 # How far ahead the count of passes looks.
 UPCOMING_WINDOW: Final = timedelta(hours=24)
 MAX_UPCOMING_PASSES: Final = 20
@@ -158,3 +174,21 @@ POSITIONS_MAX_STEP: Final = 300
 # the most the globe asks for.
 POSITIONS_MAX_SAMPLES: Final = 61
 POSITIONS_CACHE_SIZE: Final = 8
+# A reply is about a megabyte and is queued for the browser, so each user can ask for this many at
+# once, and one more every so often: plenty for a page or several, not for a script.
+POSITIONS_BURST: Final = 12
+POSITIONS_REFILL_SECONDS: Final = 10.0
+
+# The notification image of a pass: its path across the sky.
+SKY_CHART_URL: Final = f"/api/{DOMAIN}/sky_chart"
+SKY_CHART_LINK_LIFETIME: Final = timedelta(days=1)
+
+# Each download is read up to this much, whatever the server sends or its compression expands to.
+# CelesTrak's largest answer is about 3 MB.
+MAX_CATALOG_BYTES: Final = 32 * 1024 * 1024
+MAX_REPLY_BYTES: Final = 1024 * 1024
+
+# The action listing passes.
+SERVICE_GET_PASSES: Final = "get_passes"
+GET_PASSES_DEFAULT_LIMIT: Final = 20
+GET_PASSES_MAX_LIMIT: Final = 200

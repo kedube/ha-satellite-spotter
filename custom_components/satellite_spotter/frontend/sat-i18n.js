@@ -34,7 +34,7 @@ function lookup(table, key) {
   return value;
 }
 
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const { esc: escapeHtml } = await import(`./sat-text.js${VERSION}`);
 
 const fill = (template, vars) => template.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
 
@@ -143,4 +143,35 @@ export function loadStrings(language) {
     loading.set(lang, download);
   }
   return loading.get(lang);
+}
+
+/**
+ * Keep a view in Home Assistant's language: `follow` on every update asks for a language only when
+ * it changes, or again after a while when English stood in for one that did not download.
+ * `onChange(strings)` hears of each that is new.
+ */
+export class StringsFollower {
+  constructor(onChange, { have = null } = {}) {
+    this._onChange = onChange;
+    this._have = have;
+    this._wanted = null;
+    this._askedAt = 0;
+    this._ready = Promise.resolve();
+  }
+
+  /** Resolves once what is asked for has been applied; never rejects. */
+  follow(language) {
+    const wanted = resolveLanguage(language);
+    if (wanted === this._wanted && (this._have?.language === wanted || Date.now() - this._askedAt < RETRY_MS)) return this._ready;
+    this._wanted = wanted;
+    this._askedAt = Date.now();
+    this._ready = loadStrings(wanted)
+      .then((strings) => {
+        if (this._wanted !== wanted || strings === this._have) return;
+        this._have = strings;
+        this._onChange(strings);
+      })
+      .catch((err) => console.error("Satellite Spotter: could not apply the language:", err));
+    return this._ready;
+  }
 }

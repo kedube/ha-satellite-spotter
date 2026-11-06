@@ -470,18 +470,4 @@ export function drawSprite(kind, size = 256) {
 }
 
 const icons = new Map();
-/**
- * The sprite of a kind as a PNG data URL, `px` CSS pixels across (drawn for
- * the screen's pixel ratio), for <img> icons in the UI. Made once per kind and
- * size.
- */
-export function spriteIcon(kind, px = 24) {
-  const ratio = Math.min(3, Math.max(1, Math.round(globalThis.devicePixelRatio || 1)));
-  const key = `${spriteKind(kind)}:${px}:${ratio}`;
-  let url = icons.get(key);
-  if (!url) {
-    url = drawSprite(kind, Math.max(1, Math.round(px * ratio))).toDataURL("image/png");
-    icons.set(key, url);
-  }
-  return url;
-}
+

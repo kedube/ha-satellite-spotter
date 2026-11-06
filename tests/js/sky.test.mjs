@@ -160,3 +160,11 @@ test("labels make way for each other and for the chart's own", () => {
   // With room, a label sits right above its point.
   assert.deepEqual(placeLabels([{ x: 100, y: 100, text: "8:41 PM" }], { size: 200 }), [{ x: 100, y: 91 }]);
 });
+
+test("a pass too short for two rows still has its path and a mark on the chart", () => {
+  const track = [0, 10, 20, 30].map((t, i) => ({ t: 1000 + t, azimuth: 100 + 10 * i, elevation: 20 + i }));
+  const svg = skyChartSvg({ track, visibleStart: 1012, visibleEnd: 1016 });
+  assert.match(svg, /class="above"/, "the way it goes");
+  assert.match(svg, /class="pt"/, "and about where it can be seen");
+  assert.doesNotMatch(svg, /class="vis"/);
+});

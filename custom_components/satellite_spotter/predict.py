@@ -31,8 +31,12 @@ _MIN_STARLINKS = 5
 # This many keeps the wait to about 12 ms on a fast computer, and takes no longer overall.
 _BATCH_SIZE = 8
 _GRID_S = 60.0
-# Well past the cutoff, so that a sighting's edges fall inside the stretch searched exactly.
+# A stretch of minutes is searched second by second if it could hold a sighting: this much lower,
+# past the cutoff and past what the sky shows, at a minute next to it. A sighting can begin and end
+# between two minutes: rising past the lowest height just as it enters the Earth's shadow, say.
+_PROMISING_BELOW_DEGREES = 2.0
 _PROMISING_PAST_CUTOFF = 2.0
+_PROMISING_PAST_SKY = 1.0
 
 # Sightings further apart than this are separate flyovers.
 _SAME_FLYOVER = timedelta(seconds=60)
@@ -186,13 +190,14 @@ class Flyover:
         return not self.sun_up and peak < 0.5 and self.sky_limit - peak > 3
 
 
-def _is_starlink(sat: Satellite) -> bool:
-    return sat.name.upper().startswith("STARLINK")
+def is_starlink(name: str) -> bool:
+    """Say whether a satellite's name makes it a Starlink."""
+    return name.upper().startswith("STARLINK")
 
 
 def cutoff_for(sat: Satellite, faintest: float) -> float:
     """Return the faintest a satellite may be listed at: Starlinks go past the others."""
-    return faintest + _STARLINK_EXTRA_MAGNITUDES if _is_starlink(sat) else faintest
+    return faintest + _STARLINK_EXTRA_MAGNITUDES if is_starlink(sat.name) else faintest
 
 
 def _runs(flags: np.ndarray[Any, Any]) -> list[tuple[int, int]]:
@@ -246,6 +251,14 @@ def _exact_sightings(
     return sightings
 
 
+def _with_neighbours(flags: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+    """Return flags, also set next to where they are set."""
+    near = flags.copy()
+    near[1:] |= flags[:-1]
+    near[:-1] |= flags[1:]
+    return near
+
+
 def _promising_minutes(
     sat: Satellite,
     observer: track.Observer,
@@ -253,12 +266,21 @@ def _promising_minutes(
     sun: np.ndarray[Any, Any],
     cutoff: float,
 ) -> np.ndarray[Any, Any]:
-    """Say where a satellite is above the horizon and visible well past its cutoff."""
-    promising = track.above_horizon(observer, places)
-    if promising.any():
-        light = track.photometry(sat, observer, places[promising], sun[promising])
-        promising[promising] = track.visible(light, cutoff + _PROMISING_PAST_CUTOFF)
-    return promising
+    """Say which minutes, this one or the next, could hold a sighting.
+
+    Height and sunlight are each allowed to come from the minute either side, since a sighting
+    can fall between two minutes with the satellite too low at one and in shadow at the other.
+    """
+    high = track.above_horizon(observer, places, _PROMISING_BELOW_DEGREES)
+    near = _with_neighbours(high)
+    if not near.any():
+        return near
+    light = track.photometry(sat, observer, places[near], sun[near])
+    could = high[near] & track.bright_enough_nearby(
+        light, cutoff, _PROMISING_PAST_CUTOFF, _PROMISING_PAST_SKY
+    )
+    near[near] = _with_neighbours(could) & _with_neighbours(light.lit)
+    return near
 
 
 def find_sightings(
@@ -306,45 +328,59 @@ def find_sightings(
             for rising, ended in _runs(promising):
                 if ended == grid.size:
                     continue
-                low = max(first, float(grid[rising]) - _GRID_S)
-                sightings = _exact_sightings(sat, satrec, observer, low, float(grid[ended]), cutoff)
+                sightings = _exact_sightings(
+                    sat, satrec, observer, float(grid[rising]), float(grid[ended]), cutoff
+                )
                 found += [(sighting.appears.time, order, sighting) for sighting in sightings]
     found.sort(key=lambda item: item[:2])
     return [sighting for _, _, sighting in found]
 
 
-def _flyover(sightings: list[Sighting]) -> Flyover | None:
-    """Make a flyover, without Starlinks too few to be a train; None if that leaves nothing."""
-    starlinks = sum(_is_starlink(sighting.satellite) for sighting in sightings)
-    if starlinks < _MIN_STARLINKS:
-        sightings = [sighting for sighting in sightings if not _is_starlink(sighting.satellite)]
-    return Flyover(sightings) if sightings else None
+def _chains(sightings: Iterable[Sighting]) -> list[list[Sighting]]:
+    """Split sightings, in order of appearing, where one starts over a minute after the rest end."""
+    chains: list[list[Sighting]] = []
+    latest: datetime | None = None
+    for sighting in sorted(sightings, key=lambda sighting: sighting.appears.time):
+        if latest is None or sighting.appears.time - latest > _SAME_FLYOVER:
+            chains.append([])
+            latest = sighting.vanishes.time
+        chains[-1].append(sighting)
+        latest = max(latest, sighting.vanishes.time)
+    return chains
+
+
+def _without_lone_starlinks(chain: list[Sighting]) -> list[list[Sighting]]:
+    """Leave out Starlinks too few to be a train: what they joined together may fall apart."""
+    starlinks = sum(is_starlink(sighting.satellite.name) for sighting in chain)
+    if not starlinks or starlinks >= _MIN_STARLINKS:
+        return [chain]
+    return _chains(s for s in chain if not is_starlink(s.satellite.name))
 
 
 def group_sightings(sightings: Iterable[Sighting]) -> list[Flyover]:
     """Make flyovers from sightings: one starts over a minute after the last has all vanished."""
-    groups: list[list[Sighting]] = []
-    latest: datetime | None = None
-    for sighting in sorted(sightings, key=lambda sighting: sighting.appears.time):
-        if latest is None or sighting.appears.time - latest > _SAME_FLYOVER:
-            groups.append([])
-            latest = sighting.vanishes.time
-        groups[-1].append(sighting)
-        latest = max(latest, sighting.vanishes.time)
-    return [flyover for group in groups if (flyover := _flyover(group)) is not None]
+    return [
+        Flyover(group) for chain in _chains(sightings) for group in _without_lone_starlinks(chain)
+    ]
+
+
+def _stored_satellite(entry: Mapping[str, Any]) -> Satellite:
+    """Read one stored satellite, refusing fields of the wrong type, as they break every search."""
+    name, curve, magnitude = entry["name"], entry["curve"], entry["standard_magnitude"]
+    if not isinstance(name, str):
+        raise TypeError(f"name is {name!r}")
+    if curve is not None and not isinstance(curve, str):
+        raise TypeError(f"curve is {curve!r}")
+    if magnitude is not None and (
+        isinstance(magnitude, bool) or not isinstance(magnitude, int | float)
+    ):
+        raise TypeError(f"standard_magnitude is {magnitude!r}")
+    return Satellite.from_elements(entry["elements"], magnitude, curve=curve, name=name)
 
 
 def read_catalog(entries: Iterable[Mapping[str, Any]]) -> list[Satellite]:
-    """Read the stored form of a catalog."""
-    return [
-        Satellite.from_elements(
-            entry["elements"],
-            entry["standard_magnitude"],
-            curve=entry["curve"],
-            name=entry["name"],
-        )
-        for entry in entries
-    ]
+    """Read the stored form of a catalog; anything of the wrong shape raises."""
+    return [_stored_satellite(entry) for entry in entries]
 
 
 def write_catalog(satellites: Iterable[Satellite]) -> list[dict[str, Any]]:

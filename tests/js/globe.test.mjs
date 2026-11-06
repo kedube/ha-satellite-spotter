@@ -10,24 +10,20 @@ import {
   compass,
   displayAltitudeKm,
   esc,
-  gmst,
   groundDistanceKm,
   interpolatePositions,
   lookAngles,
   mercator,
   orbitalSpeed,
-  periodFromMeanMotion,
   positionAt,
-  previewTimeline,
-  satelliteKind,
   semiMajorAxisKm,
-  skyTrack,
   subsolarPoint,
   sunElevation,
   sunVector,
   visibilityRadius,
   wrapLongitude,
 } from "../../custom_components/satellite_spotter/frontend/sat-geo.js";
+import { greenwichSiderealTime } from "../../custom_components/satellite_spotter/frontend/sat-astro.js";
 import { SpaceLayer, buildRibbon, toMercator } from "../../custom_components/satellite_spotter/frontend/sat-space.js";
 
 const close = (actual, expected, tolerance, label = "") =>
@@ -63,11 +59,14 @@ test("subsolar point and sun vector match the Python engine", () => {
 
 test("Greenwich sidereal time, for the stars", () => {
   // IAU 1982 at J2000.0: 18h 41m 50.548s, that is 280.46061837 degrees.
-  close(gmst(2451545.0) / DEG, 280.46061837, 1e-6);
+  close(greenwichSiderealTime(new Date(946728000000)), 280.46061837, 1e-6);
   // One sidereal day later the Earth has turned once more.
-  close(gmst(2451545.0 + 0.99726957) / DEG, 280.46061837, 1e-3);
+  close(greenwichSiderealTime(new Date(946728000000 + 0.99726957 * 86400000)), 280.46061837, 1e-3);
   // Always 0..2 pi, before J2000 too.
-  for (const jd of [2440587.5, 2451545.0, 2461330.375]) assert.ok(gmst(jd) >= 0 && gmst(jd) < 2 * Math.PI);
+  for (const ms of [0, 946728000000, 1793806752000]) {
+    const turned = greenwichSiderealTime(new Date(ms));
+    assert.ok(turned >= 0 && turned < 360);
+  }
 });
 
 test("look angles match the Python engine", () => {
@@ -77,9 +76,6 @@ test("look angles match the Python engine", () => {
     close(wrapLongitude(a.azimuth - l.azimuth), 0, 0.01, "azimuth");
     close(a.range, l.range, 0.1, "range");
   }
-  const sky = skyTrack(DENVER, rows);
-  assert.equal(sky.length, rows.length);
-  close(sky[1].elevation, 36.269, 0.01);
   assert.equal(closestApproach(DENVER, rows), 3); // the 72.8 deg point
 });
 
@@ -138,8 +134,6 @@ test("circle radius, distance, bearing and speed", () => {
 
 test("each satellite's own period, orbit size and speed (vis-viva)", () => {
   // The ISS makes about 15.49 orbits a day: 92.9 minutes, an orbit 6,796 km across from the centre.
-  close(periodFromMeanMotion(15.49) / 60, 92.96, 0.01);
-  assert.ok(Number.isNaN(periodFromMeanMotion(0)));
   close(semiMajorAxisKm(5574), 6796, 2);
   close(semiMajorAxisKm(86164.1), 42164, 1, "geostationary");
   assert.ok(Number.isNaN(semiMajorAxisKm(-1)));
@@ -173,33 +167,6 @@ test("display altitude: true up to 2,000 km, then compressed so high orbits stay
   close(displayAltitudeKm(35786), 6737, 2, "geostationary");
   // The highest apogee in the catalogue (an Ariane 44 upper stage) is drawn within 1.25 globe radii above the ground.
   assert.ok(displayAltitudeKm(73958) / 6371 < 1.25);
-});
-
-// Real names from the "brightest" catalogue, with the kind the integration gives them.
-const CATALOGUE = [
-  [29649, "BREEZE-M DEB (TANK)", "debris"], [27048, "ARIANE 44LP DEB", "debris"],
-  [21818, "ARIANE 44L DEB (SPELDA)", "debris"], [20580, "Hubble", "hubble"], [25544, "ISS", "iss"],
-  [28415, "CZ-4B R/B", "rocket"], [40548, "PSLV R/B", "rocket"], [12904, "SL-3 R/B", "rocket"],
-  [100177, "CZ-6A R/B", "rocket"], [23608, "ARIANE 40+3 R/B", "rocket"], [10779, "ATLAS CENTAUR R/B", "rocket"],
-  [15390, "LEASAT 1 PKM", "rocket"], [20411, "LEASAT 5 PKM (SSUS-A)", "rocket"], [17911, "COSMOS 1842", "satellite"],
-  [43641, "SAOCOM 1-A", "satellite"], [41634, "SJ 16-02", "satellite"], [25023, "MAQSAT H", "satellite"],
-  [54035, "HJ-2E", "satellite"], [42758, "HXMT", "satellite"], [45044, "Starlink 3 A", "starlink"],
-  [100864, "Starlink Group 31-1 (Starship Flight 14) K", "starlink"], [101004, "Starlink Group 15-25 A", "starlink"],
-  [48274, "Tiangong", "tiangong"],
-];
-
-test("satellite kinds follow the integration's rules", () => {
-  for (const [norad_id, name, kind] of CATALOGUE) assert.equal(satelliteKind({ norad_id, name }), kind, name);
-  // The stations by NORAD id, whatever their name and even as text.
-  assert.equal(satelliteKind({ norad_id: "25544", name: "ISS (ZARYA)" }), "iss");
-  assert.equal(satelliteKind({ norad_id: 48274, name: "CSS (TIANHE)" }), "tiangong");
-  // Then by name, ignoring case; a rocket body beats debris, Starlink beats both.
-  assert.equal(satelliteKind({ norad_id: 1, name: "STARLINK-1007" }), "starlink");
-  assert.equal(satelliteKind({ norad_id: 2, name: "intelsat 5 akm" }), "rocket");
-  assert.equal(satelliteKind({ norad_id: 3, name: "SL-16 R/B DEB" }), "rocket");
-  assert.equal(satelliteKind({ norad_id: 4, name: "IRIDIUM 33 DEB" }), "debris");
-  assert.equal(satelliteKind({ norad_id: 5 }), "satellite");
-  assert.equal(satelliteKind(), "satellite");
 });
 
 // 30 s samples of real orbits from the integration: CZ-8 R/B (69419, 89 deg) over the North Pole,
@@ -321,42 +288,6 @@ test("compass points and escaping", () => {
   assert.equal(compass(202), "SSW");
   assert.equal(compass(-90), "W");
   assert.equal(esc(`<b a="x">&'`), "&#60;b a=&#34;x&#34;&#62;&#38;&#39;");
-});
-
-test("preview timeline sweeps to the pass, plays it, then ends", () => {
-  const start = 0;
-  const passStart = 3 * 3600; // two orbits away
-  const passEnd = passStart + 360;
-  const tl = previewTimeline(start, passStart, passEnd);
-  assert.ok(tl.durationMs > 3000 && tl.durationMs < 40000, `${tl.durationMs}`);
-  assert.equal(tl.at(0).sim, 0);
-  assert.equal(tl.at(0).phase, "approach");
-  // Monotonic simulated time.
-  let last = -1;
-  for (let ms = 0; ms <= tl.durationMs; ms += 50) {
-    const s = tl.at(ms);
-    assert.ok(s.sim >= last - 1e-9, `time went backwards at ${ms} ms`);
-    last = s.sim;
-  }
-  const passMoment = [...Array(400).keys()].map((i) => tl.at((i / 400) * tl.durationMs)).find((s) => s.phase === "pass");
-  assert.ok(passMoment.sim >= passStart - 240 - 1 && passMoment.sim <= passEnd + 60);
-  assert.equal(tl.at(tl.durationMs).done, true);
-  // A pass starting within the lead time skips the fast part.
-  assert.equal(previewTimeline(0, 100, 400).at(0).phase, "pass");
-});
-
-test("the preview's sweep counts the satellite's own orbits", () => {
-  const passStart = 6 * 3600;
-  const fast = (tl) => [...Array(2000).keys()].map((i) => i * 10).find((ms) => tl.at(ms).phase !== "approach");
-  // Over the same six hours: four orbits of the ISS (6 s), a third of a 17-hour transfer orbit (3 s, the least).
-  const iss = previewTimeline(0, passStart, passStart + 300);
-  const same = previewTimeline(0, passStart, passStart + 300, { periodS: 92.9 * 60 });
-  const slow = previewTimeline(0, passStart, passStart + 300, { periodS: 17 * 3600 });
-  assert.equal(fast(iss), fast(same));
-  close(fast(iss), ((passStart - 240) / (92.9 * 60)) * 1500, 10);
-  assert.equal(fast(slow), 3000);
-  // No period, or nonsense: the ISS's.
-  assert.equal(fast(previewTimeline(0, passStart, passStart + 300, { periodS: 0 })), fast(iss));
 });
 
 test("ribbons split at the antimeridian", () => {

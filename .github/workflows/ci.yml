@@ -63,8 +63,10 @@ jobs:
         with:
           python-version: "3.14"
       # Whether this commit releases the manifest's version once it is on main.
-      # Fails on a version that is not MAJOR.MM, or lower than the latest release.
+      # Fails on a version that is not MAJOR.MM, or lower than the latest release. Bash, as GitHub
+      # then has a pipe fail if any part of it does.
       - run: python scripts/release.py status | tee -a "$GITHUB_STEP_SUMMARY"
+        shell: bash
 
   python:
     name: Python, Home Assistant ${{ matrix.home-assistant }}
@@ -121,6 +123,20 @@ jobs:
           find custom_components/satellite_spotter/frontend \
             -path '*/vendor' -prune -o -name '*.js' -print0 |
             xargs -0 -n 1 node --check
+
+  browser:
+    name: Real browser
+    # New, so it holds nothing up until it has proved itself on GitHub's machines.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      # What a fake DOM and a fake WebGL cannot show, in the Chrome these machines come with.
+      - run: node tests/browser/run.mjs
+        timeout-minutes: 5
 
   hassfest:
     name: hassfest

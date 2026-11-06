@@ -2,22 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import partial
 import logging
+import math
 import re
 from typing import Any, Self, override
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LONGITUDE
-from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
+from homeassistant.const import (
+    ATTR_LATITUDE,
+    ATTR_LONGITUDE,
+    CONF_ELEVATION,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+)
+from homeassistant.core import CALLBACK_TYPE, Event, HassJob, HomeAssistant, State, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_point_in_utc_time
+from homeassistant.helpers.event import (
+    EventStateChangedData,
+    async_track_point_in_utc_time,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
+from homeassistant.util.location import distance as location_distance
 
 from . import track
 from .catalog import CatalogManager
@@ -29,14 +42,21 @@ from .const import (
     CONF_ALERT_LEAD_MINUTES,
     CONF_BRIGHTNESS_CUTOFF,
     CONF_CLOUD_FORECAST,
+    CONF_FOLLOW_ENTITY,
+    CONF_MIN_ELEVATION,
     CONF_SHOW_CALENDAR,
     CONF_UNITS,
+    CONF_WEATHER_ENTITY,
     DEFAULT_ALERT_LEAD_MINUTES,
     DEFAULT_BRIGHTNESS_CUTOFF,
     DEFAULT_CLOUD_FORECAST,
+    DEFAULT_MIN_ELEVATION,
     DEFAULT_SHOW_CALENDAR,
     DEFAULT_UNITS,
     DOMAIN,
+    FIRST_DOWNLOAD_WAIT,
+    FOLLOW_MIN_INTERVAL,
+    FOLLOW_MIN_MOVE_KM,
     FORECAST_MAX_AGE,
     ISSUE_CATALOG_STALE,
     LIVE_EVERY,
@@ -49,7 +69,13 @@ from .const import (
     UPCOMING_WINDOW,
 )
 from .predict import Flyover, Satellite, find_sightings, group_sightings
-from .weather import CloudCoverError, CloudForecast, async_fetch_forecast
+from .rating import pass_score, rating_of
+from .weather import (
+    CloudCoverError,
+    CloudForecast,
+    async_entity_forecast,
+    async_fetch_forecast,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +101,9 @@ class PredictionSettings:
     alert_lead: timedelta
     show_in_calendar: bool
     units: str
+    min_elevation: float
+    weather_entity: str | None
+    follow_entity: str | None
 
     @classmethod
     def from_options(cls, options: Mapping[str, Any]) -> Self:
@@ -87,6 +116,9 @@ class PredictionSettings:
             ),
             show_in_calendar=options.get(CONF_SHOW_CALENDAR, DEFAULT_SHOW_CALENDAR),
             units=options.get(CONF_UNITS, DEFAULT_UNITS),
+            min_elevation=options.get(CONF_MIN_ELEVATION, DEFAULT_MIN_ELEVATION),
+            weather_entity=options.get(CONF_WEATHER_ENTITY) or None,
+            follow_entity=options.get(CONF_FOLLOW_ENTITY) or None,
         )
 
 
@@ -98,10 +130,25 @@ class ListedPass(Flyover):
     cloud_cover: int | None
     shapes: list[track.SightingShape]
     peak: track.SkyPoint
+    moon_dimming: float = 0.0
 
     def notice_at(self, alert_lead: timedelta) -> datetime:
         """Return when a pass's advance notice starts: that long before the lead appears."""
         return self.lead.appears.time - alert_lead
+
+    @property
+    def rating(self) -> str:
+        """Say how worth going outside for it is: great, good, fair or poor."""
+        return rating_of(
+            pass_score(
+                self.peak_magnitude,
+                self.sky_limit,
+                self.peak.elevation,
+                self.duration,
+                self.cloud_cover,
+                self.moon_dimming,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -126,6 +173,17 @@ class Predictions:
     def __post_init__(self) -> None:
         """Index the passes."""
         self.by_id = {p.id: p for p in self.passes}
+
+    @classmethod
+    def empty(cls, now: datetime, satellites: Mapping[int, Satellite]) -> Self:
+        """Return no passes, from no search: the next refresh will search, whatever the catalog."""
+        return cls(
+            passes=[],
+            searched_at=now,
+            catalog_version=-1,
+            satellites=satellites,
+            cloud_forecast=None,
+        )
 
     def next_visible_pass(self, now: datetime) -> ListedPass | None:
         """Return the pass under way, or else the next."""
@@ -183,12 +241,14 @@ def _listed(
         )
         for sighting in flyover.sightings[:MAX_SIGHTINGS]
     ]
+    peak = max((shape.peak for shape in shapes), key=lambda peak: peak.elevation)
     return ListedPass(
         flyover.sightings,
         id=str(int(flyover.start.timestamp())),
         cloud_cover=None if forecast is None else forecast.after(flyover.start),
         shapes=shapes,
-        peak=max((shape.peak for shape in shapes), key=lambda peak: peak.elevation),
+        peak=peak,
+        moon_dimming=track.moon_dimming(observer, peak.time),
     )
 
 
@@ -226,6 +286,22 @@ def _nothing_to_stop() -> None:
     """Stand in for the timer's stopper while no timer is set."""
 
 
+def _place_of(state: State | None) -> tuple[float, float] | None:
+    """Return where a person or tracker says it is, if it says, in degrees."""
+    if state is None:
+        return None
+    latitude, longitude = state.attributes.get(ATTR_LATITUDE), state.attributes.get(ATTR_LONGITUDE)
+    if not isinstance(latitude, int | float) or not isinstance(longitude, int | float):
+        return None
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        return None
+    return (
+        (float(latitude), float(longitude))
+        if abs(latitude) <= 90 and abs(longitude) <= 180
+        else None
+    )
+
+
 class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
     """Predicts a location's passes, and wakes the entities when what they say changes."""
 
@@ -233,34 +309,61 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, catalog: CatalogManager) -> None:
         """Set up from the entry's data and options, listening for new catalogs."""
+        # First of all, as Home Assistant shuts down whatever the parent's constructor has seen,
+        # and an entry that makes no sense raises here.
+        self.settings = PredictionSettings.from_options(entry.options)
+        self.observer = self._observer_at(
+            entry, entry.data[CONF_LATITUDE], entry.data[CONF_LONGITUDE]
+        )
+        self._stopped = False
+        self._stop_live_timer: CALLBACK_TYPE = _nothing_to_stop
+        self._stop_waiting: CALLBACK_TYPE = _nothing_to_stop
+        self._stop_listening: CALLBACK_TYPE = _nothing_to_stop
+        self._stop_following: CALLBACK_TYPE = _nothing_to_stop
+        self._stop_follow_timer: CALLBACK_TYPE = _nothing_to_stop
+        # The entry's id and not its title in what can reach a log: a location may be named after
+        # an address.
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
-            name=f"{DOMAIN} {entry.title}",
+            name=f"{DOMAIN} {entry.entry_id}",
             update_interval=REFRESH_EVERY,
         )
         self.catalog = catalog
-        self.observer = track.Observer(
-            entry.data[CONF_LATITUDE],
-            entry.data[CONF_LONGITUDE],
-            entry.data.get(CONF_ELEVATION, 0.0),
-        )
-        self.settings = PredictionSettings.from_options(entry.options)
         self.title = entry.title
         self.live: LiveSatellite | None = None
         self._live_listeners: list[CALLBACK_TYPE] = []
-        self._stop_live_timer: CALLBACK_TYPE = _nothing_to_stop
         self._live_job = HassJob(
             self._async_live_tick, f"{self.name} live", cancel_on_shutdown=True
         )
         self._forecast: CloudForecast | None = None
         self._forecast_at: datetime | None = None
         self._updating = False
-        self._stopped = False
-        self._stop_waiting: CALLBACK_TYPE = _nothing_to_stop
-        self._stop_listening: CALLBACK_TYPE = catalog.async_add_listener(self._async_new_catalog)
+        # What the first refresh left out, for after setup.
+        self._catch_up = False
+        self._searched_from: track.Observer | None = None
+        self._moved_at: datetime | None = None
+        self._stop_listening = catalog.async_add_listener(self._async_new_catalog)
         self._wake_job = HassJob(self._async_wake, f"{self.name} wake", cancel_on_shutdown=True)
+        self._follow_job = HassJob(
+            self._async_check_followed, f"{self.name} follow", cancel_on_shutdown=True
+        )
+        if (followed := self.settings.follow_entity) is not None:
+            self._stop_following = async_track_state_change_event(
+                hass, [followed], self._async_followed_changed
+            )
+            # At once if it says, so that the first search is from there.
+            if (place := _place_of(hass.states.get(followed))) is not None:
+                self.observer = self._observer_at(entry, *place)
+
+    def _observer_at(self, entry: ConfigEntry, latitude: float, longitude: float) -> track.Observer:
+        return track.Observer(
+            latitude,
+            longitude,
+            entry.data.get(CONF_ELEVATION) or 0.0,
+            self.settings.min_elevation,
+        )
 
     @property
     def predictions(self) -> Predictions | None:
@@ -276,40 +379,94 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             self._updating = False
 
     async def _async_predict(self) -> Predictions:
+        if self.predictions is None:
+            return await self._async_first_predictions()
         try:
             satellites = await self.catalog.async_satellites()
         except CatalogError as err:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="catalog_unavailable",
-                translation_placeholders={"error": str(err)},
-            ) from err
-        version, by_id = self.catalog.version, self.catalog.by_id()
-
+            raise self._unavailable(str(err)) from err
         now = dt_util.utcnow()
         self._async_check_age(now)
 
         forecast = await self._async_forecast(now)
-        enabled = self.settings.cloud_forecast
         data = self.predictions
         if (
             data is not None
-            and data.catalog_version == version
+            and data.catalog_version == self.catalog.version
+            and self._searched_from is self.observer
             and timedelta(0) <= now - data.searched_at < SEARCH_EVERY
         ):
-            return _with_clouds(data, now, forecast, enabled)
+            return _with_clouds(data, now, forecast, self.settings.cloud_forecast)
+        return await self._async_search(satellites, now, forecast)
 
+    async def _async_first_predictions(self) -> Predictions:
+        """Start from the catalog there is, and leave the network until setup is over.
+
+        A network that accepts and never answers would otherwise hold up Home Assistant's start,
+        when a stored catalog has all that the entities need. Only with no catalog at all is it
+        worth waiting for one, and then the network has shown that it works. If the catalog is too
+        old to go by there are no passes, but setup still succeeds, so that the entity saying how
+        old it is is there.
+        """
+        satellites = await self.catalog.async_load()
+        if satellites is None:
+            await self._async_wait_for_a_download()
+            try:
+                satellites = self.catalog.loaded()
+            except CatalogError as err:
+                raise self._unavailable(str(err)) from err
+            forecast_now = True
+        else:
+            self._catch_up = True
+            forecast_now = False
+        now = dt_util.utcnow()
+        if self.stale_age(now) is not None:
+            self._catch_up = True
+            return Predictions.empty(now, self.catalog.by_id())
+        self._async_check_age(now)
+        return await self._async_search(
+            satellites, now, await self._async_forecast(now) if forecast_now else None
+        )
+
+    async def _async_wait_for_a_download(self) -> None:
+        """Give the first download a little while: it goes on by itself if that is not enough.
+
+        Not tied to the location, which would stop it if setup is to be retried: CelesTrak would
+        have answered some of it for nothing.
+        """
+        download = self.hass.async_create_background_task(
+            self.catalog.async_refresh(), name=f"{DOMAIN} first download"
+        )
+        done, _ = await asyncio.wait({download}, timeout=FIRST_DOWNLOAD_WAIT.total_seconds())
+        if not done:
+            raise self._unavailable("Still waiting for CelesTrak")
+        download.result()
+
+    @staticmethod
+    def _unavailable(error: str) -> UpdateFailed:
+        return UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key="catalog_unavailable",
+            translation_placeholders={"error": error},
+        )
+
+    async def _async_search(
+        self, satellites: list[Satellite], now: datetime, forecast: CloudForecast | None
+    ) -> Predictions:
+        version, by_id, observer = self.catalog.version, self.catalog.by_id(), self.observer
         passes = await self.hass.async_add_executor_job(
             partial(
                 predict_passes,
                 satellites,
-                self.observer,
+                observer,
                 # A whole minute, so that passes keep their times and ids from run to run.
                 start=(now - PREDICTION_LOOKBACK).replace(second=0, microsecond=0),
                 faintest=self.settings.brightness_cutoff,
                 forecast=forecast,
             )
         )
+        self._searched_from = observer
+        enabled = self.settings.cloud_forecast
         return Predictions(
             passes=passes,
             searched_at=now,
@@ -318,16 +475,30 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             cloud_forecast=forecast is not None if enabled else None,
         )
 
+    @callback
+    def async_catch_up(self) -> None:
+        """Do what the first refresh left out, now that setup is over: not something to wait for."""
+        if self._catch_up:
+            self._catch_up = False
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_refresh(), name=f"{self.name} catch up"
+            )
+
+    async def _async_fetch_forecast(self) -> CloudForecast:
+        if (entity_id := self.settings.weather_entity) is not None:
+            return await async_entity_forecast(self.hass, entity_id)
+        return await async_fetch_forecast(
+            async_get_clientsession(self.hass),
+            self.observer.latitude,
+            self.observer.longitude,
+        )
+
     async def _async_forecast(self, now: datetime) -> CloudForecast | None:
         """Return the latest forecast, or the last one while it is fresh enough; None without."""
         if not self.settings.cloud_forecast:
             return None
         try:
-            self._forecast = await async_fetch_forecast(
-                async_get_clientsession(self.hass),
-                self.observer.latitude,
-                self.observer.longitude,
-            )
+            self._forecast = await self._async_fetch_forecast()
             self._forecast_at = now
         except CloudCoverError as err:
             _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
@@ -346,15 +517,19 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         if self.catalog.last_error:
             placeholders["error"] = self.catalog.last_error
             key = ISSUE_CATALOG_STALE
-        ir.async_create_issue(
-            self.hass,
-            DOMAIN,
-            ISSUE_CATALOG_STALE,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=key,
-            translation_placeholders=placeholders,
-        )
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                ISSUE_CATALOG_STALE,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=key,
+                translation_placeholders=placeholders,
+            )
+        else:
+            # The download worked and CelesTrak's own data is as old. Nothing here can be fixed, so
+            # it is no repair: the page and the epoch sensor say what is going on.
+            ir.async_delete_issue(self.hass, DOMAIN, ISSUE_CATALOG_STALE)
         raise UpdateFailed(
             # Home Assistant can wake a refresh a second early: this one must find the catalog
             # ready to try again.
@@ -362,6 +537,40 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             translation_domain=DOMAIN,
             translation_key=key,
             translation_placeholders=placeholders,
+        )
+
+    @callback
+    def _async_followed_changed(self, _event: Event[EventStateChangedData]) -> None:
+        self._async_check_followed()
+
+    @callback
+    def _async_check_followed(self, _now: datetime | None = None) -> None:
+        """Move with the person or tracker, once far enough away, and not too often.
+
+        The search takes seconds of work on a small computer, and passes barely change over
+        a few kilometres. The entry itself stays where it was set up.
+        """
+        self._stop_follow_timer()
+        self._stop_follow_timer = _nothing_to_stop
+        followed = self.settings.follow_entity
+        place = None if followed is None else _place_of(self.hass.states.get(followed))
+        if self._stopped or place is None:
+            return
+        metres = location_distance(self.observer.latitude, self.observer.longitude, *place)
+        if metres is None or metres < FOLLOW_MIN_MOVE_KM * 1000.0:
+            return
+        now = dt_util.utcnow()
+        if self._moved_at is not None and (later := self._moved_at + FOLLOW_MIN_INTERVAL) > now:
+            self._stop_follow_timer = async_track_point_in_utc_time(
+                self.hass, self._follow_job, later
+            )
+            return
+        self._moved_at = now
+        self.observer = self._observer_at(self.config_entry, *place)
+        # The forecast was for somewhere else.
+        self._forecast = self._forecast_at = None
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_request_refresh(), name=f"{self.name} moved"
         )
 
     @callback
@@ -461,6 +670,10 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         self._stop_waiting = _nothing_to_stop
         self._stop_live_timer()
         self._stop_live_timer = _nothing_to_stop
+        self._stop_following()
+        self._stop_following = _nothing_to_stop
+        self._stop_follow_timer()
+        self._stop_follow_timer = _nothing_to_stop
         self._stop_listening()
         await super().async_shutdown()
 

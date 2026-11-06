@@ -302,6 +302,13 @@
     "easy": "fácil de ver",
     "faint": "débil"
   },
+  "rating": {
+    "says": "Valoración: {rating}",
+    "great": "Excelente",
+    "good": "Bueno",
+    "fair": "Regular",
+    "poor": "Malo"
+  },
   "timebar": {
     "name": "Controles de la simulación",
     "simulation": "Simulación",

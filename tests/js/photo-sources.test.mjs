@@ -189,7 +189,7 @@ test("the Mapillary search goes without cookies or referrer, needs a token and s
   await assert.rejects(findMapillaryPhotos(HOME, { token: "MLY|1|2", fetch: down.fetch }), (err) => err.refused === false && err.status === 500);
   // One that never answers is given up on.
   const silent = (url, init) => new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))));
-  await assert.rejects(findMapillaryPhotos(HOME, { token: "MLY|1|2", fetch: silent, timeoutMs: 10 }), /aborted/);
+  await assert.rejects(findMapillaryPhotos(HOME, { token: "MLY|1|2", fetch: silent, timeoutMs: 10 }), (err) => err.name === "TimeoutError");
 });
 
 // ---- Google Street View --------------------------------------------------------------

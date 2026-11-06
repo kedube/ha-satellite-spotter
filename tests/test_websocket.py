@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta
 import itertools
+import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -26,16 +27,20 @@ from custom_components.satellite_spotter.const import (
     CONF_STREET_VIEW,
     DOMAIN,
     PASS_TRACK_MAX_STEP,
+    POSITIONS_BURST,
+    POSITIONS_REFILL_SECONDS,
     TRACK_EPOCH_RANGE,
 )
 from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
 from custom_components.satellite_spotter.frontend import (
+    DATA_FRONTEND,
     _number,
     build_passes_payload,
     is_train,
     pass_json,
     pass_track_payload,
+    positions_json,
     starlink_count,
     track_step,
 )
@@ -44,7 +49,7 @@ from .common import DENVER, FIRST_PASS_ID, HONOLULU, NOW, add_location, advance,
 
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
-    "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "sun_up",
+    "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "rating", "sun_up",
     "cloud_cover", "satellite_count", "starlink_count", "train", "peak",
     "transits",
 }  # fmt: skip
@@ -109,7 +114,12 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
         "title": "Home",
         **HONOLULU,
     }
-    assert result["settings"] == {"units": "auto", "days": 5, "min_elevation": 10}
+    assert result["settings"] == {
+        "units": "auto",
+        "days": 5,
+        "min_elevation": 10,
+        "pass_id_tolerance": 120,
+    }
     catalog = result["catalog"]
     assert catalog["updated"] == int(NOW.timestamp())
     assert catalog["version"] == int(NOW.timestamp())
@@ -821,3 +831,75 @@ def test_a_number_that_is_not_there_stays_not_there() -> None:
     assert _number(None, 1) is None
     assert _number(float("nan"), 1) is None
     assert _number(float("inf"), 1) is None
+
+
+# A burst of requests for positions.
+
+
+async def test_a_burst_of_requests_for_positions_runs_out(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    client = await hass_ws_client(hass)
+    clock = [1000.0]
+    with patch("custom_components.satellite_spotter.frontend.time.monotonic", lambda: clock[0]):
+        replies = []
+        for _ in range(POSITIONS_BURST + 3):
+            await client.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+            replies.append(await client.receive_json())
+        assert all(reply["success"] for reply in replies[:POSITIONS_BURST])
+        assert all(
+            reply["error"]["code"] == "too_many_requests" for reply in replies[POSITIONS_BURST:]
+        )
+        # One more, every so often.
+        clock[0] += POSITIONS_REFILL_SECONDS
+        await client.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+        assert (await client.receive_json())["success"]
+        await client.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+        assert not (await client.receive_json())["success"]
+
+
+async def test_the_budget_is_each_users_own(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: Any,
+    hass_read_only_access_token: str,
+) -> None:
+    client = await hass_ws_client(hass)
+    for _ in range(POSITIONS_BURST + 1):
+        await client.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+        last = await client.receive_json()
+    assert not last["success"]
+    other = await hass_ws_client(hass, hass_read_only_access_token)
+    await other.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+    assert (await other.receive_json())["success"]
+
+
+async def test_the_same_positions_asked_for_at_once_are_worked_out_once(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    client = await hass_ws_client(hass)
+    with patch(
+        "custom_components.satellite_spotter.frontend.positions_json", wraps=positions_json
+    ) as worked_out:
+        for _ in range(5):
+            await client.send_json_auto_id({"type": f"{DOMAIN}/positions", "span": 120})
+        replies = [await client.receive_json() for _ in range(5)]
+    assert all(reply["success"] for reply in replies)
+    assert len({json.dumps(reply["result"]) for reply in replies}) == 1
+    assert worked_out.call_count == 1
+    assert not hass.data[DATA_FRONTEND].positions_jobs
+
+
+async def test_a_failure_working_out_positions_is_reported_to_everyone_waiting(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    client = await hass_ws_client(hass)
+    with patch(
+        "custom_components.satellite_spotter.frontend.positions_json",
+        side_effect=ValueError("no"),
+    ):
+        for _ in range(2):
+            await client.send_json_auto_id({"type": f"{DOMAIN}/positions", "span": 180})
+        replies = [await client.receive_json() for _ in range(2)]
+    assert not any(reply["success"] for reply in replies)
+    assert not hass.data[DATA_FRONTEND].positions_jobs

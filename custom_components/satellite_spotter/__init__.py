@@ -14,6 +14,7 @@ from .const import CALENDAR_KEY, DOMAIN, POSITION_KEY
 from .coordinator import PredictionSettings, SatelliteSpotterCoordinator
 from .frontend import async_clear_stale_issue, async_setup_frontend, async_update_panel
 from .sensor import SENSOR_KEYS
+from .services import async_setup_services
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -28,8 +29,9 @@ def _platforms(settings: PredictionSettings) -> list[Platform]:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Serve the frontend."""
+    """Serve the frontend, and offer the action."""
     await async_setup_frontend(hass)
+    async_setup_services(hass)
     return True
 
 
@@ -63,6 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: SatelliteSpotterConfigEn
     entry.runtime_data = coordinator
     entry.async_on_unload(coordinator.async_add_listener(_async_keep_refreshing))
     await hass.config_entries.async_forward_entry_setups(entry, _platforms(coordinator.settings))
+    coordinator.async_catch_up()
     return True
 
 
