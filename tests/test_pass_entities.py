@@ -192,6 +192,8 @@ async def test_the_description_has_what_the_readme_lists_worked_out_by_hand(
     attributes = state_of(hass, NEXT_PASS).attributes
     assert {key: attributes[key] for key in attributes if key not in COMMON_ATTRIBUTES} == {
         "pass_id": str(int(start.timestamp())),
+        "pass_start": start,
+        "pass_end": start + timedelta(seconds=360),
         "satellite": "ISS",
         "catalog_number": 25544,
         "kind": "iss",
@@ -222,12 +224,15 @@ async def test_the_description_has_what_the_readme_lists_worked_out_by_hand(
         "upcoming": [
             {
                 "pass_id": str(int(start.timestamp())),
-                "satellite": "ISS +1",
+                "title": "ISS +1",
+                "pass_start": start,
+                "pass_end": start + timedelta(seconds=360),
+                "satellite": "ISS",
                 "start": start,
-                "end": start + timedelta(seconds=360),
+                "end": start + timedelta(seconds=300),
                 "peak_elevation": 40.4,
                 "peak_direction": "NW",
-                "duration_seconds": 360,
+                "duration_seconds": 300,
                 "magnitude": -2.5,
                 "bright": True,
                 "rating": "great",
@@ -244,7 +249,8 @@ async def test_times_are_local_and_to_the_second(
     start = (NOW + timedelta(hours=1)).replace(microsecond=250000)
     await location_with(hass, predict_passes, dim_pass(start))
     attributes = state_of(hass, NEXT_PASS).attributes
-    for moment in (attributes["start"], attributes["upcoming"][0]["start"]):
+    one = attributes["upcoming"][0]
+    for moment in (attributes["start"], attributes["pass_start"], one["start"], one["pass_start"]):
         assert moment.microsecond == 0
         assert moment.utcoffset() == timedelta(hours=-10)
 
@@ -296,8 +302,8 @@ async def test_the_sensors_describe_the_brightest_of_a_group(
     assert state_of(hass, PEAK_ELEVATION).state == "30.0"
     assert state_of(hass, BRIGHTNESS).state == "-1.0"
     assert float(state_of(hass, DURATION).state) == pytest.approx(100 / 60)
-    # The first to appear decides when the pass begins, and the upcoming list names the group.
-    assert state_of(hass, NEXT_PASS).attributes["upcoming"][0]["satellite"] == "ISS +1"
+    # The upcoming list names the group, in a title of its own.
+    assert state_of(hass, NEXT_PASS).attributes["upcoming"][0]["title"] == "ISS +1"
 
 
 COMMON_ATTRIBUTES = {"attribution", "device_class", "friendly_name", "icon"}
@@ -319,10 +325,10 @@ async def test_the_description_is_of_the_brightest_when_it_appears_later(
     assert attributes["start"] == start + timedelta(seconds=100)
     assert attributes["duration_seconds"] == 100
     assert attributes["about_url"] == "https://en.wikipedia.org/wiki/International_Space_Station"
-    # The state is when the first of them appears, and the list says when the last has gone.
+    # The state is when the first of them appears, and pass_end is when the last has gone.
     assert state.state == stamp(start)
-    assert attributes["upcoming"][0]["start"] == start
-    assert attributes["upcoming"][0]["end"] == start + timedelta(seconds=500)
+    assert attributes["pass_start"] == start
+    assert attributes["pass_end"] == start + timedelta(seconds=500)
 
 
 async def test_no_forecast_for_a_pass_means_no_cloud_cover(
@@ -739,20 +745,30 @@ async def test_the_epoch_sensor_goes_on_saying_how_old_the_orbits_are_while_paus
     assert state.attributes["last_download_error"] == "still no route"
 
 
-async def test_the_upcoming_list_describes_a_whole_pass(
+async def test_the_upcoming_list_means_what_the_attributes_and_sensors_mean(
     hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], predict_passes: MagicMock
 ) -> None:
     start = NOW + timedelta(hours=1)
+    later = start + timedelta(seconds=100)
     p = listed(
         sighting(start, 600, name="FAINT", norad_id=1, peak_magnitude=1.5, best_view=(90.0, 80.0)),
-        sighting(start, 120, peak_magnitude=-1.0, best_view=(180.0, 30.0)),
+        sighting(later, 120, peak_magnitude=-1.0, best_view=(180.0, 30.0)),
     )
     await location_with(hass, predict_passes, p)
-    (one,) = state_of(hass, NEXT_PASS).attributes["upcoming"]
-    assert one["satellite"] == "ISS +1"
-    assert (one["start"], one["end"]) == (start, start + timedelta(seconds=600))
-    assert one["duration_seconds"] == 600
-    assert (one["peak_elevation"], one["peak_direction"]) == (80.0, "E")
+    attributes = state_of(hass, NEXT_PASS).attributes
+    (one,) = attributes["upcoming"]
+    # No key is both the brightest's and the group's: only the title is the list's own.
+    assert one["title"] == "ISS +1"
+    shared = set(one) - {"title"}
+    assert {key: one[key] for key in shared} == {key: attributes[key] for key in shared}
+    # Worked out by hand, so that the two cannot simply agree on the wrong thing.
+    assert one["satellite"] == state_of(hass, SATELLITE_NAME).state == "ISS"
+    assert (one["pass_start"], one["pass_end"]) == (start, start + timedelta(seconds=600))
+    assert (one["start"], one["end"]) == (later, later + timedelta(seconds=120))
+    assert one["duration_seconds"] == 120
+    assert float(state_of(hass, DURATION).state) == pytest.approx(120 / 60)
+    assert (one["peak_elevation"], one["peak_direction"]) == (30.0, "S")
+    assert state_of(hass, PEAK_ELEVATION).state == "30.0"
     assert one["magnitude"] == -1.0
 
 

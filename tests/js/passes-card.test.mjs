@@ -143,6 +143,19 @@ test("a countdown to the next pass, then the passes after it", async () => {
   await c.unmount();
 });
 
+test("the card's height and length are the brightest satellite's, but a train's are its line's", async () => {
+  const group = makePass({ id: "46265-1792277000", title: "SAOCOM 1B +18", start: BOSTON_NOW + 600, duration: 1152, elevation: 87, from: "W", to: "E" });
+  const [lead] = group.transits;
+  group.transits[0] = { ...lead, start: group.start + 810, end: group.start + 1119, peak: { ...lead.peak, elevation: 61 } };
+  const single = await mount({ passes: [group, ...PASSES] });
+  assert.equal(single.text(".facts.path"), "W→E" + "up to 61°" + "5 min");
+  await single.unmount();
+  const line = { count: 15, peak: { ...lead.peak, elevation: 49 }, duration: 1100, from: "NNW", to: "ESE" };
+  const train = await mount({ passes: [{ ...group, train: line }, ...PASSES] });
+  assert.equal(train.text(".facts.path"), "NNW→ESE" + "up to 49°" + "18 min");
+  await train.unmount();
+});
+
 test("the sky chart's star says the hero's magnitude: the group's brightest satellite", async () => {
   // COSMO-SKYMED with the ISS riding along: the ISS is the brighter, and the pass's magnitude is its.
   const group = makePass({

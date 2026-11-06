@@ -145,7 +145,7 @@ export function makePass(start, end, { ids = [25544], kind = "iss", bright = tru
     limiting_magnitude: 4,
     cloud_cover: cloud,
     satellite_count: ids.length,
-    train,
+    train: train ? { count: ids.length, peak: { time: start + 90, azimuth: 150, elevation: 67, direction: "SSE" }, duration: end - start, from: "SW", to: "NE" } : null,
     peak: { time: start + 90, azimuth: 150, elevation: 67, direction: "SSE" },
     transits,
     ...extra,

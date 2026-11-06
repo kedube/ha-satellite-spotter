@@ -44,8 +44,7 @@ function pass(start, title, rating) {
     sun_up: false,
     cloud_cover: 12,
     satellite_count: 1,
-    starlink_count: 0,
-    train: false,
+    train: null,
     peak: { time: start + 150, ...point(180, 60, "S") },
     transits: [
       {

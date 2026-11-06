@@ -132,10 +132,24 @@ export function brightestMember(pass) {
   return best ?? pass?.transits?.[0] ?? null;
 }
 
-/** Where a pass starts and ends, as compass points: ["SW", "ENE"] (the first satellite's). */
+/** Where a pass starts and ends, as compass points: ["SW", "ENE"] (its brightest satellite's, or a train's line's). */
 export function passDirections(pass) {
+  if (pass?.train?.from) return [pass.train.from, pass.train.to];
   const t = pass?.transits?.[0];
   return [t?.rise?.direction, t?.set?.direction];
+}
+
+/**
+ * How high a pass climbs and how long it lasts, as its row says: {peak, duration} (s). These are
+ * its brightest satellite's, as its title, directions and rating are. A train's are the line's,
+ * because the line of them is what there is to see.
+ */
+export function passExtent(pass) {
+  const train = pass?.train;
+  if (train?.peak) return { peak: train.peak, duration: train.duration };
+  const lead = train ? null : pass?.transits?.[0];
+  if (lead?.peak) return { peak: lead.peak, duration: lead.end - lead.start };
+  return { peak: pass?.peak, duration: pass?.duration ?? pass?.end - pass?.start };
 }
 
 /**
@@ -240,9 +254,10 @@ export function rowParts(pass, fmt, { live = false, moon = null } = {}) {
   const kindWord = pass.train ? fmt.t("kinds.train") : fmt.kind(pass.kind);
   const { level, word } = fmt.brightness(pass.magnitude);
   const magnitude = fmt.magnitude(pass.magnitude);
-  const elevation = fmt.degrees(pass.peak?.elevation);
+  const extent = passExtent(pass);
+  const elevation = fmt.degrees(extent.peak?.elevation);
   const [from, to] = passDirections(pass).map((d) => (d ? fmt.direction(d) : ""));
-  const duration = fmt.duration(pass.duration ?? pass.end - pass.start);
+  const duration = fmt.duration(extent.duration);
   const cloud = fmt.cloud(pass.cloud_cover);
   const member = notableMember(pass);
   const moonSays = moonText(moon, fmt);

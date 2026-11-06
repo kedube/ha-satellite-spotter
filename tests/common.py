@@ -196,9 +196,11 @@ def made_up_satellite(
     *,
     epoch: datetime = NOW - timedelta(days=1),
     standard_magnitude: float | None = -1.0,
+    object_id: str | None = None,
 ) -> Satellite:
-    """Return a satellite by name and number, on the ISS's orbit."""
-    return Satellite(norad_id, name, standard_magnitude, None, _iss_elements(), epoch)
+    """Return a satellite by name and number, on the ISS's orbit, and of its launch unless told."""
+    elements = _iss_elements() if object_id is None else {**_iss_elements(), "OBJECT_ID": object_id}
+    return Satellite(norad_id, name, standard_magnitude, None, elements, epoch)
 
 
 def sighting(
@@ -214,11 +216,12 @@ def sighting(
     best_view: tuple[float, float] = (315.0, 40.0),
     disappears: tuple[float, float] = (45.0, 10.0),
     epoch: datetime = NOW - timedelta(days=1),
+    object_id: str | None = None,
 ) -> Sighting:
     """Return a sighting, by default of something bright: azimuths and elevations in degrees."""
     end = start + timedelta(seconds=seconds)
     return Sighting(
-        satellite=made_up_satellite(name, norad_id, epoch=epoch),
+        satellite=made_up_satellite(name, norad_id, epoch=epoch, object_id=object_id),
         appears=Moment(start, *appears),
         brightest=Moment(start + (end - start) / 2, *best_view),
         vanishes=Moment(end, *disappears),

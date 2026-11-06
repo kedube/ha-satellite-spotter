@@ -774,6 +774,17 @@ test("a pass says what can make it easier or harder to see", () => {
   assert.equal(view._conditions(pass).some((c) => c.cls === "moon"), false);
 });
 
+test("a pass's summary has the brightest satellite's height and length, but a train's are its line's", () => {
+  const view = new SatelliteGlobeView();
+  const summary = (pass) => view._passSummary(pass).replace(/\s/g, " ");
+  const pass = makePass(T0 + 600, T0 + 1752);
+  pass.peak = { ...pass.peak, elevation: 87 };
+  pass.transits[0] = { ...pass.transits[0], start: T0 + 1410, end: T0 + 1719 };
+  assert.match(summary(pass), /^SW → NE · up to 67° · 5 min · /);
+  const line = { count: 15, peak: { ...pass.peak, elevation: 49 }, duration: 1100, from: "W", to: "E" };
+  assert.match(summary({ ...pass, train: line }), /^W → E · up to 49° · 18 min · /);
+});
+
 test("the list's filters: handed to the list, told to the host, and followed by the strip and the pass shown", async () => {
   const clock = installClock(T0 * 1000);
   try {

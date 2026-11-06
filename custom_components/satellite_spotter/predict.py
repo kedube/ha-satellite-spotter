@@ -73,6 +73,11 @@ class Satellite:
             epoch=datetime.fromisoformat(fields["EPOCH"].removesuffix("Z")).replace(tzinfo=UTC),
         )
 
+    @property
+    def launch(self) -> str:
+        """Return which launch it came from: its international designator, without the piece."""
+        return self.elements.get("OBJECT_ID", "")[:8]
+
     def sgp4_record(self) -> Satrec:
         """Build a new SGP4 record of the elements."""
         fields = self.elements

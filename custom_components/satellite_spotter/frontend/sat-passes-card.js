@@ -659,10 +659,11 @@ export class SatellitePassesView extends BaseElement {
     for (let i = 0; i < 5; i++) bars += `<i class="${i <= level ? "on" : ""}"></i>`;
     const rating = fmt.rating(pass);
     const facts = `${rating ? `<span class="rate ${esc(rating.level)}" title="${esc(rating.says)}">${esc(rating.word)}</span>` : ""}<span class="mag"><span class="meter l${level}" aria-hidden="true">${bars}</span>${esc(word)} ${esc(fmt.magnitude(pass.magnitude))}</span>`;
+    const extent = passesModule.passExtent(pass);
     const path = [
       from && to ? `<span>${esc(from)}<span class="arrow" aria-hidden="true">→</span>${esc(to)}</span>` : "",
-      `<span>${around(t("passes.up_to", { elevation: MARK }), `<b class="el">${esc(fmt.degrees(pass.peak?.elevation))}</b>`)}</span>`,
-      `<span>${esc(fmt.duration(pass.duration ?? pass.end - pass.start))}</span>`,
+      `<span>${around(t("passes.up_to", { elevation: MARK }), `<b class="el">${esc(fmt.degrees(extent.peak?.elevation))}</b>`)}</span>`,
+      `<span>${esc(fmt.duration(extent.duration))}</span>`,
     ].join("");
     setHtml(e.name, name);
     setHtml(e.facts, facts);

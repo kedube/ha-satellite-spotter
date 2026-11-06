@@ -150,17 +150,22 @@ names.
 | `calendar.home_visible_passes` | Every pass for about five days, with where to look |
 | `sensor.home_orbital_elements_epoch` | Diagnostic: the middle date of the catalogue's orbital elements, with `downloaded`, `age_days`, `catalog_size`, `stale` and `last_download_error` |
 
-The sensors with a pass's details, and the binary sensors while they are on, carry `pass_id`,
-`satellite`, `catalog_number`, `kind`, `about_url`, `satellite_count`, `satellites`, `duration_seconds`,
+The sensors with a pass's details, and the binary sensors while they are on, carry `pass_id`, `pass_start`,
+`pass_end`, `satellite`, `catalog_number`, `kind`, `about_url`, `satellite_count`, `satellites`, `duration_seconds`,
 `magnitude`, `bright`, `rating`, `sun_up`, `cloud_cover`, `appears_from_shadow`,
 `disappears_into_shadow` and `confidence`, and the time, `_direction`, `_azimuth` and `_elevation` of `start`, `peak` and `end`.
-When several satellites cross together these describe the brightest, and the sensor's state is when
-the first of them appears.
+When several satellites cross together these describe the brightest. Only `pass_start` and `pass_end`
+are the whole group's: when the first of them appears, which is also the state of the two next pass
+sensors, and when the last has gone.
 
-A pass's **rating** is great, good, fair or poor. It weighs how bright the pass looks against the sky at
-that moment, so twilight and moonlight count against it, then how high it climbs, how long it lasts and
-the forecast clouds. It is a rule of thumb. With clear skies, about one pass in eight rates great and
-three in ten good.
+Each pass in `upcoming` has `pass_id`, `title` (the group's name, such as `ISS +1`), `pass_start`,
+`pass_end`, `satellite`, `start`, `end`, `peak_elevation`, `peak_direction`, `duration_seconds`,
+`magnitude`, `bright`, `rating` and `cloud_cover`, with the same meanings.
+
+A pass's **rating** is great, good, fair or poor. It goes by the brightest satellite: how bright it looks
+against the sky at that moment, so twilight and moonlight count against it, then how high it climbs, how
+long it lasts and the forecast clouds. It is a rule of thumb. With clear skies, about one pass in eight
+rates great and over a quarter good.
 
 There is no sensor for the next pass whether visible or not, as there is in
 [ISS Tracker](https://github.com/kedube/ha-iss-tracker): of the catalogue's 970 or so satellites, about
@@ -233,7 +238,8 @@ actions:
 
 Each pass has the fields of the `upcoming` attribute, as well as `kind`, `catalog_number`,
 `satellite_count`, `satellites`, `confidence` and `sky_chart`, a link to a picture of its path that works
-for a day without signing in.
+for a day without signing in. The `start` and `end` filters go by the whole group, `pass_start` and
+`pass_end`.
 
 ## Dashboard cards
 
@@ -262,8 +268,9 @@ Both are in the card picker, with visual editors.
    change it, lit by the Sun, brighter than your **Brightness cutoff**, and bright enough for the sky at
    that moment.
 5. **Passes.** Satellites that overlap or follow within a minute make one pass, named after the
-   brightest, and fewer than five Starlinks together are left out. More than five show as a train. A
-   pass is **bright** when it beats magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
+   brightest, and fewer than five Starlinks together are left out. More than five from one launch show
+   as a train, and the page gives the directions, height and length of those alone. A pass is **bright**
+   when it beats magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
 
 Passes are searched for again with each new catalogue, as they depend on the orbits, and the clouds
 are refreshed every hour. In between nothing polls: entities change at the moments that matter.
@@ -276,9 +283,9 @@ are refreshed every hour. In between nothing polls: entities change at the momen
   81% come within a magnitude, though most of those reports are of satellites too faint for the
   naked eye.
 - **The list differs from See A Satellite Tonight's**, which is a comparison here, not the truth. Over
-  five days at eight cities it found 249 of the site's 330 passes outside Starlink trains, and 62
+  five days at eight cities it found 249 of the site's 330 passes outside Starlink trains, and 65
   others. Of the site's 31 bright passes it listed 29, and labelled 18 of them bright.
-- **Starlink trains** matched in the next two days (2 of 2), but only 10 of 17 over five days,
+- **Starlink trains** matched in the next two days (2 of 2), but only 11 of 17 over five days,
   because their orbits change quickly.
 - **Brightness is an estimate.** A satellite can look a magnitude or more brighter or fainter than
   predicted, and rocket stages flash as they tumble. The Moon and light pollution don't change what is
@@ -356,11 +363,27 @@ To add a language, copy a JSON file in both `translations/` folders, translate t
 
 ## Credits and references
 
-Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`. It began as a fork of Willem Vooijs's
-[See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite) and
-[see-a-satellite](https://github.com/wildekek/see-a-satellite) library, both under the MIT licence, and
-has been largely rewritten since. Code that came from them remains under the notice in
-[`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-satellite.txt).
+Satellite Spotter is licensed under the GNU GPL v3; see `LICENSE`.
+
+### Where the code came from
+
+The first release, in October 2026, drew on two earlier projects:
+
+- **Willem Vooijs's [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
+  and [see-a-satellite](https://github.com/wildekek/see-a-satellite) library**, both under the MIT
+  licence and both ports of James Darpinian's [See A Satellite Tonight](https://james.darpinian.com/satellites/)
+  website. Satellite Spotter began as a fork of them, for its predictions, its catalogue and the first
+  version of its entities.
+- **[ISS Tracker](https://github.com/kedube/ha-iss-tracker)**, by the same author and also under the
+  GNU GPL v3, for the beginnings of its globe, page and globe card, and some of its translations.
+
+Most of the page, including the street view and the passes card, is new here. Release 1.08 replaced
+the library and the website's catalogue with CelesTrak's orbits, a brightness table of its own and
+prediction code in the integration itself, which uses `sgp4`. Release 1.13 brought new entities
+modelled on ISS Tracker's.
+
+What came from Willem's projects has been largely rewritten since. Code that came from them remains
+under the notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-satellite.txt).
 
 ### The predictions
 
@@ -371,9 +394,9 @@ has been largely rewritten since. Code that came from them remains under the not
   [Wide-field optical monitoring with Mini-MegaTORTORA (MMT-9) multichannel high temporal resolution telescope](https://ui.adsabs.harvard.edu/abs/2017AstBu..72...81B/abstract),
   Astrophysical Bulletin, Volume 72, Issue 1, pp. 81-92.
 - **What the sky lets you see:** Weaver 1947,
-  [The Visibility of Stars Without Optical Aid](https://doi.org/10.1086/125956), PASP 59, 232. This
-  code departs from its curve on purpose: -4 rather than about -3.2 in full daylight, and stopping
-  at 4 rather than 6.
+  [The Visibility of Stars Without Optical Aid](https://doi.org/10.1086/125956), PASP 59, 232: table V
+  for slightly hazy air at sea level with the Sun high, figure 2 through twilight, and stopping at table
+  III's 4.0, its limit under the brightest moonlit sky, rather than the figure's 6.0 for a dark one.
 - **Where the Sun is, and how the Earth turns:** Meeus 1998, *Astronomical Algorithms*, ch. 25;
   Aoki et al. 1982 for sidereal time, in the form of Vallado et al. 2006.
 - **How much the air dims a satellite:** Green 1992,
@@ -384,8 +407,7 @@ has been largely rewritten since. Code that came from them remains under the not
   Mallama et al. 2024,
   [The Brightness of Starlink Mini Satellites During Orbit-Raising](https://arxiv.org/abs/2405.12007).
 - **Thresholds with no published source:** the horizon, the height sunlight must clear, the margin
-  over the sky's limit, the departures from Weaver's curve and which passes count as one are James
-  Darpinian's choices for
+  over the sky's limit and which passes count as one are James Darpinian's choices for
   [See A Satellite Tonight](https://james.darpinian.com/satellites/), which does not make or support
   this integration.
 

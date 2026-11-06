@@ -12,7 +12,7 @@ const { english } = await import("../../custom_components/satellite_spotter/fron
 const { Formatter } = await import("../../custom_components/satellite_spotter/frontend/sat-format.js");
 const {
   PassList, brightestMember, cloudHour, cloudText, currentPass, endedPass, groupPasses, matchesFilters, moonGlyph, moonText,
-  nextPass, normalizeFilters, notableMember, passDirections, passMoon, rowParts,
+  nextPass, normalizeFilters, notableMember, passDirections, passExtent, passMoon, rowParts,
 } = await import("../../custom_components/satellite_spotter/frontend/sat-passes.js");
 const astro = await import("../../custom_components/satellite_spotter/frontend/sat-astro.js");
 const { compass } = await import("../../custom_components/satellite_spotter/frontend/sat-geo.js");
@@ -146,6 +146,34 @@ test("a satellite of note riding along is named, and directions come from the fi
   assert.equal(notableMember(byId("101007-1792318250")), null);
   assert.deepEqual(passDirections(byId("25544-1792400980")), ["NW", "ENE"]);
   assert.deepEqual(passDirections({}), [undefined, undefined]);
+});
+
+test("a row's height and length are the brightest satellite's, but a train's are its line's", () => {
+  // The group lasts 1152 s and something in it reaches 87°; the brightest lasts 309 s and reaches 61°.
+  const group = makePass({ id: "46265-1", title: "SAOCOM 1B +18", start: at("2026-10-17T18:49:50-04:00"), duration: 1152, elevation: 87 });
+  const [lead] = group.transits;
+  group.transits[0] = { ...lead, start: group.start + 810, end: group.start + 1119, peak: { ...lead.peak, elevation: 61 } };
+
+  assert.deepEqual(passExtent(group), { peak: group.transits[0].peak, duration: 309 });
+  const row = rowParts(group, fmt);
+  assert.match(plain(row.label), /up to 61°, .*5 min/);
+  assert.match(row.html, /class="el"[^>]*>61°</);
+  assert.match(plain(row.html), /class="dur">5 min</);
+
+  // The line reaches 49°, lasts 1100 s and goes from W to E, whatever else crosses at the time.
+  const line = { count: 15, peak: { ...lead.peak, elevation: 49 }, duration: 1100, from: "W", to: "E" };
+  const train = { ...group, train: line };
+  assert.deepEqual(passExtent(train), { peak: line.peak, duration: 1100 });
+  assert.deepEqual(passDirections(train), ["W", "E"]);
+  assert.match(plain(rowParts(train, fmt).label), /up to 49°, from W to E, 18 min/);
+  assert.deepEqual(passDirections(group), [lead.rise.direction, lead.set.direction]);
+  assert.deepEqual(passDirections({ ...group, train: true }), [lead.rise.direction, lead.set.direction]);
+
+  // With no brightest satellite or line to go by, the pass's own.
+  assert.deepEqual(passExtent({ ...group, train: true }), { peak: group.peak, duration: 1152 });
+  assert.deepEqual(passExtent({ ...group, transits: [] }), { peak: group.peak, duration: 1152 });
+  assert.deepEqual(passExtent({ ...group, transits: [{ ...lead, peak: undefined }] }), { peak: group.peak, duration: 1152 });
+  assert.deepEqual(passExtent({ start: 100, end: 160 }), { peak: undefined, duration: 60 });
 });
 
 test("a row says everything about its pass, in words for screen readers", () => {

@@ -9,6 +9,27 @@ commits instead.
 - **A new icon and logo:** a small, bright satellite crossing the sky at nightfall, over a home with one
   lit window and someone outside pointing up. The logo's name takes the sky's indigo and the horizon's
   orange, in lighter shades on dark themes.
+- **Fixed: a pass's details could mean two things. Automations that read `upcoming` or
+  `satellite_spotter.get_passes` may need updating.** When several satellites crossed together,
+  `satellite`, `start`, `end`, `duration_seconds`, `peak_elevation` and `peak_direction` described the
+  brightest in a sensor's attributes but the whole group in those lists, up to 13 minutes apart. They
+  now always describe the brightest. The new `pass_start` and `pass_end` are the whole group's, and
+  each pass in the lists has a `title`, the group's name, such as `ISS +1`.
+- **Fixed: a pass's rating goes by its brightest satellite.** A fainter one crossing higher or for longer
+  could lift it, so that `ISS +1` could rate great with the ISS itself low in the sky. About 6% of
+  passes, all of them groups, now rate a level lower.
+- **Fixed: a group's height and length in the pass list, the passes card and the globe's summary were
+  not those of the satellite it is named after.** They are now its brightest satellite's, like its name,
+  directions and rating.
+- **A Starlink train now means more than five Starlinks from one launch,** and the page gives the
+  directions, height and length of those alone. Other satellites crossing at the time no longer count
+  towards it, or send you to the wrong part of the sky: one train said 85° when its line reached 24°.
+- **What the sky lets you see now comes straight from Weaver's 1947 paper:** its table for daylight, a
+  new reading of its figure for twilight, and its table's limit under a bright Moon as the darkest a
+  home's sky is taken to be. Passes starting in twilight can move by a few seconds, and a few appear
+  or go.
+- **The README now says where the code came from:** Willem Vooijs's projects, and
+  [ISS Tracker](https://github.com/kedube/ha-iss-tracker) for the beginnings of the globe and the page.
 
 ## 1.14
 

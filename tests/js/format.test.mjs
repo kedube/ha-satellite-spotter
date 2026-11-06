@@ -359,8 +359,8 @@ test("kinds of object and pass names", () => {
   assert.equal(fmt.kind("something new"), "Satellite");
   assert.equal(fmt.passTitle({ title: "Hubble +1", satellite_count: 2, train: false }), "Hubble +1");
   assert.equal(fmt.passTitle({ title: "Starlink Group 15-25 D +21", satellite_count: 22, train: true }), "Starlink train · 22");
-  // A mixed train counts its Starlinks, not what flies with them.
-  assert.equal(fmt.passTitle({ title: "CZ-2C R/B +31", satellite_count: 32, starlink_count: 29, train: true }), "Starlink train · 29");
+  // A mixed train counts the Starlinks in its line, not what flies with them.
+  assert.equal(fmt.passTitle({ title: "CZ-2C R/B +31", satellite_count: 32, train: { count: 29 } }), "Starlink train · 29");
   assert.equal(fmt.passTitle({ transits: [{ name: "ISS" }] }), "ISS");
   assert.equal(fmt.passTitle(null), "");
 });

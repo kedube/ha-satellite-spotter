@@ -100,21 +100,61 @@ def test_extinction_is_used_from_the_observers_height() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sun_zenith_distance", "lowest", "highest"),
-    [(50, -3.5, -2.5), (90, -1.6, -0.8), (95.2, 0.5, 1.5), (97.5, 2.5, 3.5), (100, 3.7, 4.3)],
+    ("sun_zenith_distance", "printed"),
+    [(0, -4.2), (30, -4.0), (60, -3.6), (75, -3.2)],
 )
-def test_sky_limit_follows_weaver_1947_figure_2(
-    sun_zenith_distance: float, lowest: float, highest: float
+def test_sky_limit_with_the_sun_high_is_weaver_s_table_v(
+    sun_zenith_distance: float, printed: float
 ) -> None:
-    """Read off the figure, as far as a figure can be read."""
+    """Weaver 1947, table V, sea level, slightly hazy."""
     limit = float(track.limiting_magnitude(np.radians(sun_zenith_distance)))
-    assert lowest <= limit <= highest
+    assert limit == pytest.approx(printed)
 
 
-def test_sky_limit_keeps_to_the_two_departures_from_weaver() -> None:
-    """Brighter in full daylight than the figure's -3.2, and no fainter than 4 in the dark."""
-    assert float(track.limiting_magnitude(np.radians(0.0))) == -4.0
-    assert float(track.limiting_magnitude(np.radians(150.0))) == 4.0
+@pytest.mark.parametrize(
+    ("sun_zenith_distance", "measured"),
+    [
+        (85, -1.71),
+        (87, -1.46),
+        (89, -1.14),
+        (90, -0.93),
+        (91, -0.69),
+        (93, -0.08),
+        (93.5, 0.13),
+        (94, 0.33),
+        (95, 0.87),
+        (96, 1.70),
+        (96.4, 2.13),
+        (97, 2.76),
+        (97.5, 3.15),
+        (98, 3.42),
+        (99, 3.80),
+    ],
+)
+def test_sky_limit_in_twilight_follows_weaver_s_figure_2(
+    sun_zenith_distance: float, measured: float
+) -> None:
+    """Measured from the pixels of the scan, more finely than the table keeps."""
+    limit = float(track.limiting_magnitude(np.radians(sun_zenith_distance)))
+    assert limit == pytest.approx(measured, abs=0.1)
+
+
+@pytest.mark.parametrize("sun_zenith_distance", [100, 101, 108, 150, 180])
+def test_sky_limit_stops_at_weaver_s_table_iii_under_the_brightest_moonlit_sky(
+    sun_zenith_distance: float,
+) -> None:
+    assert float(track.limiting_magnitude(np.radians(sun_zenith_distance))) == 4.0
+
+
+def test_sky_limit_only_grows_fainter_as_the_sun_sinks() -> None:
+    limits = track.limiting_magnitude(np.radians(np.arange(0.0, 100.25, 0.25)))
+    assert np.all(np.diff(limits) > 0.0)
+
+
+def test_a_satellite_must_beat_the_sky_by_a_margin() -> None:
+    overhead = DENVER_SKY.position + 1.5e11 * DENVER_SKY.normal
+    limit = track.sky_limit(DENVER_SKY, overhead[None, :])
+    assert float(limit[0]) == pytest.approx(-4.2 - 0.3, abs=1e-6)
 
 
 @pytest.mark.parametrize(

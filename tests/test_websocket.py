@@ -37,21 +37,29 @@ from custom_components.satellite_spotter.frontend import (
     DATA_FRONTEND,
     _number,
     build_passes_payload,
-    is_train,
     pass_json,
     pass_track_payload,
     positions_json,
-    starlink_count,
     track_step,
 )
+from custom_components.satellite_spotter.predict import Sighting
 
-from .common import DENVER, FIRST_PASS_ID, HONOLULU, NOW, add_location, advance, cloud_percent
+from .common import (
+    DENVER,
+    FIRST_PASS_ID,
+    HONOLULU,
+    NOW,
+    add_location,
+    advance,
+    cloud_percent,
+    listed,
+    sighting,
+)
 
 DIRECTIONS = {compass(22.5 * i) for i in range(16)}
 PASS_KEYS = {
     "id", "title", "kind", "start", "end", "duration", "magnitude", "bright", "rating", "sun_up",
-    "cloud_cover", "satellite_count", "starlink_count", "train", "peak",
-    "transits",
+    "cloud_cover", "satellite_count", "train", "peak", "transits",
 }  # fmt: skip
 TRANSIT_KEYS = {
     "norad_id", "name", "kind", "start", "end", "magnitude", "brightest_time", "rise",
@@ -140,7 +148,7 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
     assert (first["magnitude"], first["bright"]) == (-0.9, True)
     # The forecast for the hour after the pass begins.
     assert first["cloud_cover"] == cloud_percent(first["start"] + 3600)
-    assert (first["satellite_count"], first["train"]) == (1, False)
+    assert (first["satellite_count"], first["train"]) == (1, None)
     for p in passes:
         assert p["start"] < p["end"]
         assert p["kind"] in KINDS
@@ -284,25 +292,128 @@ async def test_big_groups_get_coarser_paths(
 
 
 @pytest.mark.parametrize(
-    ("names", "train"),
+    ("names", "count"),
     [
-        ([f"STARLINK-{i}" for i in range(6)], True),
+        ([f"STARLINK-{i}" for i in range(6)], 6),
         # Named after a brighter rocket, and still a train.
-        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(6))], True),
-        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(5))], False),
-        ([f"STARLINK-{i}" for i in range(5)], False),
-        ([f"CZ-2C R/B {i}" for i in range(9)], False),
+        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(6))], 6),
+        (["CZ-2C R/B", *(f"STARLINK-{i}" for i in range(5))], None),
+        ([f"STARLINK-{i}" for i in range(5)], None),
+        ([f"CZ-2C R/B {i}" for i in range(9)], None),
     ],
 )
 async def test_a_train_is_a_matter_of_how_many_starlinks(
-    init_integration: MockConfigEntry, names: list[str], train: bool
+    init_integration: MockConfigEntry, names: list[str], count: int | None
 ) -> None:
     group = _group(init_integration.runtime_data.data.passes[0], names)
-    assert is_train(starlink_count(group)) is train
     payload = pass_json(group)
-    assert payload["train"] is train
+    assert (payload["train"] and payload["train"]["count"]) == count
     assert payload["satellite_count"] == len(names)
-    assert payload["starlink_count"] == sum(name.startswith("STARLINK") for name in names)
+
+
+def _line(
+    count: int, object_id: str, *, first: int = 0, height: float = 20.0, seconds: float = 60
+) -> list[Sighting]:
+    """Starlinks of one launch, 30 s apart, each 1 degree higher than the one before."""
+    return [
+        sighting(
+            NOW + timedelta(seconds=30 * i),
+            seconds,
+            name=f"STARLINK-{first + i}",
+            norad_id=1000 + first + i,
+            peak_magnitude=2.5,
+            appears=(200.0, 10.0),
+            best_view=(73.0, height + i),
+            disappears=(330.0, 10.0),
+            object_id=f"{object_id}{chr(ord('A') + i)}",
+        )
+        for i in range(count)
+    ]
+
+
+def test_a_train_is_measured_by_its_line_alone() -> None:
+    # As over Sydney, with a rocket as well: neither it nor the older Starlink is in the line.
+    stray = sighting(
+        NOW,
+        34,
+        name="STARLINK-1134",
+        norad_id=1134,
+        peak_magnitude=2.8,
+        best_view=(50.0, 85.0),
+        object_id="2020-006K",
+    )
+    rocket = sighting(
+        NOW + timedelta(seconds=600),
+        53,
+        name="CZ-2C R/B",
+        norad_id=7777,
+        peak_magnitude=1.9,
+        best_view=(69.0, 21.0),
+        object_id="2022-132C",
+    )
+    payload = pass_json(listed(*_line(6, "2026-246"), stray, rocket))
+    assert payload["kind"] == "rocket"
+    assert payload["peak"]["elevation"] == 85.0
+    assert payload["duration"] == 653
+    train = payload["train"]
+    assert train["count"] == 6
+    assert train["peak"]["elevation"] == 25.0
+    assert train["peak"]["direction"] == compass(73.0)
+    assert train["duration"] == 30 * 5 + 60
+    assert (train["from"], train["to"]) == (compass(200.0), compass(330.0))
+    # The rocket keeps its own path, for those who look at it.
+    assert payload["transits"][0]["rise"]["direction"] == compass(270.0)
+
+
+def test_a_train_s_path_is_that_of_the_brightest_of_its_line() -> None:
+    line = _line(6, "2026-246")
+    line[3].peak_magnitude = 1.5
+    line[3] = replace(
+        line[3],
+        appears=line[3].appears._replace(azimuth=90.0),
+        vanishes=line[3].vanishes._replace(azimuth=180.0),
+    )
+    # A rocket outshines them all, so that the line's brightest is neither first nor the pass's.
+    rocket = sighting(NOW, name="CZ-2C R/B", norad_id=7777, peak_magnitude=1.0)
+    train = pass_json(listed(rocket, *line))["train"]
+    assert (train["from"], train["to"]) == (compass(90.0), compass(180.0))
+
+
+def test_too_few_of_any_one_launch_are_not_a_train() -> None:
+    stray = _line(1, "2020-006", first=50)
+    assert pass_json(listed(*_line(5, "2026-246"), *stray))["train"] is None
+
+
+def test_the_train_is_the_launch_with_the_most_in_the_pass() -> None:
+    fewer = _line(6, "2026-244", first=50, height=70.0)
+    train = pass_json(listed(*fewer, *_line(7, "2026-246")))["train"]
+    assert train["count"] == 7
+    assert train["peak"]["elevation"] == 26.0
+
+
+def test_starlinks_of_no_known_launch_count_together() -> None:
+    line = [
+        replace(
+            s,
+            satellite=replace(
+                s.satellite,
+                elements={k: v for k, v in s.satellite.elements.items() if k != "OBJECT_ID"},
+            ),
+        )
+        for s in _line(6, "2026-246")
+    ]
+    assert line[0].satellite.launch == ""
+    assert pass_json(listed(*line))["train"]["count"] == 6
+
+
+def test_a_train_past_the_shapes_listed_goes_by_the_pass_s_highest() -> None:
+    rocket = sighting(
+        NOW, name="CZ-2C R/B", norad_id=7777, peak_magnitude=1.0, best_view=(69.0, 40.0)
+    )
+    p = listed(rocket, *_line(6, "2026-246"))
+    train = pass_json(replace(p, shapes=p.shapes[:1]))["train"]
+    assert train["count"] == 6
+    assert train["peak"]["elevation"] == 40.0
 
 
 async def test_pass_track_finds_a_pass_by_an_old_id(

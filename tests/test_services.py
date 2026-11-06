@@ -90,10 +90,46 @@ async def test_it_lists_what_is_coming_soonest_first(
     )
 
 
+async def test_a_group_is_described_by_its_brightest_with_the_group_s_own_times(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], predict_passes: MagicMock
+) -> None:
+    later = SOON + timedelta(seconds=100)
+    group = listed(
+        sighting(SOON, 600, name="FAINT", norad_id=1, peak_magnitude=1.5),
+        sighting(later, 120, peak_magnitude=-1.0),
+    )
+    entry = await location_with(hass, predict_passes, group)
+    described = (await ask(hass, entry))["passes"][0]
+    assert described["title"] == "ISS +1"
+    assert described["satellite"] == "ISS"
+    assert described["start"] == dt_util.as_local(later).isoformat()
+    assert described["duration_seconds"] == 120
+    assert described["pass_start"] == dt_util.as_local(SOON).isoformat()
+    assert described["pass_end"] == dt_util.as_local(group.end).isoformat()
+
+
+async def test_the_filters_go_by_the_whole_group(
+    hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], predict_passes: MagicMock
+) -> None:
+    later = SOON + timedelta(seconds=100)
+    group = listed(
+        sighting(SOON, 600, name="FAINT", norad_id=1, peak_magnitude=1.5),
+        sighting(later, 120, peak_magnitude=-1.0),
+    )
+    entry = await location_with(hass, predict_passes, group)
+    # The brightest has gone by then, or not yet come, but the group is still under way.
+    still_going = (later + timedelta(seconds=200)).isoformat()
+    assert titles(await ask(hass, entry, start=still_going)) == ["ISS"]
+    assert titles(await ask(hass, entry, end=(later - timedelta(seconds=1)).isoformat())) == ["ISS"]
+    assert titles(await ask(hass, entry, start=group.end.isoformat())) == []
+    assert titles(await ask(hass, entry, end=SOON.isoformat())) == []
+
+
 async def test_its_answer_can_go_anywhere_json_can(
     hass: HomeAssistant, mock_downloads: dict[str, AsyncMock], predict_passes: MagicMock
 ) -> None:
-    entry = await location_with(hass, predict_passes, bright_pass(SOON))
+    group = listed(sighting(SOON), sighting(SOON, name="B", norad_id=2, peak_magnitude=1.5))
+    entry = await location_with(hass, predict_passes, group, bright_pass(SOON + timedelta(hours=3)))
     json.dumps(await ask(hass, entry))
 
 

@@ -35,6 +35,8 @@ export function makePass({
   const transits = [primary, ...members.map((m, i) => ({ ...primary, ...m, start: start + 20 * (i + 1), end: end + 20 * (i + 1) }))];
   return {
     id, title, kind, start, end, duration, magnitude, bright, sun_up, limiting_magnitude: 4, cloud_cover: cloud,
-    satellite_count: count ?? transits.length, train, peak, transits,
+    satellite_count: count ?? transits.length,
+    train: train ? { count: count ?? transits.length, peak, duration, from, to } : null,
+    peak, transits,
   };
 }

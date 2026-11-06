@@ -16,7 +16,7 @@ _FULL_CONTRAST = 6.0
 _FULL_HEIGHT = 60.0
 _FULL_SECONDS = 120.0
 # The least score for each rating but the last, in the order of RATINGS. Over the real catalog at
-# seven cities, with clear skies, these rate about one pass in eight great and three in ten good.
+# seven cities, with clear skies, these rate about one pass in eight great and over a quarter good.
 _LEAST_SCORES = (0.7, 0.5, 0.25)
 
 

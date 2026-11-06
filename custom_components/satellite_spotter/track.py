@@ -95,10 +95,35 @@ _EXTINCTION_TABLE = np.array(
 )
 _EXTINCTION_ELEVATIONS = np.radians(90.0 - _EXTINCTION_TABLE[:, 0])
 
-# The faintest magnitude the sky shows, by the Sun's angle from the zenith.
-_SKY_ANGLES = np.radians([0.0, 50.0, 82.0, 90.0, 93.2, 95.2, 96.4, 97.5, 100.0])
-_SKY_LIMITS = np.array([-4.0, -3.5, -2.5, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0])
-# A satellite must beat the sky's limit by this much to be found.
+# Weaver 1947, PASP 59, 232: the faintest magnitude the sky shows, by the Sun's zenith distance in
+# degrees. With the Sun high, table V for slightly hazy air at sea level, which it calls the usual
+# case there. From 85 degrees on, figure 2, read from the scan to the 0.1 it can be read to. It
+# stops at 4.0, table III's limit under the brightest moonlit sky it lists, because few homes have
+# a truly dark sky and the figure's 6.0 would be too hopeful for them.
+_SKY_TABLE = np.array(
+    [
+        (0, -4.2),
+        (30, -4.0),
+        (60, -3.6),
+        (75, -3.2),
+        (85, -1.7),
+        (88, -1.3),
+        (90, -0.9),
+        (92, -0.4),
+        (93, -0.1),
+        (94, 0.3),
+        (95, 0.9),
+        (96, 1.7),
+        (97, 2.8),
+        (98, 3.4),
+        (99, 3.8),
+        (100, 4.0),
+    ]
+)
+_SKY_ANGLES = np.radians(_SKY_TABLE[:, 0])
+_SKY_LIMITS = _SKY_TABLE[:, 1]
+# A satellite must beat the sky's limit by this much to be found. James Darpinian's choice, and
+# about half the 0.6 between observers that Weaver quotes from Langmuir and Westendorp.
 _SKY_MARGIN = 0.3
 
 # Standard magnitudes are for this distance.
@@ -315,23 +340,21 @@ def above_horizon(observer: Observer, pos: Floats, margin: float = 0.0) -> Flags
 def sunlit(origin: Floats, direction: Floats) -> Flags:
     """Say whether sunlight reaches positions (..., 3), given the direction (..., 3) to the Sun.
 
-    In coordinates where the grown ellipsoid is a unit sphere: a point is lit if it is
-    outside the sphere and the ray towards the Sun does not meet it. NaN gives False.
+    Stretched so that the Earth, with the air sunlight cannot cross, is a sphere of radius 1, its
+    shadow is a cylinder of the same radius reaching away from the Sun. What is inside the sphere
+    or that cylinder is dark. NaN gives False.
     """
-    point, ray = origin / _SHADOW_RADII, direction / _SHADOW_RADII
-    along = _dot(point, ray)
-    beyond = _dot(point, point) - 1.0
-    blocked = (along < 0.0) & (along * along >= _dot(ray, ray) * beyond)
-    lit: Flags = (beyond > 0.0) & ~blocked
+    place, sunward = origin / _SHADOW_RADII, direction / _SHADOW_RADII
+    from_centre_squared = _dot(place, place)
+    towards_sun = _dot(place, sunward)
+    from_axis_squared = from_centre_squared - towards_sun * towards_sun / _dot(sunward, sunward)
+    in_cylinder = (towards_sun < 0.0) & (from_axis_squared <= 1.0)
+    lit: Flags = (from_centre_squared > 1.0) & ~in_cylinder
     return lit
 
 
 def limiting_magnitude(sun_angle: Floats | float) -> Floats:
-    """Return the faintest magnitude the sky shows, given the Sun's angle from the zenith.
-
-    The angle is in radians. Weaver 1947, figure 2, but brighter in full daylight, and no
-    fainter than 4 in the dark.
-    """
+    """Return the faintest magnitude the sky shows, given the Sun's zenith distance in radians."""
     limit: Floats = np.interp(sun_angle, _SKY_ANGLES, _SKY_LIMITS)
     return limit
 

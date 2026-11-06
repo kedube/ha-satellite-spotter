@@ -37,6 +37,54 @@ def catalog() -> list[Satellite]:
     return satellites()
 
 
+EQUATOR_M, POLE_M = 6378137.0, 6356752.3142
+CLEARS_M = 15000.0
+
+
+@pytest.mark.parametrize(
+    ("place", "to_sun", "lit"),
+    [
+        pytest.param((EQUATOR_M + 400e3, 0, 0), (1, 0, 0), True, id="under the Sun"),
+        pytest.param((-EQUATOR_M - 400e3, 0, 0), (1, 0, 0), False, id="straight behind the Earth"),
+        pytest.param((-9e7, 0, 0), (1, 0, 0), False, id="far behind, the shadow does not narrow"),
+        pytest.param((0, EQUATOR_M + 400e3, 0), (1, 0, 0), True, id="beside the Earth"),
+        # The edge of the shadow, which follows the Earth's shape.
+        pytest.param((-7e6, EQUATOR_M + CLEARS_M - 1e3, 0), (1, 0, 0), False, id="just inside"),
+        pytest.param((-7e6, EQUATOR_M + CLEARS_M + 1e3, 0), (1, 0, 0), True, id="just outside"),
+        pytest.param((-7e6, 0, POLE_M + CLEARS_M - 1e3), (1, 0, 0), False, id="inside, by a pole"),
+        pytest.param((-7e6, 0, POLE_M + CLEARS_M + 1e3), (1, 0, 0), True, id="outside, by a pole"),
+        # In the air sunlight cannot cross, even on the day side.
+        pytest.param((EQUATOR_M + CLEARS_M - 1e3, 0, 0), (1, 0, 0), False, id="too low"),
+        pytest.param((EQUATOR_M + CLEARS_M + 1e3, 0, 0), (1, 0, 0), True, id="just high enough"),
+        pytest.param((float("nan"), 0, 0), (1, 0, 0), False, id="nowhere"),
+    ],
+)
+def test_sunlit_worked_out_by_hand(
+    place: tuple[float, float, float], to_sun: tuple[float, float, float], lit: bool
+) -> None:
+    assert bool(track.sunlit(np.array(place), np.array(to_sun, dtype=float))) is lit
+
+
+def test_sunlit_agrees_with_walking_towards_the_sun() -> None:
+    """No formula: step along each ray, 10 km at a time, and see whether it meets the Earth."""
+    rng = np.random.default_rng(1947)
+    count = 800
+    towards = rng.normal(size=(count, 3))
+    towards /= np.linalg.norm(towards, axis=-1, keepdims=True)
+    places = rng.normal(size=(count, 3))
+    places *= (rng.uniform(6.3e6, 9e6, count) / np.linalg.norm(places, axis=-1))[:, None]
+    steps = np.arange(0.0, 2e7, 1e4)
+    radii = np.array((EQUATOR_M, EQUATOR_M, POLE_M)) + CLEARS_M
+    walk = places[:, None, :] + steps[None, :, None] * towards[:, None, :]
+    nearest = ((walk / radii) ** 2).sum(axis=-1).min(axis=1)
+    # A ray that all but touches can fall between two steps.
+    clear = np.abs(nearest - 1.0) > 2e-3
+    lit = track.sunlit(places, towards)
+    assert np.array_equal(lit[clear], nearest[clear] > 1.0)
+    assert clear.sum() > 0.9 * count
+    assert 0.1 * count < lit[clear].sum() < 0.9 * count
+
+
 @pytest.fixture(scope="module", params=sorted(PLACES))
 def place(request: pytest.FixtureRequest) -> tuple[str, track.Observer]:
     return request.param, track.Observer(*PLACES[request.param])

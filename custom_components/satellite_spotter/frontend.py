@@ -76,7 +76,7 @@ from .const import (
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, satellite_kind
 from .links import about_url
-from .predict import Moment, Satellite, Sighting, cutoff_for
+from .predict import Flyover, Moment, Satellite, Sighting, cutoff_for, is_starlink
 from .sky_chart import SkyChartView
 from .street import street_payload
 
@@ -387,21 +387,33 @@ def sighting_json(t: Sighting, shape: track.SightingShape) -> dict[str, Any]:
     }
 
 
-def starlink_count(p: ListedPass) -> int:
-    """Return how many of a pass's satellites are Starlinks."""
-    kinds = (satellite_kind(s.satellite.norad_id, s.satellite.name) for s in p.sightings)
-    return sum(kind == "starlink" for kind in kinds)
+def train_json(p: ListedPass) -> dict[str, Any] | None:
+    """Describe a pass's Starlink train, if it has one: more than five from one launch, in line.
 
-
-def is_train(starlinks: int) -> bool:
-    """Whether so many Starlinks are a train: more than five, whichever is brightest."""
-    return starlinks > 5
+    Its height, length and path are theirs alone, whichever is brightest and whatever else crosses
+    then: the path is that of the brightest of them.
+    """
+    launches: dict[str, list[int]] = {}
+    for index, sighting in enumerate(p.sightings):
+        if is_starlink(sighting.satellite.name):
+            launches.setdefault(sighting.satellite.launch, []).append(index)
+    members = max(launches.values(), key=len, default=[])
+    if len(members) <= 5:
+        return None
+    line = Flyover([p.sightings[index] for index in members])
+    peaks = [p.shapes[index].peak for index in members if index < len(p.shapes)]
+    return {
+        "count": line.count,
+        "peak": peak_json(max(peaks, key=lambda peak: peak.elevation, default=p.peak)),
+        "duration": line.duration,
+        "from": compass(line.lead.appears.azimuth),
+        "to": compass(line.lead.vanishes.azimuth),
+    }
 
 
 def pass_json(p: ListedPass) -> dict[str, Any]:
     """Describe a pass, with its satellites (up to MAX_SIGHTINGS)."""
     primary = p.lead.satellite
-    starlinks = starlink_count(p)
     return {
         "id": p.id,
         "title": p.title,
@@ -415,8 +427,7 @@ def pass_json(p: ListedPass) -> dict[str, Any]:
         "sun_up": p.sun_up,
         "cloud_cover": p.cloud_cover,
         "satellite_count": p.count,
-        "starlink_count": starlinks,
-        "train": is_train(starlinks),
+        "train": train_json(p),
         "peak": peak_json(p.peak),
         "transits": [
             sighting_json(t, shape)

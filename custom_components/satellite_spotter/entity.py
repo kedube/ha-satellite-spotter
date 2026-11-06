@@ -31,6 +31,22 @@ _COMPASS_POINTS = (
     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
 )  # fmt: skip
 _DEGREES_PER_POINT = 360.0 / len(_COMPASS_POINTS)
+# What the list of what is coming says of each pass, which goes with every state written.
+_UPCOMING_KEYS = (
+    "pass_id",
+    "pass_start",
+    "pass_end",
+    "satellite",
+    "start",
+    "end",
+    "peak_elevation",
+    "peak_direction",
+    "duration_seconds",
+    "magnitude",
+    "bright",
+    "rating",
+    "cloud_cover",
+)
 
 
 def satellite_kind(norad_id: int, name: str) -> str:
@@ -79,12 +95,17 @@ def _point(name: str, when: datetime, azimuth: float, elevation: float) -> dict[
 
 
 def pass_attributes(p: ListedPass) -> dict[str, Any]:
-    """Describe a pass: its times and places are those of the brightest satellite it brings."""
+    """Describe a pass, by the brightest satellite it brings.
+
+    Only pass_start and pass_end are the group's: when the first appears and the last has gone.
+    """
     lead, shape = p.lead, p.shapes[0]
     sat = lead.satellite
     highest = shape.peak
     return {
         "pass_id": p.id,
+        "pass_start": local_time(p.start),
+        "pass_end": local_time(p.end),
         "satellite": sat.name,
         "catalog_number": sat.norad_id,
         "kind": satellite_kind(sat.norad_id, sat.name),
@@ -112,20 +133,9 @@ def pass_attributes(p: ListedPass) -> dict[str, Any]:
 
 
 def upcoming_pass(p: ListedPass) -> dict[str, Any]:
-    """Describe a whole pass in the list of what is coming, which goes with every state written."""
-    return {
-        "pass_id": p.id,
-        "satellite": p.title,
-        "start": local_time(p.start),
-        "end": local_time(p.end),
-        "peak_elevation": round(p.peak.elevation, 1),
-        "peak_direction": compass(p.peak.azimuth),
-        "duration_seconds": p.duration,
-        "magnitude": magnitude(p.peak_magnitude),
-        "bright": p.bright,
-        "rating": p.rating,
-        "cloud_cover": p.cloud_cover,
-    }
+    """Describe a pass in the list of what is coming, in pass_attributes' terms, and title it."""
+    described = pass_attributes(p)
+    return {"title": p.title, **{key: described[key] for key in _UPCOMING_KEYS}}
 
 
 class SatelliteSpotterEntity(CoordinatorEntity[SatelliteSpotterCoordinator]):

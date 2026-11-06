@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import math
+from unittest.mock import patch
 
 import pytest
 
 from custom_components.satellite_spotter import track
 from custom_components.satellite_spotter.const import RATINGS
+from custom_components.satellite_spotter.coordinator import _listed
+from custom_components.satellite_spotter.predict import Flyover
 from custom_components.satellite_spotter.rating import at_least, pass_score, rating_of
 
 from .common import NOW, bright_pass, dim_pass, listed, sighting
@@ -78,12 +82,47 @@ def test_a_pass_knows_its_rating_and_clouds_change_it() -> None:
     assert dim_pass(NOW).rating == "fair"
 
 
-def test_a_pass_goes_by_the_highest_and_brightest_of_its_satellites() -> None:
-    together = listed(
-        sighting(NOW, peak_magnitude=-3.0, best_view=(10.0, 20.0)),
-        sighting(NOW, name="B", norad_id=2, peak_magnitude=2.0, best_view=(10.0, 80.0)),
-    )
-    assert together.rating == rating_of(pass_score(-3.0, DARK, 80.0, 300, None))
+def test_a_fainter_satellite_higher_up_does_not_lift_a_pass() -> None:
+    brightest = sighting(NOW, 110, peak_magnitude=-1.0, best_view=(10.0, 19.5))
+    fainter = sighting(NOW, 110, name="B", norad_id=2, peak_magnitude=2.0, best_view=(10.0, 72.5))
+    assert listed(brightest).rating == "good"
+    assert listed(brightest, fainter).rating == "good"
+
+
+def test_a_fainter_satellite_for_longer_does_not_lift_a_pass() -> None:
+    brightest = sighting(NOW, 10, peak_magnitude=-3.0, best_view=(10.0, 70.0))
+    fainter = sighting(NOW, 300, name="B", norad_id=2, peak_magnitude=2.0, best_view=(10.0, 70.0))
+    assert listed(brightest).rating == "fair"
+    assert listed(brightest, fainter).rating == "fair"
+
+
+def test_a_fainter_satellite_in_a_brighter_sky_does_not_lower_a_pass() -> None:
+    brightest = sighting(NOW, peak_magnitude=-3.0, best_view=(10.0, 60.0))
+    fainter = sighting(NOW, name="B", norad_id=2, peak_magnitude=2.0, sky_limit=-1.0)
+    assert listed(brightest).rating == "great"
+    assert listed(brightest, fainter).rating == "great"
+
+
+def test_the_moon_is_taken_when_the_brightest_satellite_is_highest() -> None:
+    brightest = sighting(NOW, peak_magnitude=-3.0, best_view=(10.0, 20.0))
+    later = NOW + timedelta(minutes=10)
+    fainter = sighting(later, name="B", norad_id=2, peak_magnitude=2.0, best_view=(10.0, 80.0))
+    observer = track.Observer(39.74, -104.99)
+    with (
+        patch.object(
+            track,
+            "sighting_shape",
+            side_effect=lambda _sat, _place, _start, _end, peak: track.SightingShape(
+                peak, "rise", "set"
+            ),
+        ),
+        patch.object(track, "moon_dimming", return_value=0.25) as dimming,
+    ):
+        p = _listed(Flyover([brightest, fainter]), observer, None)
+    dimming.assert_called_once_with(observer, brightest.brightest.time.timestamp())
+    assert p.moon_dimming == 0.25
+    # The highest of them all is still known, for the page.
+    assert p.peak.elevation == 80.0
 
 
 # Skyfield with JPL's DE421: right ascension and declination of date, geocentric, and how much of

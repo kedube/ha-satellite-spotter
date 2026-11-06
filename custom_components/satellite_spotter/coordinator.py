@@ -138,13 +138,14 @@ class ListedPass(Flyover):
 
     @property
     def rating(self) -> str:
-        """Say how worth going outside for it is: great, good, fair or poor."""
+        """Say how worth going outside for its brightest satellite is: great, good, fair or poor."""
+        lead = self.lead
         return rating_of(
             pass_score(
-                self.peak_magnitude,
-                self.sky_limit,
-                self.peak.elevation,
-                self.duration,
+                lead.peak_magnitude,
+                lead.sky_limit,
+                self.shapes[0].peak.elevation,
+                lead.duration,
                 self.cloud_cover,
                 self.moon_dimming,
             )
@@ -241,14 +242,13 @@ def _listed(
         )
         for sighting in flyover.sightings[:MAX_SIGHTINGS]
     ]
-    peak = max((shape.peak for shape in shapes), key=lambda peak: peak.elevation)
     return ListedPass(
         flyover.sightings,
         id=str(int(flyover.start.timestamp())),
         cloud_cover=None if forecast is None else forecast.after(flyover.start),
         shapes=shapes,
-        peak=peak,
-        moon_dimming=track.moon_dimming(observer, peak.time),
+        peak=max((shape.peak for shape in shapes), key=lambda peak: peak.elevation),
+        moon_dimming=track.moon_dimming(observer, shapes[0].peak.time),
     )
 
 

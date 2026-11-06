@@ -3004,13 +3004,12 @@ export class SatelliteGlobeView extends BaseElement {
   /** "SW → ENE · up to 67° · 6 min · very bright, mag −3.4". */
   _passSummary(pass) {
     const fmt = this._fmt;
-    const lead = leader(pass);
     const parts = [];
-    if (lead?.rise?.direction && lead?.set?.direction) {
-      parts.push(`${fmt.direction(lead.rise.direction)} → ${fmt.direction(lead.set.direction)}`);
-    }
-    if (Number.isFinite(pass.peak?.elevation)) parts.push(this._t("pass.up_to", { elevation: Math.round(pass.peak.elevation) }));
-    if (Number.isFinite(pass.duration)) parts.push(fmt.duration(pass.duration));
+    const [from, to] = passesModule.passDirections(pass);
+    if (from && to) parts.push(`${fmt.direction(from)} → ${fmt.direction(to)}`);
+    const { peak, duration } = passesModule.passExtent(pass);
+    if (Number.isFinite(peak?.elevation)) parts.push(this._t("pass.up_to", { elevation: Math.round(peak.elevation) }));
+    if (Number.isFinite(duration)) parts.push(fmt.duration(duration));
     if (Number.isFinite(pass.magnitude)) {
       parts.push(this._t("mission.brightness", { word: fmt.brightness(pass.magnitude).word, magnitude: fmt.magnitude(pass.magnitude) }));
     }
