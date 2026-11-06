@@ -1,4 +1,4 @@
-// A reference for the street view's projector: MapLibre 6.11.2's mercator
+// A reference for the street view's projector: MapLibre's mercator
 // camera matrix built the way MercatorTransform._calcMatrices builds it, with
 // gl-matrix's (column-major) operations re-implemented here.
 

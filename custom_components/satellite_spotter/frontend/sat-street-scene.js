@@ -7,7 +7,7 @@
  * drawn on a canvas behind it shows through and is hidden by whatever stands
  * in the way (sat-planetarium.js).
  *
- * The recipe (verified in a spike against MapLibre 6.11.2, which is vendored):
+ * The recipe (tests/browser/run.mjs checks it on the MapLibre that is bundled):
  *  - The camera stays at the eye; the map's "centre" goes some metres along
  *    the line of sight so the scale is 25 px per metre at it. That keeps the
  *    near plane at about half a metre and the zoom fixed for a place.
@@ -105,7 +105,7 @@ export function eyeCamera({ longitude, latitude, eyeAltitude, bearing, pitch, ro
 
 /**
  * Override MapLibre's near and far planes (px at the centre: metres × ppm)
- * through the transform's overrideNearFarZ, a private method of 6.11.2. It
+ * through the transform's overrideNearFarZ, a private method. It
  * survives jumpTo but its values depend on ppm, so it is applied after each
  * camera change. Returns whether it could be (else the default stays, and
  * distant hills beyond about 18 km are cut off).

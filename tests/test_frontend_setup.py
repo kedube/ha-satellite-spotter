@@ -37,7 +37,9 @@ from custom_components.satellite_spotter.frontend import (
     async_update_panel,
 )
 
-from .common import DENVER, HONOLULU, NOW, add_location, set_options
+from .common import DENVER, HONOLULU, MAPLIBRE, NOW, add_location, set_options
+
+MAPLIBRE_CSS_URL = f"/satellite_spotter/frontend/vendor/{MAPLIBRE.name}/maplibre-gl.css"
 
 PANEL = "satellite-spotter"
 ISSUE = "catalog_stale"
@@ -100,9 +102,7 @@ async def test_maplibre_may_be_kept_as_its_folder_names_the_version(
     hass: HomeAssistant, integration: None, hass_client: ClientSessionGenerator
 ) -> None:
     client = await hass_client()
-    answer = await client.get(
-        "/satellite_spotter/frontend/vendor/maplibre-gl-6.11.2/maplibre-gl.css"
-    )
+    answer = await client.get(MAPLIBRE_CSS_URL)
     assert answer.status == 200
     assert "max-age" in answer.headers["Cache-Control"]
     assert "public" in answer.headers["Cache-Control"]
@@ -121,10 +121,7 @@ async def test_browsers_that_accept_them_get_the_precompressed_copies(
     hass: HomeAssistant, integration: None, hass_client: ClientSessionGenerator
 ) -> None:
     client = await hass_client()
-    answer = await client.get(
-        "/satellite_spotter/frontend/vendor/maplibre-gl-6.11.2/maplibre-gl.css",
-        headers={"Accept-Encoding": "gzip"},
-    )
+    answer = await client.get(MAPLIBRE_CSS_URL, headers={"Accept-Encoding": "gzip"})
     assert answer.status == 200
     assert answer.headers["Content-Encoding"] == "gzip"
 

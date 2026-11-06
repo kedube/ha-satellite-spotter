@@ -10,6 +10,7 @@ from functools import lru_cache
 import io
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
@@ -35,6 +36,14 @@ from custom_components.satellite_spotter.weather import CloudForecast
 
 ROOT = Path(__file__).resolve().parent.parent
 INTEGRATION = ROOT / "custom_components" / "satellite_spotter"
+# The bundled MapLibre: the loader names its folder, whose name carries the version.
+_MAPLIBRE = re.search(
+    r'"\./(vendor/maplibre-gl-([\d.]+))/"',
+    (INTEGRATION / "frontend" / "sat-maplibre.js").read_text(),
+)
+assert _MAPLIBRE
+MAPLIBRE = INTEGRATION / "frontend" / _MAPLIBRE[1]
+MAPLIBRE_VERSION = _MAPLIBRE[2]
 _CATALOG_FIXTURE = Path(__file__).parent / "fixtures" / "catalog.json"
 
 # The fixture's orbital elements date from just before this.

@@ -1,40 +1,28 @@
 /**
  * Loads the bundled MapLibre GL JS once per page, for the globe and the
- * street view alike. Importing this module starts the 1 MB download.
+ * street view alike. Importing this module starts the download: 1.1 MB, which
+ * browsers are sent as 240 KB, and a map then asks for its worker, half that.
  */
 
-export const MAPLIBRE_DIR = new URL("./vendor/maplibre-gl-6.11.2/", import.meta.url);
+// docs/updating-maplibre.md has the steps for a new version.
+export const MAPLIBRE_DIR = new URL("./vendor/maplibre-gl-6.16.0/", import.meta.url);
 
 let maplibrePromise;
 let maplibreAttempt = 0;
-// MapLibre's entry module imports its shared chunk from a fixed URL. A retry
-// can ask for the entry under a new URL but not the chunk, so once the chunk
-// has failed, only reloading the page brings it back.
-let maplibreChunkFailed = false;
 export function loadMapLibre(load = (url) => import(url)) {
   // A failed import is not kept: the next start tries again under a new URL,
   // since browsers remember a failed module fetch for the rest of the page.
-  // The chunk is asked for alongside the entry module rather than after it.
-  maplibrePromise ??= Promise.allSettled([
-    load(new URL(`maplibre-gl.mjs${maplibreAttempt ? `?retry=${maplibreAttempt}` : ""}`, MAPLIBRE_DIR).href),
-    load(new URL("maplibre-gl-shared.mjs", MAPLIBRE_DIR).href),
-  ])
-    .then(([entry, chunk]) => {
-      if (chunk.status === "rejected") maplibreChunkFailed = true;
-      if (entry.status === "rejected") throw entry.reason;
-      return entry.value;
-    })
-    .catch((err) => {
-      maplibrePromise = null;
-      maplibreAttempt++;
-      throw err;
-    });
+  maplibrePromise ??= load(new URL(`maplibre-gl.mjs${maplibreAttempt ? `?retry=${maplibreAttempt}` : ""}`, MAPLIBRE_DIR).href).catch((err) => {
+    maplibrePromise = null;
+    maplibreAttempt++;
+    throw err;
+  });
   return maplibrePromise;
 }
 
-/** Whether MapLibre has failed in a way that only reloading the page can fix. */
+/** Whether MapLibre keeps failing, so that reloading the page is worth offering. */
 export function mapLibreNeedsReload() {
-  return maplibreChunkFailed || maplibreAttempt >= 3;
+  return maplibreAttempt >= 3;
 }
 
 /** MapLibre's own button titles and labels, by their keys in our translations. */

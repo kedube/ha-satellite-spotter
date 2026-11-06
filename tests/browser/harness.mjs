@@ -133,7 +133,7 @@ const hass = {
       case "satellite_spotter/catalog":
         return catalog;
       case "satellite_spotter/street":
-        return { source: "auto", mapillary_token: null, google_api_key: null };
+        return { source: q.get("source") || "auto", mapillary_token: null, google_api_key: null };
       default:
         throw { code: "unknown_command", message: msg.type };
     }
@@ -175,6 +175,15 @@ const views = {
       import(`${frontend}/sat-format.js${V}`),
       import(`${frontend}/sat-i18n.js${V}`),
     ]);
+    if (q.get("source") === "model") {
+      // Drawn in software here, which is slow and says so: neither may take the 3D scene away.
+      const { StreetScene } = await import(`${frontend}/sat-street-scene.js${V}`);
+      StreetScene.prototype.benchmark = async () => 0;
+      const { getContext } = HTMLCanvasElement.prototype;
+      HTMLCanvasElement.prototype.getContext = function (kind, options) {
+        return getContext.call(this, kind, options && { ...options, failIfMajorPerformanceCaveat: false });
+      };
+    }
     const shown = passes[0];
     const clock = new clockModule.PassClock();
     clock.simulate({ fromS: shown.start - 60, toS: shown.end + 60, visibleStartS: shown.start, visibleEndS: shown.end });
@@ -243,6 +252,91 @@ const views = {
         });
       });
   },
+};
+
+/**
+ * What the 3D street view's camera comes to on the real MapLibre. Its code rests on what is measured
+ * here, a private method among it, and a fake map can say nothing about that when MapLibre is updated.
+ */
+window.__streetCamera = async () => {
+  const [{ makeProjector }, { EARTH_CIRCUMFERENCE, FAR_KM, NEAR_M, PX_PER_M, mercatorFromLngLat }] = await Promise.all([
+    import(`${frontend}/sat-planetarium.js${V}`),
+    import(`${frontend}/sat-street-scene.js${V}`),
+  ]);
+  const scene = window.__view._scene;
+  if (window.__view._mode !== "3d") return { mode: window.__view._mode, degraded: [] };
+  const { map } = scene;
+  const transform = map._camera.transform;
+  const place = transform.getCameraLngLat();
+  const metresAcross = EARTH_CIRCUMFERENCE * Math.cos(scene.latitude * (Math.PI / 180));
+
+  // A direction, a kilometre away, through MapLibre's own matrix and through the sky's projector.
+  const canvas = map.getCanvas();
+  const [width, height] = [canvas.clientWidth, canvas.clientHeight];
+  const sky = makeProjector({ bearing: map.getBearing(), pitch: map.getPitch(), roll: map.getRoll(), fov: map.getVerticalFieldOfView(), width, height });
+  const { worldSize } = transform;
+  const eye = mercatorFromLngLat(scene.longitude, scene.latitude);
+  const onScreen = (azimuth, elevation) => {
+    const [a, e] = [azimuth * (Math.PI / 180), elevation * (Math.PI / 180)];
+    const [east, north, up] = [Math.sin(a) * Math.cos(e), Math.cos(a) * Math.cos(e), Math.sin(e)].map((v) => v * 1000);
+    const world = [(eye.x + east / metresAcross) * worldSize, (eye.y - north / metresAcross) * worldSize, scene.eyeAltitude + up, 1];
+    const clip = [0, 1, 2, 3].map((row) => [0, 1, 2, 3].reduce((sum, column) => sum + transform.modelViewProjectionMatrix[column * 4 + row] * world[column], 0));
+    return [((clip[0] / clip[3] + 1) / 2) * width, ((1 - clip[1] / clip[3]) / 2) * height];
+  };
+  const skyOffPx = Math.max(
+    ...[[0, 5], [15, 20], [-20, 35]].map(([turn, elevation]) => {
+      const azimuth = map.getBearing() + turn;
+      const [x, y] = onScreen(azimuth, elevation);
+      const [skyX, skyY] = sky.project(azimuth, elevation);
+      return Math.hypot(x - skyX, y - skyY);
+    }),
+  );
+
+  // The planes are set in pixels at the centre, and have to outlast a move of the camera.
+  const planes = () => [transform.nearZ / (NEAR_M * PX_PER_M), transform.farZ / (FAR_KM * 1000 * PX_PER_M)];
+  const [near, far] = planes();
+  map.jumpTo({ bearing: map.getBearing() + 1 });
+  const [nearAfter, farAfter] = planes();
+  scene.setView();
+
+  return {
+    mode: window.__view._mode,
+    degraded: [...scene.degraded],
+    tiles: scene._loaded.get("ofm") ?? 0,
+    ground: scene.ground,
+    terrain: map.queryTerrainElevation([scene.longitude, scene.latitude]),
+    eyeOffM: Math.hypot((place.lng - scene.longitude) * (metresAcross / 360), (place.lat - scene.latitude) * (EARTH_CIRCUMFERENCE / 360)),
+    altitudeOffM: transform.getCameraAltitude() - scene.eyeAltitude,
+    worldSize,
+    farPlane: scene.farPlane,
+    near,
+    far,
+    nearAfter,
+    farAfter,
+    skyOffPx,
+  };
+};
+
+/**
+ * How big the real globe is near a pole, measured on screen in pixels per radian at the centre of the view,
+ * against the zoom limit of a camera riding with a satellite there, which has to agree with it.
+ */
+window.__globeNearThePole = async () => {
+  const view = window.__view;
+  const map = view._map;
+  const zoom = 1.7;
+  const measure = (latitude) =>
+    new Promise((resolve) => {
+      map.jumpTo({ center: [10, latitude], zoom, pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
+      const center = map.getCenter();
+      const [a, b] = [map.project([center.lng, center.lat]), map.project([center.lng, center.lat - 0.2])];
+      resolve({
+        latitude: center.lat,
+        radiusPx: Math.hypot(a.x - b.x, a.y - b.y) / (0.2 * (Math.PI / 180)),
+        limit: view._trackZoomLimit({ lat: latitude, alt: 420 }, 0),
+      });
+    });
+  return { edge: await measure(85.051129), over: await measure(89), zoom };
 };
 
 await views[mode]();

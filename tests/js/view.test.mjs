@@ -1731,11 +1731,11 @@ test("following or chasing a satellite far out, the camera stays beyond it at an
     });
     // How far the camera is from the point it looks at, in Earth radii; a satellite drawn
     // `above` radii over that point is in front of a camera at this pitch while that is more.
-    const reach = (z, lat) => (1.5 * height * 2 * Math.PI * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** z);
+    const reach = (z, lat) => (1.5 * height * 2 * Math.PI * Math.cos((Math.min(Math.abs(lat), 85.051129) * Math.PI) / 180)) / (512 * 2 ** z);
     const inFront = (z, lat, alt, pitch) =>
       reach(z, lat) >= (displayAltitudeKm(alt) / 6371.0088) * Math.cos((pitch * Math.PI) / 180) + 0.2 - 1e-9;
     for (const alt of [420, 2000, 20200, 35786, 39000]) {
-      for (const lat of [0, 30, 56.2, 70, -65]) {
+      for (const lat of [0, 30, 56.2, 70, -65, 85.5, -89.5]) {
         for (const h of [360, 420, 760, 1000]) {
           height = h;
           zoom = 3.2;
@@ -1754,6 +1754,14 @@ test("following or chasing a satellite far out, the camera stays beyond it at an
     view._position = { lat: 42, lon: -71, alt: 420, heading: 90 };
     view._setMode("follow");
     assert.equal(eased.at(-1).zoom, 3.2);
+
+    // And over a pole, where MapLibre's globe grows no further than at the edge of the map.
+    for (const lat of [85.1, 87, 89.5, 90, -89.5]) {
+      zoom = 1.7;
+      view._position = { lat, lon: 10, alt: 420, heading: 90 };
+      view._setMode("follow");
+      assert.equal(eased.at(-1).zoom, 1.7, `over the pole, at ${lat}°`);
+    }
 
     // Zoomed in past a satellite far out while following it: the next frame backs out.
     view._courseRows = () => [
@@ -1819,6 +1827,45 @@ test("the other satellites of a pass are drawn where their rows reach", () => {
     const course = view._courseRows();
     assert.ok(course.some((r) => r[0] === T0 + 60 + 40), "with its pass's 2 s rows");
     assert.equal(view._courseRows(), course);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a camera riding with a satellite backs out as far as it must and comes back, unless the zoom was changed meanwhile", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view, calls } = passView(clock, [makePass(T0 + 600, T0 + 900)]);
+    let zoom = 4;
+    Object.assign(view._map, {
+      getZoom: () => zoom,
+      getCanvas: () => ({ clientHeight: 800 }),
+      getVerticalFieldOfView: () => 36.86989764584402,
+      jumpTo(options) {
+        calls.jumpTo.push(options);
+        zoom = options.zoom;
+      },
+    });
+    const flyingAt = (lat) => {
+      view._courseRows = () => [T0 - 600, T0 - 300, T0, T0 + 300, T0 + 600].map((t, i) => [t, lat, 10 + i, 420, 1]);
+      view._frame();
+      return calls.jumpTo.at(-1).zoom;
+    };
+    for (const mode of ["follow", "chase"]) {
+      view._mode = mode;
+      zoom = 4;
+      assert.equal(flyingAt(20), 4, `${mode}: room to spare`);
+      const atTheTop = flyingAt(84);
+      assert.ok(atTheTop < 4, `${mode}: it backs out, to ${atTheTop}`);
+      assert.ok(flyingAt(70) > atTheTop, `${mode}: on the way back it comes in again`);
+      assert.equal(flyingAt(20), 4, `${mode}: as far as it was`);
+
+      // Zoomed by hand on the way: that stands from then on.
+      flyingAt(84);
+      zoom = 2;
+      assert.equal(flyingAt(84), 2, `${mode}: closer than it must`);
+      assert.equal(flyingAt(20), 2, `${mode}: and it stays there`);
+    }
   } finally {
     clock.restore();
   }

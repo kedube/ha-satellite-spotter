@@ -35,7 +35,7 @@ const [maplibreModule, geo, spaceModule, skyModule, i18n, theme, client, clockMo
     import(`./sat-street-host.js${VERSION}`),
   ]);
 const {
-  bearing, circleRing, closestApproach, compass, displayAltitudeKm, ecef, esc, frameDelay, groundDistanceKm,
+  MERCATOR_MAX_LAT, bearing, circleRing, closestApproach, compass, displayAltitudeKm, ecef, esc, frameDelay, groundDistanceKm,
   lookAngles, orbitalSpeed, positionAt, semiMajorAxisKm, subsolarPoint, sunVector, visibilityRadius, wrapLongitude,
 } = geo;
 const { courseOf, mergeRows, orbitIsEnough, orbitSpan, rowsBetween, rowsCover, tickTimes, transitRows } = course;
@@ -870,7 +870,7 @@ export class SatelliteGlobeView extends BaseElement {
       this._starting = false;
       const why = this._errorMessage(err);
       if (mapLibreNeedsReload()) {
-        // A file that keeps failing (or one the browser now refuses to fetch again).
+        // A file that keeps failing.
         this._showMessage(this._t("globe.load_failed", { error: why }), { reload: true });
       } else {
         this._showMessage(this._t("globe.load_retrying", { error: why }));
@@ -2618,9 +2618,10 @@ export class SatelliteGlobeView extends BaseElement {
    * The closest zoom from which a camera at this pitch, looking at the point
    * under a satellite, still has the satellite in front of it. MapLibre's
    * camera is height / (2 tan(fov / 2)) px from that point, where an Earth
-   * radius is 512 * 2^zoom / (2π cos latitude) px; the satellite is drawn at
-   * its display altitude above it, so a camera zoomed in past it (high orbits,
-   * small maps, high latitudes) would leave it behind and draw nothing of it.
+   * radius is 512 * 2^zoom / (2π cos latitude) px, with no latitude beyond the
+   * edge of its Mercator map counted; the satellite is drawn at its display
+   * altitude above it, so a camera zoomed in past it (high orbits, small maps,
+   * high latitudes) would leave it behind and draw nothing of it.
    */
   _trackZoomLimit(pos, pitch) {
     const map = this._map;
@@ -2630,7 +2631,19 @@ export class SatelliteGlobeView extends BaseElement {
     const cameraPx = height / (2 * Math.tan((fov * DEG) / 2));
     // The satellite's height along the line of sight, and the room the camera keeps beyond it, in Earth radii.
     const needed = (displayAltitudeKm(pos.alt) / GLOBE_RADIUS_KM) * Math.cos(pitch * DEG) + TRACK_CLEARANCE;
-    return Math.log2((cameraPx * 2 * Math.PI * Math.max(Math.cos(pos.lat * DEG), 0.01)) / (512 * needed));
+    const scale = Math.cos(Math.min(Math.abs(pos.lat), MERCATOR_MAX_LAT) * DEG);
+    return Math.log2((cameraPx * 2 * Math.PI * scale) / (512 * needed));
+  }
+
+  /**
+   * The zoom for a camera riding with a satellite: out to the limit while it
+   * must be, and back in as the limit lifts, to wherever the zoom last was
+   * unless it has been changed from outside here since (by hand, say).
+   */
+  _rideZoom(zoom, limit) {
+    if (!(Math.abs(zoom - this._rideZoomSet) < 1e-6)) this._rideZoomWanted = zoom;
+    this._rideZoomSet = Math.min(this._rideZoomWanted, limit);
+    return this._rideZoomSet;
   }
 
   // -- course -------------------------------------------------------------
@@ -2877,11 +2890,11 @@ export class SatelliteGlobeView extends BaseElement {
         moved = true;
       } else if (pos && this._mode === "follow") {
         // Out again if the satellite climbs, nears a pole or the user zoomed in past it.
-        const capped = Math.min(zoom, this._trackZoomLimit(pos, 0));
+        const capped = this._rideZoom(zoom, this._trackZoomLimit(pos, 0));
         map.jumpTo({ center: [pos.lon, pos.lat], zoom: capped, padding: this._padding() });
         moved = true;
       } else if (pos && this._mode === "chase") {
-        const capped = Math.min(zoom, this._trackZoomLimit(pos, CHASE_PITCH));
+        const capped = this._rideZoom(zoom, this._trackZoomLimit(pos, CHASE_PITCH));
         map.jumpTo({ center: [pos.lon, pos.lat], zoom: capped, bearing: pos.heading, padding: this._tiltPadding() });
         moved = true;
       }

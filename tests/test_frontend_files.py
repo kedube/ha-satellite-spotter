@@ -8,13 +8,11 @@ import pytest
 
 from custom_components.satellite_spotter.const import CARD_MODULE, PANEL_MODULE
 
-from .common import INTEGRATION
+from .common import INTEGRATION, MAPLIBRE, MAPLIBRE_VERSION
 
 FRONTEND = INTEGRATION / "frontend"
-MAPLIBRE = FRONTEND / "vendor" / "maplibre-gl-6.11.2"
 MAPLIBRE_FILES = (
     "maplibre-gl.mjs",
-    "maplibre-gl-shared.mjs",
     "maplibre-gl-worker.mjs",
     "maplibre-gl.css",
 )
@@ -24,6 +22,15 @@ def test_the_modules_home_assistant_is_told_to_load_are_there() -> None:
     assert (FRONTEND / CARD_MODULE).is_file()
     assert (FRONTEND / PANEL_MODULE).is_file()
     assert (FRONTEND / "translations" / "en.js").is_file()
+
+
+def test_the_loader_names_the_bundled_maplibre_and_its_folder_says_which_it_is() -> None:
+    """The folder's name is what lets browsers keep these files, so it must change with them."""
+    folders = [path.name for path in (FRONTEND / "vendor").iterdir() if path.is_dir()]
+    assert folders == [MAPLIBRE.name]
+    assert (MAPLIBRE / "LICENSE.txt").is_file()
+    for name in ("maplibre-gl.mjs", "maplibre-gl-worker.mjs"):
+        assert f"/blob/v{MAPLIBRE_VERSION}/LICENSE.txt" in (MAPLIBRE / name).read_text()[:200]
 
 
 @pytest.mark.parametrize("name", MAPLIBRE_FILES)

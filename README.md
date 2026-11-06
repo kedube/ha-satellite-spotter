@@ -346,7 +346,8 @@ The tests need no network. The scripts in `scripts/` build the generated files
 top.
 
 A workflow proposes an updated `brightness.csv` each week: see
-[Updating the brightness table](docs/updating-brightness.md).
+[Updating the brightness table](docs/updating-brightness.md). MapLibre is bundled and updated by hand:
+see [Updating MapLibre](docs/updating-maplibre.md).
 
 To add a language, copy a JSON file in both `translations/` folders, translate the values, keep each
 `{placeholder}`, and add the code to `LANGUAGES` in `frontend/sat-i18n.js`. The tests check the rest.

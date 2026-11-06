@@ -6,30 +6,24 @@ import { test } from "node:test";
 
 const { loadMapLibre, mapLibreNeedsReload } = await import("../../custom_components/satellite_spotter/frontend/sat-maplibre.js");
 
-test("MapLibre's entry module is asked for again under a new URL; a failed shared chunk needs a reload", async () => {
+test("MapLibre is asked for again under a new URL, a reload is offered if it keeps failing, and once loaded it is kept", async () => {
   const asked = [];
-  let entryOk = false;
-  let chunkOk = true;
-  const fail = () => {
-    throw new TypeError("Failed to fetch dynamically imported module");
-  };
+  let works = false;
   const maplibre = { Map: class {} };
   const load = async (url) => {
     asked.push(url.slice(url.lastIndexOf("/") + 1));
-    if (url.includes("shared")) return chunkOk ? {} : fail();
-    // The entry module imports the chunk.
-    return entryOk && chunkOk ? maplibre : fail();
+    if (works) return maplibre;
+    throw new TypeError("Failed to fetch dynamically imported module");
   };
   await assert.rejects(loadMapLibre(load));
-  assert.equal(mapLibreNeedsReload(), false);
-  entryOk = true;
-  chunkOk = false;
   await assert.rejects(loadMapLibre(load));
-  assert.equal(mapLibreNeedsReload(), true, "the chunk's URL cannot change");
-  assert.deepEqual(asked, ["maplibre-gl.mjs", "maplibre-gl-shared.mjs", "maplibre-gl.mjs?retry=1", "maplibre-gl-shared.mjs"]);
+  assert.equal(mapLibreNeedsReload(), false, "two failures may still pass");
+  await assert.rejects(loadMapLibre(load));
+  assert.equal(mapLibreNeedsReload(), true);
+  assert.deepEqual(asked, ["maplibre-gl.mjs", "maplibre-gl.mjs?retry=1", "maplibre-gl.mjs?retry=2"]);
   // A browser that does fetch it again still gets the globe, and keeps it.
-  chunkOk = true;
+  works = true;
   assert.equal(await loadMapLibre(load), maplibre);
   assert.equal(await loadMapLibre(load), maplibre);
-  assert.equal(asked.length, 6);
+  assert.deepEqual(asked.slice(3), ["maplibre-gl.mjs?retry=3"]);
 });

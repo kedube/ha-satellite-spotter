@@ -69,7 +69,7 @@ test("mercator coordinates match MapLibre's MercatorCoordinate", () => {
   close(EARTH_CIRCUMFERENCE, 2 * Math.PI * 6371008.8, 1e-6);
 });
 
-/** Where MapLibre 6.11.2 puts its camera for jumpTo options (getCameraLngLat / getCameraAltitude). */
+/** Where MapLibre puts its camera for jumpTo options (getCameraLngLat / getCameraAltitude). */
 function maplibreCameraFrom({ center, elevation, zoom, pitch, bearing }, { fov, height }) {
   const worldSize = 512 * 2 ** zoom;
   const pixelPerMeter = worldSize / (EARTH_CIRCUMFERENCE * Math.cos(center[1] * DEG));

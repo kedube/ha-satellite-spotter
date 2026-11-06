@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const CHROMES = [process.env.CHROME, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
@@ -16,12 +17,16 @@ const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/ja
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const skyPhoto = readFileSync(join(ROOT, "tests/browser/sky.jpg"));
 
+/** Files of the integration that a page asked for and that are not there. */
+const missing = new Set();
+
 /** Serve the repository, for the page to load the real modules from. */
 function serve() {
   const server = createServer((request, response) => {
     const path = normalize(decodeURIComponent(new URL(request.url, "http://x").pathname));
     const file = join(ROOT, path);
     if (!file.startsWith(ROOT) || !existsSync(file)) {
+      if (path.startsWith("/custom_components/")) missing.add(path);
       response.writeHead(404).end();
       return;
     }
@@ -30,6 +35,56 @@ function serve() {
   });
   return new Promise((done) => server.listen(0, "127.0.0.1", () => done(server)));
 }
+
+/** A PNG of flat ground for the terrain tiles: Terrarium keeps the height as red × 256 + green − 32768. */
+function flatTerrain(metres) {
+  const part = (kind, data) => {
+    const body = Buffer.concat([Buffer.from(kind), data]);
+    const [length, check] = [Buffer.alloc(4), Buffer.alloc(4)];
+    length.writeUInt32BE(data.length);
+    check.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, check]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(256, 0);
+  header.writeUInt32BE(256, 4);
+  header.set([8, 2], 8); // 8 bits, RGB.
+  const height = metres + 32768;
+  const row = Buffer.from([0, ...Array.from({ length: 256 }, () => [height >> 8, height & 255, 0]).flat()]);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  return Buffer.concat([Buffer.from(signature), part("IHDR", header), part("IDAT", deflateSync(Buffer.concat(Array(256).fill(row)))), part("IEND", Buffer.alloc(0))]);
+}
+
+/** A vector tile with one square building in its middle, for MapLibre's worker to read and its layers to draw. */
+function vectorTile() {
+  const varint = (value) => {
+    const out = [];
+    for (; value > 127; value >>>= 7) out.push((value & 127) | 128);
+    return Buffer.from([...out, value]);
+  };
+  const whole = (tag, value) => Buffer.concat([varint(tag << 3), varint(value)]);
+  const bytes = (tag, ...parts) => {
+    const body = Buffer.concat(parts);
+    return Buffer.concat([varint((tag << 3) | 2), varint(body.length), body]);
+  };
+  const packed = (tag, values) => bytes(tag, ...values.map(varint));
+  const side = 300 << 1; // Zigzag: positive numbers doubled, negative ones doubled and less one.
+  const back = (300 << 1) - 1;
+  const start = 1900 << 1;
+  // MoveTo, three LineTos, ClosePath.
+  const outline = [9, start, start, 26, side, 0, 0, side, back, 0, 15];
+  const feature = bytes(2, whole(1, 1), packed(2, [0, 0]), whole(3, 3), packed(4, outline));
+  return bytes(3, bytes(1, Buffer.from("building")), feature, bytes(3, Buffer.from("render_height")), bytes(4, whole(5, 20)), whole(5, 4096), whole(15, 2));
+}
+
+const TERRAIN_M = 500;
+const openFreeMap = {
+  tilejson: "3.0.0",
+  tiles: ["https://tiles.openfreemap.org/planet/test/{z}/{x}/{y}.pbf"],
+  minzoom: 0,
+  maxzoom: 14,
+  vector_layers: [{ id: "building", fields: {} }],
+};
 
 const panoramaxFeature = (id, offset) => ({
   id,
@@ -42,9 +97,15 @@ const panoramaxFeature = (id, offset) => ({
 const panoramax = { type: "FeatureCollection", features: ["first", "second", "third"].map((id, i) => panoramaxFeature(id, 0.0002 * (i + 1))) };
 let photoRequests = 0;
 
-/** What the outside world answers: only the street photos' search, and its pictures. */
+/** What the outside world answers: the street photos' search and its pictures, and the 3D street view's tiles. */
 function outside(url) {
-  const { host } = new URL(url);
+  const { host, pathname } = new URL(url);
+  if (host === "tiles.openfreemap.org") {
+    return pathname === "/planet"
+      ? { body: Buffer.from(JSON.stringify(openFreeMap)), type: "application/json" }
+      : { body: vectorTile(), type: "application/x-protobuf" };
+  }
+  if (host === "s3.amazonaws.com") return { body: flatTerrain(TERRAIN_M), type: "image/png" };
   if (host === "api.panoramax.xyz") return { body: Buffer.from(JSON.stringify(panoramax)), type: "application/json" };
   if (host === "photos.example.test") {
     photoRequests++;
@@ -216,6 +277,22 @@ try {
   check((await chrome.evaluate(street)).mode === "photo", "street: which stays up");
   await noErrors("street");
 
+  // The 3D street view on stand-in tiles: where MapLibre's internals are used.
+  await open("street", "&source=model");
+  const scene = `(() => { const s = window.__view, c = s._scene; return s._mode === "3d" && c._loaded.get("ofm") > 0 && c.map.queryTerrainElevation([c.longitude, c.latitude]) > 0; })()`;
+  for (let i = 0; i < 240 && !(await chrome.evaluate(scene)); i++) await sleep(250);
+  const camera = await chrome.evaluate("window.__streetCamera()");
+  check(camera.mode === "3d", `street, 3D: the model shows (${camera.mode})`);
+  check(camera.degraded.length === 0, `street, 3D: with nothing given up on ${camera.degraded}`);
+  check(camera.tiles > 0, "street, 3D: MapLibre's worker read the map's tiles");
+  check(Math.abs(camera.terrain - TERRAIN_M) < 1, `street, 3D: the terrain is drawn at its height (${camera.terrain})`);
+  check(camera.eyeOffM < 0.01 && Math.abs(camera.altitudeOffM) < 0.01, `street, 3D: the camera is at the eye (${camera.eyeOffM} m off, ${camera.altitudeOffM} m up)`);
+  check(camera.worldSize > 0, "street, 3D: the trees' layer can read the size of the world");
+  check(camera.farPlane && Math.abs(camera.far - 1) < 1e-6 && Math.abs(camera.near - 1) < 1e-6, `street, 3D: the private near and far planes hold (${camera.near}, ${camera.far})`);
+  check(Math.abs(camera.farAfter - 1) < 1e-6 && Math.abs(camera.nearAfter - 1) < 1e-6, `street, 3D: and outlast a move of the camera (${camera.nearAfter}, ${camera.farAfter})`);
+  check(camera.skyOffPx < 0.5, `street, 3D: the sky stays on the map (${camera.skyOffPx} px off)`);
+  await noErrors("street, 3D");
+
   // The globe: a real map, taken apart and built again.
   await open("globe");
   const globe = `(() => { const v = window.__view; return { loaded: !!v._loaded, cloud: !!v._space?._cloud, positions: window.__asked["satellite_spotter/positions"] ?? 0 }; })()`;
@@ -230,6 +307,10 @@ try {
   const back = await chrome.evaluate(globe);
   check(back.loaded && back.cloud, "globe: back again, the satellites are on the new map");
   check(back.positions === asked, "globe: without asking for them again");
+  const pole = await chrome.evaluate("window.__globeNearThePole()");
+  check(pole.over.latitude > 88.9, `globe: the camera can follow a satellite close to a pole (${pole.over.latitude}°)`);
+  check(Math.abs(pole.over.radiusPx / pole.edge.radiusPx - 1) < 0.01, `globe: which grows no further there than at the edge of the map (${pole.edge.radiusPx} px, ${pole.over.radiusPx} px)`);
+  check(pole.over.limit === pole.edge.limit, `globe: as the zoom limit of a camera following it assumes (${pole.edge.limit}, ${pole.over.limit})`);
   await noErrors("globe");
 
   // The panel and the card: they draw, in a language with long words too.
@@ -254,6 +335,8 @@ try {
   check(/Tiangong/.test(bare), "no WebGL: the passes still show");
   check(await chrome.evaluate(`!window.__view.shadowRoot.querySelector(".reload-btn").hidden`), "no WebGL: with a way to try again");
   await noErrors("no WebGL");
+
+  check(missing.size === 0, `none of the integration's files is missing ${[...missing].join(" ")}`);
 } finally {
   chrome.stop();
   server.close();

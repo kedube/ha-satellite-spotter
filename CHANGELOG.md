@@ -38,8 +38,9 @@ commits instead.
   unrelated flyovers into one.
 - **Fixed on the globe:** the atmosphere glowed on the wrong hemisphere; the satellites stayed away for up
   to five minutes after returning to a dashboard; map tiles that failed stayed black until a reload; Follow
-  and Chase were forgotten after a rebuild; the Earth did not fit the screen at high latitudes; and without
-  WebGL only one sentence showed, where now everything but the globe does.
+  and Chase were forgotten after a rebuild; the Earth did not fit the screen at high latitudes; following a
+  satellite over a pole or on a high orbit zoomed the view far out for good; and without WebGL only one
+  sentence showed, where now everything but the globe does.
 - **Fixed in orbit lines:** tick marks could sit thousands of kilometres off the orbit for part of each
   hour, and the satellite drifted along a straight line if Home Assistant could not be reached.
 - **Fixed in the street view:** it could stay on "Loading your street…" when a photo server stalled; a
@@ -57,6 +58,10 @@ commits instead.
 - **Medium confidence** no longer says a pass's orbit data is a few days old, as the data is usually
   fresh and the pass simply days ahead. It now reads "a few days from its latest orbit data, so times
   may shift", in every language.
+- **MapLibre 6.16, from 6.11.** Its fixes include maps that stopped loading on Safari and iOS after time in
+  the background, and maps stuck as one stretched pixel when a phone returned to the page. The camera can now
+  follow a satellite right over the poles. MapLibre no longer shares code between its two files, so a browser
+  now fetches about 360 KB for it, up from 250 KB.
 - The brightness table gains GAOFEN-14 02.
 
 ## 1.13
