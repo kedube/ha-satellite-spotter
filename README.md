@@ -1,3 +1,5 @@
+<img src="custom_components/satellite_spotter/brand/icon@2x.png" align="right" width="120" alt="The Satellite Spotter icon: a small, bright satellite crossing the sky at nightfall, over a house with one lit window and someone pointing up">
+
 # Satellite Spotter for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
@@ -411,5 +413,4 @@ has been largely rewritten since. Code that came from them remains under the not
   Young 1989 (air mass) and Ballesteros 2012 (star colours).
 - **Software:** [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes (MIT),
   [MapLibre GL JS](https://maplibre.org) (BSD-3-Clause), and the
-  [Space Grotesk](https://github.com/floriankarsten/space-grotesk) typeface in the logo (SIL Open
-  Font License 1.1).
+  [Sora](https://github.com/sora-xor/sora-font) typeface in the logo (SIL Open Font License 1.1).

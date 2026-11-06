@@ -4,6 +4,12 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.15
+
+- **A new icon and logo:** a small, bright satellite crossing the sky at nightfall, over a home with one
+  lit window and someone outside pointing up. The logo's name takes the sky's indigo and the horizon's
+  orange, in lighter shades on dark themes.
+
 ## 1.14
 
 - **Licences.** The MIT notice for the code that came from See A Satellite Tonight is back, in
