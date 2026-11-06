@@ -1,5 +1,3 @@
-<img src="custom_components/satellite_spotter/brand/icon@2x.png" align="right" width="120" alt="The Satellite Spotter icon: a small, bright satellite crossing the sky at nightfall, over a house with one lit window and someone pointing up">
-
 # Satellite Spotter for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
