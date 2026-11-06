@@ -29,7 +29,7 @@ function passRows(start, end) {
 }
 
 const point = (azimuth, elevation, direction) => ({ azimuth, elevation, direction });
-function pass(start, title, rating) {
+function pass(start, title, rating, ids = [25544]) {
   const end = start + 300;
   return {
     id: String(start),
@@ -43,38 +43,39 @@ function pass(start, title, rating) {
     rating,
     sun_up: false,
     cloud_cover: 12,
-    satellite_count: 1,
+    satellite_count: ids.length,
     train: null,
     peak: { time: start + 150, ...point(180, 60, "S") },
-    transits: [
-      {
-        norad_id: 25544,
-        name: title,
-        kind: "iss",
-        start,
-        end,
-        magnitude: -1.5,
-        brightest_time: start + 150,
-        rise: point(250, 12, "WSW"),
-        brightest: point(180, 60, "S"),
-        set: point(30, 11, "NNE"),
-        peak: { time: start + 150, ...point(180, 60, "S") },
-        start_reason: "rise",
-        end_reason: "set",
-        period_s: 5574,
-        about_url: "https://en.wikipedia.org/wiki/International_Space_Station",
-        confidence: "high",
-      },
-    ],
+    transits: ids.map((norad_id, i) => ({
+      norad_id,
+      name: i ? `${title} ${i}` : title,
+      kind: "iss",
+      start,
+      end,
+      magnitude: -1.5,
+      brightest_time: start + 150,
+      rise: point(250, 12, "WSW"),
+      brightest: point(180, 60, "S"),
+      set: point(30, 11, "NNE"),
+      peak: { time: start + 150, ...point(180, 60, "S") },
+      start_reason: "rise",
+      end_reason: "set",
+      period_s: 5574,
+      about_url: "https://en.wikipedia.org/wiki/International_Space_Station",
+      confidence: "high",
+    })),
   };
 }
 const passes = [pass(now + 1200, "ISS", "great"), pass(now + 7200, "Tiangong", "good"), pass(now + 90000, "Hubble", "fair")];
-const detail = (p) => ({
-  pass_id: p.id,
+const detail = (p, id = p.id) => ({
+  pass_id: id,
   step: 2,
   sun: [],
-  transits: [{ norad_id: 25544, name: p.title, kind: "iss", horizon_rise: p.start - 120, horizon_set: p.end + 120, visible_start: p.start, visible_end: p.end, rows: passRows(p.start, p.end) }],
+  transits: p.transits.map((t) => ({ norad_id: t.norad_id, name: t.name, kind: t.kind, horizon_rise: p.start - 120, horizon_set: p.end + 120, visible_start: p.start, visible_end: p.end, rows: passRows(p.start, p.end) })),
 });
+// What a new search changes, for a test to set: the passes, and how the integration answers for a path.
+const search = { passes, at: now, path: (msg) => detail(search.passes.find((p) => p.id === msg.pass_id) ?? passes[0]) };
+const honestPath = search.path;
 const ids = [25544, 48274, 20580];
 const positions = () => {
   const start = Math.floor(Date.now() / 60000) * 60;
@@ -114,17 +115,17 @@ const hass = {
         return {
           generated_at: now,
           server_time: Date.now() / 1000,
-          searched_at: now,
+          searched_at: search.at,
           paused: null,
           paused_days: null,
           paused_error: null,
           location: HOME,
-          settings: { units: "auto", days: 5, min_elevation: 10, pass_id_tolerance: 120 },
+          settings: { units: "auto", days: 5, min_elevation: 10 },
           catalog: { updated: now, version: 1, satellites: 3 },
-          passes,
+          passes: search.passes,
         };
       case "satellite_spotter/pass_track":
-        return detail(passes.find((p) => p.id === msg.pass_id) ?? passes[0]);
+        return search.path(msg);
       case "satellite_spotter/track":
         return { norad_id: msg.norad_id, step: msg.step, track: ground(Date.parse(msg.start) / 1000, Date.parse(msg.end) / 1000, msg.step) };
       case "satellite_spotter/positions":
@@ -336,6 +337,109 @@ window.__globeNearThePole = async () => {
       });
     });
   return { edge: await measure(85.051129), over: await measure(89), zoom };
+};
+
+/**
+ * New predictions reaching the real globe and street view. They change a pass's id, and another pass can
+ * start close by, so what these say is which pass is which then. Fake timers show the logic; this is the
+ * page's real refresh, on a real map, with the real street view opening over it.
+ */
+const newSearch = async (list) => {
+  search.passes = list;
+  search.at += 1;
+  await window.__view._refresh(true);
+};
+const wait = (ms) => new Promise((later) => setTimeout(later, ms));
+const until = async (done) => {
+  for (let i = 0; i < 400 && !done(); i++) await wait(50);
+  return done();
+};
+const SOON = now + 7200;
+const neighbour = pass(SOON - 100, "Neighbour", "good", [48274]);
+window.__search = {
+  /** Where the user's pick is after each search, in seconds from where it began. */
+  async picks() {
+    const view = window.__view;
+    const pick = () => ({ off: Number(view._selectedId) - SOON, user: view._userSelected });
+    const group = pass(SOON, "Group", "good", [25544, 20580]);
+    await newSearch([neighbour, group]);
+    await view._select(group.id);
+    await newSearch([neighbour, pass(SOON + 5, "Group", "good", [25544, 20580])]);
+    const movedALittle = pick();
+    await newSearch([neighbour, pass(SOON + 305, "Group", "good", [20580, 25544])]);
+    const movedFar = pick();
+    const train = pass(SOON + 20000, "STARLINK-1 +2", "good", [1111, 2222, 3333]);
+    await newSearch([neighbour, train]);
+    await view._select(train.id);
+    await newSearch([neighbour, pass(SOON + 20096, "CZ-3C R/B", "good", [2222]), pass(SOON + 20220, "STARLINK-1 +1", "good", [1111, 3333])]);
+    const split = pick();
+    await newSearch([neighbour, group]);
+    await view._select(group.id);
+    await newSearch([neighbour]);
+    return { movedALittle, movedFar, split, gone: pick() };
+  },
+  /** The integration has moved on, and answers for a pass the page still shows with its neighbour's path. */
+  async globePath() {
+    const view = window.__view;
+    const shown = pass(SOON, "Shown", "good");
+    await newSearch([neighbour, shown]);
+    await view._select(shown.id);
+    await view._loadDetail(shown);
+    view._details.clear();
+    view._client.clear();
+    search.path = () => detail(neighbour);
+    const refused = (await view._loadDetail(shown)) === null && !view._details.has(shown.id);
+    view._client.clear();
+    search.path = () => detail(shown, String(shown.start + 5));
+    const taken = !!(await view._loadDetail(shown)) && view._details.has(shown.id);
+    search.path = honestPath;
+    return { refused, taken };
+  },
+  /** The same, for a street view opened while it lasts: how many answers for a path it has had by then. */
+  async openStreet() {
+    const view = window.__view;
+    const shown = pass(SOON, "Shown", "good");
+    await newSearch([neighbour, shown]);
+    await view._select(shown.id);
+    await view._loadDetail(shown);
+    view._details.clear();
+    view._client.clear();
+    search.path = () => detail(neighbour);
+    const asked = window.__asked["satellite_spotter/pass_track"];
+    await view._openStreet(shown, { user: true });
+    return asked;
+  },
+  street() {
+    const street = window.__view._street;
+    return { tag: street?.tagName, pass: street?.pass?.id, satellites: street?.detail?.transits?.map((t) => t.norad_id) ?? null, drawn: !!street?._planetarium?.primary };
+  },
+  ownPath() {
+    const shown = pass(SOON, "Shown", "good");
+    window.__view._client.clear();
+    search.path = () => detail(shown, String(shown.start + 5));
+  },
+  /** A path on its way when the street view moves on to another pass, and what its coming does then. */
+  async latePath() {
+    const view = window.__view;
+    view._closeStreet({ silent: true });
+    const first = pass(SOON, "First", "good");
+    const second = pass(SOON + 3600, "Second", "good", [48274]);
+    await newSearch([first, second]);
+    let release = null;
+    search.path = (msg) => (msg.pass_id === first.id ? new Promise((go) => (release = () => go(detail(first)))) : honestPath(msg));
+    view._details.clear();
+    view._client.clear();
+    await view._select(first.id);
+    await view._openStreet(first, { user: true });
+    const asking = await until(() => release && view._street?._asking?.passId === first.id);
+    await view._select(second.id, { view: "street" });
+    const movedOn = view._street.pass.id === second.id;
+    release?.();
+    const arrived = await until(() => view._details.has(first.id));
+    await wait(200);
+    search.path = honestPath;
+    return { asking: !!asking, movedOn, arrived, stayed: view._street.pass.id === second.id && view._selectedId === second.id };
+  },
 };
 
 await views[mode]();

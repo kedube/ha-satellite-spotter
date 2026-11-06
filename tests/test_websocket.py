@@ -126,7 +126,6 @@ async def test_passes(hass: HomeAssistant, ws: Any, init_integration: MockConfig
         "units": "auto",
         "days": 5,
         "min_elevation": 10,
-        "pass_id_tolerance": 120,
     }
     catalog = result["catalog"]
     assert catalog["updated"] == int(NOW.timestamp())

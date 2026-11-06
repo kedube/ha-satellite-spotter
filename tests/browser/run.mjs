@@ -313,6 +313,33 @@ try {
   check(pole.over.limit === pole.edge.limit, `globe: as the zoom limit of a camera following it assumes (${pole.edge.limit}, ${pole.over.limit})`);
   await noErrors("globe");
 
+  // New predictions: a pass's id changes, and another can start close by.
+  await open("globe");
+  for (let i = 0; i < 80 && !(await chrome.evaluate("!!window.__view._loaded")); i++) await sleep(250);
+  const picks = await chrome.evaluate("window.__search.picks()");
+  check(picks.movedALittle.off === 5 && picks.movedALittle.user, `new predictions: a pick moved 5 s stays, with a pass starting 100 s before it (${JSON.stringify(picks.movedALittle)})`);
+  check(picks.movedFar.off === 305 && picks.movedFar.user, `new predictions: and one moved 5 minutes (${JSON.stringify(picks.movedFar)})`);
+  check(picks.split.off === 20220 && picks.split.user, `new predictions: a group that splits is followed by its brightest satellite, not the nearer part (${JSON.stringify(picks.split)})`);
+  check(picks.gone.user === false, `new predictions: a pick that has gone is no pick, with a neighbour within 120 s (${JSON.stringify(picks.gone)})`);
+  const paths = await chrome.evaluate("window.__search.globePath()");
+  check(paths.refused, "new predictions: the globe refuses a neighbour's path");
+  check(paths.taken, "new predictions: and takes a pass's own, under the id it has now");
+  // The globe's answer, and the one the street view gets by asking Home Assistant itself a little later.
+  const answered = (await chrome.evaluate("window.__search.openStreet()")) + 2;
+  for (let i = 0; i < 40 && (await chrome.evaluate(`window.__asked["satellite_spotter/pass_track"]`)) < answered; i++) await sleep(250);
+  await sleep(250);
+  const refused = await chrome.evaluate("window.__search.street()");
+  check(refused.tag === "SATELLITE-STREET-VIEW" && !refused.satellites && !refused.drawn, `new predictions: the street view refuses a neighbour's path, and draws nothing (${JSON.stringify(refused)})`);
+  await chrome.evaluate("window.__search.ownPath()");
+  const own = async () => chrome.evaluate("window.__search.street()");
+  for (let i = 0; i < 80 && !(await own()).drawn; i++) await sleep(250);
+  const drawn = await own();
+  check(drawn.drawn && drawn.satellites?.includes(25544) && !drawn.satellites.includes(48274), `new predictions: it goes on asking, and draws the pass's own (${JSON.stringify(drawn)})`);
+  const late = await chrome.evaluate("window.__search.latePath()");
+  check(late.asking && late.movedOn && late.arrived, `new predictions: a path on its way as the street view moves on (${JSON.stringify(late)})`);
+  check(late.stayed, "new predictions: which does not take it back");
+  await noErrors("new predictions");
+
   // The panel and the card: they draw, in a language with long words too.
   await open("panel", "&lang=de");
   await sleep(4000);

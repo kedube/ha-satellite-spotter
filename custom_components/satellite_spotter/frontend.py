@@ -53,7 +53,6 @@ from .const import (
     PANEL_MODULE,
     PANEL_TITLE,
     PANEL_URL_PATH,
-    PASS_ID_TOLERANCE,
     PASS_TRACK_MAX_STEP,
     PASS_TRACK_MEMBERS,
     PASS_TRACK_STEP,
@@ -481,7 +480,6 @@ def build_passes_payload(coordinator: SatelliteSpotterCoordinator, now: datetime
             "units": coordinator.settings.units,
             "days": PREDICTION_DAYS,
             "min_elevation": coordinator.settings.min_elevation,
-            "pass_id_tolerance": int(PASS_ID_TOLERANCE.total_seconds()),
         },
         "catalog": catalog_json(coordinator.catalog),
         "passes": (

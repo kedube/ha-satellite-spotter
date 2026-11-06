@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import { PASS_LEAD_S, PassClock } from "../../custom_components/satellite_spotter/frontend/sat-clock.js";
 import { declination } from "../../custom_components/satellite_spotter/frontend/sat-magnetic.js";
+import { detailMatches } from "../../custom_components/satellite_spotter/frontend/sat-passes.js";
 import {
   BUILDING_LAYERS,
   EARTH_CIRCUMFERENCE,
@@ -33,7 +34,6 @@ import {
 import {
   DEFAULT_OPTIONS,
   SatelliteStreetView,
-  detailMatches,
   deviceView,
   normalizeOptions,
   photoOrder,
@@ -399,12 +399,27 @@ test("a path belongs to its pass, even under an id from before a refresh", () =>
   const { pass, detail } = syntheticPass();
   assert.ok(detailMatches(pass, detail));
   assert.ok(detailMatches(pass, { ...detail, pass_id: String(pass.start + 60) }));
+  assert.ok(detailMatches(pass, { ...detail, pass_id: String(pass.start - 120) }), "as far as the tolerance reaches");
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: String(pass.start + 121) }));
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: String(pass.start - 121) }));
   assert.ok(!detailMatches(pass, { ...detail, pass_id: String(pass.start + 600) }));
   assert.ok(!detailMatches(pass, { ...detail, pass_id: "not a time" }));
   assert.ok(!detailMatches(null, detail));
   assert.equal(summaryArc(pass).length, 4);
   const arc = visibleArc(detail, pass);
   assert.ok(arc.length > 20 && arc.every((p) => p.elevation >= 10));
+});
+
+test("a path under an old id needs a satellite in common, as a neighbouring pass can start that close", () => {
+  const { pass, detail } = syntheticPass({ members: 2 });
+  const moved = String(pass.start + 60);
+  assert.ok(detailMatches(pass, { ...detail, pass_id: moved, transits: detail.transits.slice(2) }), "the brightest left, its group did not");
+  assert.ok(detailMatches(pass, { ...detail, pass_id: moved, transits: [{ ...detail.transits[0], norad_id: 40000 }, detail.transits[1]] }), "a brighter one joined");
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: moved, transits: detail.transits.map((t) => ({ ...t, norad_id: 40000 })) }), "other satellites");
+  assert.ok(!detailMatches(pass, { ...detail, pass_id: moved, transits: [] }));
+  assert.ok(!detailMatches(pass, { pass_id: moved }));
+  assert.ok(!detailMatches({ ...pass, transits: undefined }, { ...detail, pass_id: moved }));
+  assert.ok(detailMatches(pass, { ...detail, transits: [] }), "under its own id there is nothing to check");
 });
 
 test("a phone pointed at the sky: where its back camera looks", () => {
@@ -483,6 +498,37 @@ test("open() starts once and asks for the path; dispose() frees the map and leav
     view.dispose();
     assert.ok(ml.maps[1].removed);
     assert.equal(clock.timeouts.size, 0);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a neighbouring pass's path is refused and the view goes on asking, while its own is taken under an old id", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView();
+    const { pass, detail } = syntheticPass({ start: T0 + 100 });
+    view.clock = new PassClock({ now: () => Date.now() });
+    const asked = [];
+    view.addEventListener("need-detail", (e) => asked.push(e.detail.passId));
+    view.pass = pass;
+    view.open();
+    await clock.settle(3);
+    assert.equal(asked.length, 1);
+    const neighbour = { ...detail, pass_id: String(pass.start - 100), transits: detail.transits.map((t) => ({ ...t, norad_id: 40000 })) };
+    view.detail = neighbour;
+    assert.equal(view.detail, null, "as it arrives");
+    view.setPass(pass, neighbour);
+    assert.equal(view.detail, null, "or as a host hands it over");
+    assert.ok(!view._planetarium.primary, "nothing drawn from it");
+    await clock.settle(1, 2500);
+    await clock.settle(1, 5000);
+    assert.equal(asked.length, 2, "still asking");
+    const own = { ...detail, pass_id: String(pass.start + 5) };
+    view.detail = own;
+    assert.equal(view.detail, own);
+    assert.ok(view._planetarium.primary, "drawn once the path is in");
+    view.dispose();
   } finally {
     clock.restore();
   }

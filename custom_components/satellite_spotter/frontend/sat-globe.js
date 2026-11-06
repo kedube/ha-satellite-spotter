@@ -473,6 +473,8 @@ export class SatelliteGlobeView extends BaseElement {
     // The pass on show, by id; picked by the user, or else the live or next one.
     this._selectedId = null;
     this._userSelected = false;
+    // That pass as last seen, to find it again once refreshed predictions change its id.
+    this._selectedWas = null;
     // The pass list's filters ("Bright only", "Hide Starlink"), which the strip
     // and the pass picked by itself follow too.
     this._filters = passesModule.normalizeFilters();
@@ -1280,6 +1282,8 @@ export class SatelliteGlobeView extends BaseElement {
     const gen = this._gen;
     const detail = await this._client.passTrack(pass.id, { entryId: this._entryId() });
     if (gen !== this._gen || !detail?.transits) return null;
+    // A pass gone from the integration's newer predictions can be answered with its neighbour's path.
+    if (!passesModule.detailMatches(pass, detail)) return null;
     this._details.set(pass.id, detail);
     while (this._details.size > KEPT_PASSES) this._details.delete(this._details.keys().next().value);
     this._detailArrived(pass);
@@ -1441,10 +1445,10 @@ export class SatelliteGlobeView extends BaseElement {
   _reconcileSelection() {
     const nowS = this._now() / 1000;
     let pass = this._selectedPass();
-    if (!pass && this._selectedId) {
-      // Refreshed predictions move a pass by a few seconds, and so its id.
-      const start = Number(this._selectedId);
-      pass = this._passes().find((p) => Math.abs(p.start - start) <= (this._payload?.settings?.pass_id_tolerance ?? 120)) ?? null;
+    if (pass) this._selectedWas = pass;
+    else if (this._selectedId && this._selectedWas) {
+      // Refreshed predictions move a pass, and so its id.
+      pass = passesModule.passItBecame(this._selectedWas, this._passes());
     }
     // The user's pass stays until it is over (and while it is simulated or in the street view).
     const busy = this._clock.mode === "sim" || !!this._street;
@@ -1466,6 +1470,7 @@ export class SatelliteGlobeView extends BaseElement {
   /** The selected pass changed: fetch what it needs and show it. */
   _selectionChanged() {
     const pass = this._selectedPass();
+    this._selectedWas = pass;
     this._skyData = null;
     this._loadDetail(pass).catch((err) => {
       if (this._errorCode(err) !== "unknown_pass") console.debug("Satellite Spotter: pass track:", err);
@@ -1870,7 +1875,8 @@ export class SatelliteGlobeView extends BaseElement {
       onNeedDetail: (passId) => {
         const wanted = this._passById(passId) ?? pass;
         this._loadDetail(wanted)
-          .then((detail) => detail && el.setPass?.(wanted, detail))
+          // If it moved on to another pass meanwhile, this late answer must not take it back.
+          .then((detail) => detail && el.pass?.id === wanted.id && el.setPass?.(wanted, detail))
           .catch(() => {});
       },
     });

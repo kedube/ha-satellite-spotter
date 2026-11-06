@@ -12,7 +12,7 @@ const { english } = await import("../../custom_components/satellite_spotter/fron
 const { Formatter } = await import("../../custom_components/satellite_spotter/frontend/sat-format.js");
 const {
   PassList, brightestMember, cloudHour, cloudText, currentPass, endedPass, groupPasses, matchesFilters, moonGlyph, moonText,
-  nextPass, normalizeFilters, notableMember, passDirections, passExtent, passMoon, rowParts,
+  nextPass, normalizeFilters, notableMember, passDirections, passExtent, passItBecame, passMoon, rowParts, shareSatellite,
 } = await import("../../custom_components/satellite_spotter/frontend/sat-passes.js");
 const astro = await import("../../custom_components/satellite_spotter/frontend/sat-astro.js");
 const { compass } = await import("../../custom_components/satellite_spotter/frontend/sat-geo.js");
@@ -86,6 +86,35 @@ test("the pass that ended last", () => {
   assert.equal(endedPass(PASSES, BOSTON_NOW), null);
   assert.equal(endedPass(PASSES, first.end), first);
   assert.equal(endedPass(PASSES, second.end + 3600), second);
+});
+
+test("what a pass became: the same crossing, with its brightest satellite if it can be", () => {
+  const crossing = (start, ...ids) => ({ start, transits: ids.map((norad_id) => ({ norad_id })) });
+  const was = crossing(5000, 1, 2);
+  assert.ok(shareSatellite(was, crossing(0, 3, 2)));
+  assert.ok(!shareSatellite(was, crossing(0, 3, 4)));
+  assert.ok(!shareSatellite(was, {}));
+  assert.ok(!shareSatellite({}, was));
+  const neighbour = crossing(5002, 3);
+  const inOrder = (expected, passes, label) => {
+    assert.equal(passItBecame(was, passes), expected, label);
+    assert.equal(passItBecame(was, [...passes].reverse()), expected, `${label}, in the other order`);
+  };
+  const withBrightest = crossing(5220, 1, 7);
+  const fainter = crossing(5096, 2);
+  inOrder(withBrightest, [fainter, withBrightest, neighbour], "a split group: the part it is named after, though another is nearer");
+  const near = crossing(5010, 1);
+  inOrder(near, [crossing(5040, 1), near], "the nearer of two with its brightest");
+  const left = crossing(5100, 2, 8);
+  inOrder(left, [crossing(5200, 2), left, neighbour], "its brightest has left: the nearer of the rest, not its neighbour");
+  assert.equal(passItBecame(was, [neighbour]), null, "it has gone");
+  assert.equal(passItBecame(was, []), null);
+  assert.equal(passItBecame(was, null), null);
+  assert.equal(passItBecame({ start: 5000 }, [near]), null, "nothing to know it by");
+  for (const [start, found] of [[5900, true], [4100, true], [5901, false], [4099, false]]) {
+    const moved = crossing(start, 1);
+    assert.equal(passItBecame(was, [moved]), found ? moved : null, `${start}`);
+  }
 });
 
 test("filters: bright only, and no Starlink", () => {

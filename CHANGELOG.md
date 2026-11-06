@@ -4,6 +4,17 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.16
+
+- **Fixed: a pass could be mistaken for one starting just before it or just after it.** After new
+  predictions, the page could move from the pass you picked to one starting within two minutes of it,
+  and the globe and street view could, rarely, draw a neighbouring pass's path. If your pass has gone,
+  the page now goes back to the next pass. A path arriving late can also no longer take the street view
+  back to the pass you left.
+- **A pass you picked stays picked when new predictions move it.** A group can move by minutes when the
+  first of it to appear changes, and it was lost past two minutes. It now follows its satellites for up
+  to 15 minutes, and if a group splits, the part with its brightest satellite.
+
 ## 1.15
 
 - **A new icon and logo:** a small, bright satellite crossing the sky at nightfall, over a home with one

@@ -22,7 +22,7 @@
 
 const VERSION = new URL(import.meta.url).search;
 // Like any of these, a time bar that does not load fails the module, which the host reports.
-const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, timebarModule, clockModule, magneticModule, photoModule, photoSceneModule, astroModule, sourcesModule, lifeModule] =
+const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, timebarModule, clockModule, magneticModule, photoModule, photoSceneModule, astroModule, sourcesModule, lifeModule, passesModule] =
   await Promise.all([
     import(`./sat-theme.js${VERSION}`),
     import(`./sat-planetarium.js${VERSION}`),
@@ -37,6 +37,7 @@ const [theme, planetariumModule, sceneModule, horizonModule, maplibreModule, tim
     import(`./sat-astro.js${VERSION}`),
     import(`./sat-photo-sources.js${VERSION}`),
     import(`./sat-scene-life.js${VERSION}`),
+    import(`./sat-passes.js${VERSION}`),
   ]);
 const { BUTTON_CSS, CHIP_CSS, FOCUS_CSS, GLASS_CSS, MOTION_CSS, TOKENS_CSS, UTIL_CSS, kindIcon, svgIcon } = theme;
 const { Planetarium, frameView, makeProjector, trackFromRows } = planetariumModule;
@@ -246,13 +247,6 @@ export function supportsWebGL2(doc = globalThis.document) {
   } catch {
     return false;
   }
-}
-
-/** Whether a pass_track payload belongs to a pass (an id from before a refresh is a moment from it). */
-export function detailMatches(pass, detail) {
-  if (!pass || !detail) return false;
-  if (detail.pass_id === pass.id) return true;
-  return Math.abs(Number(detail.pass_id) - pass.start) <= 120;
 }
 
 /** The points of a pass known before its path has loaded: rise, brightest, peak and set. */
@@ -547,7 +541,7 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   set pass(pass) {
-    this.setPass(pass, detailMatches(pass, this._detail) ? this._detail : null);
+    this.setPass(pass, passesModule.detailMatches(pass, this._detail) ? this._detail : null);
   }
 
   get pass() {
@@ -556,7 +550,7 @@ export class SatelliteStreetView extends BaseElement {
 
   set detail(detail) {
     if (detail === this._detail) return;
-    if (this._pass && detail && !detailMatches(this._pass, detail)) return;
+    if (this._pass && detail && !passesModule.detailMatches(this._pass, detail)) return;
     this._detail = detail;
     this._passChanged(false);
   }
@@ -708,7 +702,7 @@ export class SatelliteStreetView extends BaseElement {
   setPass(pass, detail = null) {
     const changed = pass?.id !== this._pass?.id;
     this._pass = pass;
-    this._detail = detail && detailMatches(pass, detail) ? detail : changed ? null : this._detail;
+    this._detail = detail && passesModule.detailMatches(pass, detail) ? detail : changed ? null : this._detail;
     if (changed) {
       this._userMoved = false;
       this._following = false;

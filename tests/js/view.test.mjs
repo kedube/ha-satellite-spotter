@@ -1095,6 +1095,100 @@ test("refreshed predictions keep the user's pass under its new id", async () => 
   }
 });
 
+test("refreshed predictions keep the user's pass up to a quarter of an hour away, not an earlier one close by", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const before = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const picked = makePass(T0 + 7200, T0 + 7500);
+    const { view } = passView(clock, [before, picked]);
+    await view._select(picked.id);
+    const moved = makePass(T0 + 7205, T0 + 7505);
+    view._payload = makePayload([before, moved]);
+    view._reconcileSelection();
+    assert.equal(view._selectedId, moved.id, "not the pass that starts first");
+    assert.equal(view._userSelected, true);
+    // A group can move by minutes when the first of it to appear changes; as far as that, and no further.
+    const edge = makePass(T0 + 8105, T0 + 8400);
+    view._payload = makePayload([edge]);
+    view._reconcileSelection();
+    assert.equal(view._selectedId, edge.id, "900 s away");
+    assert.equal(view._userSelected, true);
+    const beyond = makePass(T0 + 9006, T0 + 9300);
+    view._payload = makePayload([beyond]);
+    view._reconcileSelection();
+    assert.equal(view._userSelected, false, "901 s away is another pass");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a pass gone from refreshed predictions is not taken for a neighbour starting close by", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const first = makePass(T0 + 600, T0 + 900, { ids: [20580], kind: "hubble", title: "Hubble" });
+    const neighbour = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const picked = makePass(T0 + 7200, T0 + 7500);
+    const { view } = passView(clock, [first, neighbour, picked]);
+    await view._select(picked.id);
+    view._payload = makePayload([first, neighbour]);
+    view._reconcileSelection();
+    assert.equal(view._userSelected, false, "it has gone");
+    assert.equal(view._selectedId, first.id, "back to the next pass");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a refreshed pass is found by its satellites, even with a neighbour nearer its old start", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const neighbour = makePass(T0 + 7150, T0 + 7160, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const picked = makePass(T0 + 7200, T0 + 7500, { ids: [25544, 20580] });
+    const { view } = passView(clock, [neighbour, picked]);
+    await view._select(picked.id);
+    const moved = makePass(T0 + 7260, T0 + 7560, { ids: [99999, 20580] });
+    view._payload = makePayload([neighbour, moved]);
+    view._reconcileSelection();
+    assert.equal(view._selectedId, moved.id, "a brighter satellite joined, and the brightest left");
+    assert.equal(view._userSelected, true);
+    // Under the same id its satellites can change too: the latest ones are what it is known by.
+    view._payload = makePayload([makePass(T0 + 7260, T0 + 7560, { ids: [33333] })]);
+    view._reconcileSelection();
+    assert.equal(view._selectedId, moved.id);
+    const again = makePass(T0 + 7270, T0 + 7570, { ids: [33333] });
+    view._payload = makePayload([again]);
+    view._reconcileSelection();
+    assert.equal(view._selectedId, again.id);
+    assert.equal(view._userSelected, true);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a neighbour's path is not kept or drawn for a pass gone from the integration's predictions", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const neighbour = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const pass = makePass(T0 + 7200, T0 + 7500);
+    const { view, fake } = passView(clock, [pass]);
+    const drawn = [];
+    view._detailArrived = (p) => drawn.push(p.id);
+    let answer = makeDetail(neighbour);
+    fake.hass.callWS = async () => answer;
+    assert.equal(await view._loadDetail(pass), null);
+    assert.equal(view._details.has(pass.id), false);
+    assert.deepEqual(drawn, []);
+    // Its own path, moved by a refresh, is still taken.
+    view._client.clear();
+    answer = { ...makeDetail(pass), pass_id: String(pass.start + 5) };
+    assert.equal(await view._loadDetail(pass), answer);
+    assert.equal(view._details.get(pass.id), answer);
+    assert.deepEqual(drawn, [pass.id]);
+  } finally {
+    clock.restore();
+  }
+});
+
 test("a deep link waits for the data, and an id from older predictions finds the pass it became", async () => {
   const clock = installClock(T0 * 1000);
   try {
@@ -1507,6 +1601,64 @@ test("the street view opens over the globe on the shared clock, and is freed whe
       document.createElement = realCreate;
     }
   } finally {
+    clock.restore();
+  }
+});
+
+test("a path that comes after the street view moved on does not take it back", async () => {
+  const clock = installClock(T0 * 1000);
+  const realCreate = document.createElement;
+  try {
+    const left = makePass(T0 + 600, T0 + 900);
+    const next = makePass(T0 + 7200, T0 + 7500, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const { view, fake } = passView(clock, [left, next]);
+    view._selectedId = left.id;
+    view._running = true;
+    const answer = fake.hass.callWS;
+    const waiting = [];
+    fake.hass.callWS = async (msg) => {
+      if (msg.type === "satellite_spotter/pass_track" && msg.pass_id === left.id) await new Promise((go) => waiting.push(go));
+      return answer(msg);
+    };
+    let el;
+    document.createElement = (tag) => {
+      if (tag !== "satellite-street-view") return realCreate(tag);
+      el = {
+        tag,
+        listeners: {},
+        addEventListener(type, fn) {
+          this.listeners[type] = fn;
+        },
+        open() {},
+        setPass(p, d) {
+          this.pass = p;
+          this.detail = d;
+        },
+      };
+      return el;
+    };
+    view._wrap = { appendChild() {} };
+    view._importStreet = async () => {};
+    await view._openStreet(left, { user: true });
+    el.listeners["need-detail"]({ detail: { passId: left.id } });
+    await flush();
+    assert.equal(waiting.length, 1, "its path is on the way");
+    await view._select(next.id, { view: "street" });
+    await flush();
+    assert.equal(el.pass.id, next.id);
+    waiting[0]();
+    await flush();
+    await flush();
+    assert.equal(el.pass.id, next.id, "still the pass it moved on to");
+    assert.equal(view._selectedId, next.id);
+    // The answer it is waiting for still comes.
+    el.detail = null;
+    el.listeners["need-detail"]({ detail: { passId: next.id } });
+    await flush();
+    assert.equal(el.pass.id, next.id);
+    assert.equal(el.detail?.pass_id, next.id);
+  } finally {
+    document.createElement = realCreate;
     clock.restore();
   }
 });

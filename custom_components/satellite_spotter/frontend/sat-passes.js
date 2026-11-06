@@ -30,6 +30,11 @@ const NOTABLE = new Set(["iss", "tiangong", "hubble"]);
 const MOON_LIT = 0.4;
 // The Moon's state is worked out once per pass and place (the list redraws often).
 const MOON_CACHE_SIZE = 256;
+// How far a pass's start can be from an id from before a refresh (PASS_ID_TOLERANCE in const.py).
+const ID_TOLERANCE_S = 120;
+// A satellite takes about an hour and a half at the very least to come round again, so two passes
+// this close with a satellite in common are the same crossing.
+const SAME_CROSSING_S = 900;
 
 export const { esc } = await import(`./sat-text.js${VERSION}`);
 const byStart = (a, b) => a.start - b.start || a.end - b.end;
@@ -65,6 +70,35 @@ export function endedPass(passes, nowS) {
     if (p.end <= nowS && (!found || p.end > found.end)) found = p;
   }
   return found;
+}
+
+/** Whether two passes, or a pass and its pass_track payload, have a satellite in common. */
+export function shareSatellite(a, b) {
+  const satellites = new Set(a?.transits?.map((t) => t.norad_id));
+  return !!b?.transits?.some((t) => satellites.has(t.norad_id));
+}
+
+/**
+ * Whether a pass_track payload belongs to a pass. An id from before a refresh is a moment from it,
+ * but a neighbouring pass can start that close too, so they must also share a satellite.
+ */
+export function detailMatches(pass, detail) {
+  if (!pass || !detail) return false;
+  if (detail.pass_id === pass.id) return true;
+  return Math.abs(Number(detail.pass_id) - pass.start) <= ID_TOLERANCE_S && shareSatellite(pass, detail);
+}
+
+/**
+ * What a pass became in refreshed predictions, which move it and so change its id, or null if it has
+ * gone. It is among those that close with one of its satellites. A group can split, so it is the
+ * nearest with its brightest satellite, as it is named after that one, or else the nearest.
+ */
+export function passItBecame(was, passes) {
+  const off = (p) => Math.abs(p.start - was.start);
+  const nearest = (list) => list.reduce((best, p) => (best && off(best) <= off(p) ? best : p), null);
+  const same = (passes || []).filter((p) => off(p) <= SAME_CROSSING_S && shareSatellite(was, p));
+  const brightest = was.transits?.[0]?.norad_id;
+  return nearest(same.filter((p) => p.transits?.some((t) => t.norad_id === brightest))) ?? nearest(same);
 }
 
 /** The list's filters, every value checked (stored ones may come from elsewhere). */
