@@ -4,11 +4,50 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.17
+
+- **English now uses American spelling throughout,** as Home Assistant's own text does: catalog, meters,
+  license and so on. The page and the settings could spell the same word differently.
+- **Fixed: the globe could vanish when a map picture failed to download.** While it was asked for again,
+  the globe, the orbit and the satellite stopped drawing. They now stay, and the picture comes in when it
+  can.
+- **Fixed: waking a phone could restart the street view.** "Reloading the street view…" stayed for about
+  five seconds before it started over, and closing it during that wait left it running. It now carries
+  on as soon as the browser gives its graphics back.
+- **Fixed: the globe losing its graphics closed the street view and the replay, and left fullscreen.**
+  All three now stay while the globe is rebuilt underneath.
+- **The keyboard goes with the street view.** On the globe, the arrow keys turn it as soon as it opens,
+  Tab no longer lands on the buttons underneath, and Escape returns to where you were.
+- **Back closes a street view opened on the page,** and the replay that came with it, rather than leaving
+  the page. A link without a street view in it closes one left open, as its pass would otherwise differ
+  from what the page and the address say.
+- **Fixed: new predictions could leave things behind.** An open street view, on the page or a card, kept
+  the old path and time, and could stay on "Loading the satellite's path…". A card could keep the old path
+  until the next search. The address kept the old pass, so reloading or sharing it said the pass was gone.
+- **Fixed: "None soon" beside a full list, or "Passed" lingering, for up to five minutes,** after a replay
+  or a picked pass ended. A picked pass now gives way a minute after it ends. The side chart's "Tomorrow"
+  also changes at midnight.
+- **Without WebGL, everything but the globe now works.** Simulate runs, links select their pass, the
+  globe comes back with WebGL, and the shorter message no longer covers anything on a phone.
+- **Fixed: blocked browser storage stopped the street view opening.**
+- **A new language reaches everything at once,** including a card's chart and all of an open street view.
+- **The street view's title gives a pass's length as its row does:** the brightest satellite's, not the
+  whole group's.
+- **When a live pass ends in the street view, it offers the next one.**
+- **The street view tries again when the network comes back,** for its photos, map and settings.
+- **Switching locations shows that it is loading,** with nothing of the last location under the new name.
+  A link to a pass that has gone no longer stays in the address.
+- **"Not connected. Times are from…"** appears on the page and cards when refreshes have failed for over
+  ten minutes.
+- **A resting globe uses less power on a phone or wall tablet:** it redraws for a visible satellite's ring
+  only while that ring is on screen, and sends satellite positions to the graphics card only when they
+  move. A drawing error no longer stops the globe for good.
+
 ## 1.16
 
 - **Fixed: a pass could be mistaken for one starting just before it or just after it.** After new
   predictions, the page could move from the pass you picked to one starting within two minutes of it,
-  and the globe and street view could, rarely, draw a neighbouring pass's path. If your pass has gone,
+  and the globe and street view could, rarely, draw a neighboring pass's path. If your pass has gone,
   the page now goes back to the next pass. A path arriving late can also no longer take the street view
   back to the pass you left.
 - **A pass you picked stays picked when new predictions move it.** A group can move by minutes when the
@@ -34,7 +73,7 @@ commits instead.
   directions and rating.
 - **A Starlink train now means more than five Starlinks from one launch,** and the page gives the
   directions, height and length of those alone. Other satellites crossing at the time no longer count
-  towards it, or send you to the wrong part of the sky: one train said 85° when its line reached 24°.
+  toward it, or send you to the wrong part of the sky: one train said 85° when its line reached 24°.
 - **What the sky lets you see now comes straight from Weaver's 1947 paper:** its table for daylight, a
   new reading of its figure for twilight, and its table's limit under a bright Moon as the darkest a
   home's sky is taken to be. Passes starting in twilight can move by a few seconds, and a few appear
@@ -44,7 +83,7 @@ commits instead.
 
 ## 1.14
 
-- **Licences.** The MIT notice for the code that came from See A Satellite Tonight is back, in
+- **Licenses.** The MIT notice for the code that came from See A Satellite Tonight is back, in
   `LICENSES/MIT-see-a-satellite.txt`, and the release zip now carries it and the GPL.
 - **Fixed: the street view could restart every five seconds, for good,** after stepping to another
   photo, or when the nearest photo could not be used. With Google Street View that also meant fetching
@@ -56,14 +95,14 @@ commits instead.
 - **A new action, `satellite_spotter.get_passes`,** lists a location's passes for scripts and voice
   assistants, by time, rating, cloud, kind or name.
 - **Clouds from your own weather entity,** if you choose one, so that Open-Meteo is not asked.
-  Otherwise Open-Meteo now gets each location's coordinates rounded to about a kilometre, not 10 m.
+  Otherwise Open-Meteo now gets each location's coordinates rounded to about a kilometer, not 10 m.
 - **A location can follow a person or tracker,** for travel.
 - **The notification blueprint has more to go on. Import it again to use it,** as an imported copy does
   not update itself: a minimum rating, which replaces bright passes as the default, only some kinds of
   satellite or names, quiet hours, and a picture of the pass's path across the sky.
-- **Home Assistant starts faster on a bad network.** With a catalogue stored, a location no longer waits
+- **Home Assistant starts faster on a bad network.** With a catalog stored, a location no longer waits
   for CelesTrak or Open-Meteo while starting up, which on a network that accepts and never answers held
-  up the whole start by minutes. The new catalogue and the clouds come along just after.
+  up the whole start by minutes. The new catalog and the clouds come along just after.
 - **A restart with very old orbits keeps the entity that says so,** and the page says why in your
   language, instead of the location retrying setup with no explanation.
 - **`device_tracker.home_satellite_position` is disabled for new locations.** It changes all the time,
@@ -79,12 +118,12 @@ commits instead.
   and Chase were forgotten after a rebuild; the Earth did not fit the screen at high latitudes; following a
   satellite over a pole or on a high orbit zoomed the view far out for good; and without WebGL only one
   sentence showed, where now everything but the globe does.
-- **Fixed in orbit lines:** tick marks could sit thousands of kilometres off the orbit for part of each
+- **Fixed in orbit lines:** tick marks could sit thousands of kilometers off the orbit for part of each
   hour, and the satellite drifted along a straight line if Home Assistant could not be reached.
 - **Fixed in the street view:** it could stay on "Loading your street…" when a photo server stalled; a
   bright cloud could turn a photo by any angle; turning a phone while a photo loaded left it stretched; a
   restart during a search reported photos as unavailable.
-- **Fixed on the passes card:** wrong colours on classic dark themes and on light themes per view; a missing
+- **Fixed on the passes card:** wrong colors on classic dark themes and on light themes per view; a missing
   chart during a pass waited up to five minutes; a location that was deleted went on counting down; and a row
   offered Simulate where only the street view could open.
 - **Less battery:** a pass going on that is not the one shown no longer redraws the globe at full speed.
@@ -105,7 +144,7 @@ commits instead.
 ## 1.13
 
 - **Automations and dashboards that use this integration's entities need updating.** The entities are
-  new, modelled on [ISS Tracker](https://github.com/kedube/ha-iss-tracker)'s, and the old ones are
+  new, modeled on [ISS Tracker](https://github.com/kedube/ha-iss-tracker)'s, and the old ones are
   removed by themselves when the update starts. A location keeps its name and place, but the new
   entities' history starts afresh. **Next bright pass** and **Bright pass soon** carry on as they are.
 
@@ -159,14 +198,14 @@ commits instead.
 
 ## 1.12
 
-- **The integration's Python code is rewritten.** Its prediction, catalogue, entity and setup modules were
+- **The integration's Python code is rewritten.** Its prediction, catalog, entity and setup modules were
   written anew from a written specification and the tests, by an author that did not see the earlier
   code. In a test across ten cities the same passes were predicted, 2 of 434 starting a second earlier.
 
 ## 1.11
 
 - **If you imported the notification blueprint, import it again.** An imported copy does not update
-  itself, and the old one cannot recognise bright passes under the new event titles, so by default
+  itself, and the old one cannot recognize bright passes under the new event titles, so by default
   it would stop notifying.
 - **Pass attributes have new names, so automations that read them need updating.** Entity ids stay the
   same.
@@ -177,7 +216,7 @@ commits instead.
   - `brightest_time`, `_direction`, `_azimuth` and `_elevation` are now `best_view_time` and so on.
   - In the `passes` list, `satellite` is now `title`, and `direction` is `appears_direction`. The other
     fields there follow the names above.
-  - On the catalogue sensor, `satellites` is now `catalog_size`.
+  - On the catalog sensor, `satellites` is now `catalog_size`.
 - **Calendar event titles are new**, the same in every language: `🌟 ISS` for a bright pass and `🔭 ISS`
   for any other, in place of `🛰️ ISS (bright)`. An automation that reads the old title needs updating.
   Notification titles no longer start with a satellite symbol.
@@ -208,10 +247,10 @@ commits instead.
   the start of the whole pass, which in a big group can be long before the bright satellite
   appears. The calendar event, and so the blueprint's notification, still start with the whole
   pass.
-- **Willem Vooijs's licence notice is back**, in `LICENSE.wildekek`. This integration began
+- **Willem Vooijs's license notice is back**, in `LICENSE.wildekek`. This integration began
   as a fork of see-a-satellite, and its code has been reworked rather than written
   independently, so the MIT notice stays with it. 1.08 and 1.09 went out without it.
-- Updating from 1.07 or earlier no longer logs a warning about the stored catalogue.
+- Updating from 1.07 or earlier no longer logs a warning about the stored catalog.
 
 ## 1.09
 
@@ -232,7 +271,7 @@ commits instead.
 - **CelesTrak's download limit is clearer, and harder to run into.** Its refusal now says that
   it allows one download every two hours and that the integration tries again by itself.
   Removing your last location and adding it back no longer asks CelesTrak again too soon:
-  the catalogue stays until another download is allowed. If you remove the integration for
+  the catalog stays until another download is allowed. If you remove the integration for
   good during that time, `.storage/satellite_spotter.catalog` stays behind; it holds no
   location, and you can delete it.
 - **The cloud forecast** now asks Open-Meteo for the five days that are predicted, not seven.
@@ -243,7 +282,7 @@ commits instead.
 ## 1.08
 
 - **Orbits now come straight from CelesTrak, and brightness from a table of our own.** The
-  integration no longer uses See A Satellite Tonight's catalogue or the pysatellitespotter
+  integration no longer uses See A Satellite Tonight's catalog or the pysatellitespotter
   library. The table, `brightness.csv`, holds mostly magnitudes measured by the
   Mini-MegaTORTORA telescope.
 - **Which passes are listed changes**, because the brightness values are on a different scale.
@@ -254,8 +293,8 @@ commits instead.
   magnitude 0.5 rather than 1.
 - **The device page** links to the integration's own page rather than See A Satellite Tonight's
   website.
-- Planets in the drawn sky use modern colour measurements.
-- The first start after updating downloads a new catalogue, and logs that it is ignoring the
+- Planets in the drawn sky use modern color measurements.
+- The first start after updating downloads a new catalog, and logs that it is ignoring the
   stored one. That warning is harmless.
 
 ## 1.07
@@ -318,7 +357,7 @@ from your home, with James Darpinian's See A Satellite Tonight predictions.
   coming, and every pass as a calendar event, as the See A Satellite Tonight integration
   has them.
 - **The Satellite Tracker page** in the sidebar: a 3D globe with the night side and city
-  lights, every satellite in the catalogue, the pass in gold over your home, where to look,
+  lights, every satellite in the catalog, the pass in gold over your home, where to look,
   and simulations of each pass that fast-forward to it.
 - **A street view** of each pass from home: a 360° photo of your street, darkened for the
   night, with the sky of the pass in place of its own, from Panoramax and, with their keys

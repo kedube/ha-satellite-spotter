@@ -70,11 +70,20 @@ const BaseElement = globalThis.HTMLElement ?? class {};
 export class SatelliteSpotterPanel extends BaseElement {
   constructor() {
     super();
-    this._onLocationChanged = () => this._followLink();
+    this._onLocationChanged = () => {
+      if (this._afterBack) {
+        const href = this._afterBack;
+        this._afterBack = null;
+        if (href !== location.href) history.replaceState(history.state, "", href);
+        return;
+      }
+      this._followLink();
+    };
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._localizeLoading();
     this._languageReady = this._useLanguage();
     this._updateMenu();
     if (this._view) {
@@ -115,6 +124,16 @@ export class SatelliteSpotterPanel extends BaseElement {
   disconnectedCallback() {
     window.removeEventListener("location-changed", this._onLocationChanged);
     window.removeEventListener("popstate", this._onLocationChanged);
+  }
+
+  /** Home Assistant's own word for it: this comes before any text of ours is in. */
+  _localizeLoading() {
+    const booting = this.shadowRoot?.querySelector(".booting");
+    const word = this._hass?.localize?.("ui.common.loading");
+    if (booting && word) {
+      booting.textContent = word;
+      booting.setAttribute("aria-label", word);
+    }
   }
 
   /** Load the panel's text in Home Assistant's language (the globe loads its own). */
@@ -273,6 +292,7 @@ export class SatelliteSpotterPanel extends BaseElement {
         </div>
       </header>
       <main><div class="booting" role="status" aria-label="Loading">Loading…</div></main>`;
+    this._localizeLoading();
     this._menu = root.querySelector("button.menu");
     this._title = root.querySelector("h1");
     this._title.textContent = TITLE;
@@ -364,12 +384,17 @@ export class SatelliteSpotterPanel extends BaseElement {
     const key = linkKey(link);
     if (key === this._linkKey) return;
     this._linkKey = key;
+    this._streetEntry = false;
     const known = this._locations?.some((l) => l.entry_id === link.entry_id);
     if (link.entry_id && known && link.entry_id !== this._viewConfig.entry_id) {
       // Not remembered: the picker's own choice is what the panel opens with next time.
       this._fillPicker(link.entry_id);
       this._configureView({ entry_id: link.entry_id });
     }
+    // The address has no street view in it: one left open would show something else than it says.
+    if (link.view !== "street") view.leaveStreet?.();
+    // Nor a replay: it says so whenever one runs, and opening a street view can start one.
+    if (!link.view) view.leaveReplay?.();
     if (link.pass) view.selectPass?.(link.pass, { view: link.view });
   }
 
@@ -379,8 +404,19 @@ export class SatelliteSpotterPanel extends BaseElement {
     const several = (this._locations?.length ?? 0) > 1;
     const link = { pass: id || null, view: id ? view : null, entry_id: several && id ? this._viewConfig?.entry_id ?? null : null };
     const href = writeLink(location.href, link);
-    if (href !== location.href) history.replaceState(history.state, "", href);
     this._linkKey = linkKey(readLink(new URL(href).search));
+    if (view === "street" && !this._streetEntry && readLink(location.search).view !== "street") {
+      // Opened here: an entry of its own in the history, so that Back closes it rather than leaving the page.
+      this._streetEntry = true;
+      history.pushState(history.state, "", href);
+    } else if (view !== "street" && this._streetEntry) {
+      // Closed here: back over that entry, and the address is put right where that lands.
+      this._streetEntry = false;
+      this._afterBack = href;
+      history.back();
+    } else if (href !== location.href) {
+      history.replaceState(history.state, "", href);
+    }
   }
 
   /** Whether the address is this panel's: the address is only ever written there. */

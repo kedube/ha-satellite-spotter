@@ -137,7 +137,7 @@ class FrontendState:
     """What has been registered with the frontend in this run."""
 
     def __init__(self, version: str) -> None:
-        """Initialise."""
+        """Initialize."""
         self.version = version
         self.panel_registered = False
         self.panel_conflict_logged = False

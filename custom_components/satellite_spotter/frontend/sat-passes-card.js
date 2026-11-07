@@ -57,7 +57,7 @@ export function darkTheme(hass, media = globalThis.matchMedia) {
   return media?.("(prefers-color-scheme: dark)")?.matches ?? true;
 }
 
-/** The relative luminance of a CSS colour (0 to 1), or null if it cannot be told or can be seen through. */
+/** The relative luminance of a CSS color (0 to 1), or null if it cannot be told or can be seen through. */
 export function luminanceOf(color) {
   const text = String(color ?? "").trim().toLowerCase();
   let rgb = null;
@@ -86,7 +86,7 @@ export function luminanceOf(color) {
 /**
  * Whether text on a card needs to be dark: by the card's own background, which is what it has to
  * read against. Home Assistant says a classic theme without a dark mode is not dark, whatever its
- * colours, and a view can have a theme of its own. Only without a colour to go by, what it says goes.
+ * colors, and a view can have a theme of its own. Only without a color to go by, what it says goes.
  */
 export function cardIsLight(element, hass, getStyle = globalThis.getComputedStyle) {
   const style = element && getStyle?.(element);
@@ -110,7 +110,7 @@ export function lookAt(rows, tS) {
   const a = rows[lo];
   const b = rows[hi];
   const f = b[0] > a[0] ? (tS - a[0]) / (b[0] - a[0]) : 0;
-  // The short way round through north.
+  // The short way around through north.
   const turn = ((((b[5] - a[5]) % 360) + 540) % 360) - 180;
   return { azimuth: (((a[5] + turn * f) % 360) + 360) % 360, elevation: a[6] + (b[6] - a[6]) * f };
 }
@@ -209,6 +209,7 @@ svg { fill: currentColor; }
 .name .with { flex: none; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; color: #fcd34d; border: 1px solid rgba(252,211,77,.45); }
 .facts { margin-top: 4px; font-size: 12.5px; color: #cbd5e1; display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; }
 .facts > * + *::before { content: "·"; margin: 0 7px; color: #94a3b8; }
+.facts.stale { color: #fde68a; }
 .facts .rate { font-weight: 650; }
 .facts .rate.great { color: #fcd34d; } .facts .rate.good { color: #7dd3fc; } .facts .rate.poor { color: #94a3b8; font-weight: 500; }
 .facts .mag { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
@@ -294,6 +295,8 @@ export class SatellitePassesView extends BaseElement {
     this._language = new i18n.StringsFollower((strings) => {
       this._fmt.update(this._hass, strings);
       this._render();
+      // Its text waited for this too: the same formatter again rewords it.
+      if (this._street) this._street.formatter = this._fmt;
     });
     this._onVisibility = () => this._visibilityChanged();
     this._onReconnect = () => {
@@ -309,6 +312,7 @@ export class SatellitePassesView extends BaseElement {
     const old = this._hass;
     this._hass = hass;
     this._fmt.update(hass);
+    if (this._street) this._street.hass = hass;
     if (!old || hass?.themes !== old.themes || hass?.selectedTheme !== old.selectedTheme) this._applyTheme();
     this._language.follow(hass?.language);
     this._watchConnection();
@@ -422,7 +426,10 @@ export class SatellitePassesView extends BaseElement {
       const { payload, offsetMs, newSearch } = await this._client.fetchPasses(this._config.entry_id, this._offsetMs);
       if (gen !== this._gen || !this._started) return;
       this._offsetMs = offsetMs;
-      if (newSearch) {
+      this._freshAtS = this._nowS();
+      // By what this view last took in too: an answer dropped above as overtaken may have been the one to say so.
+      const newPredictions = newSearch || (!!this._payload && payload?.searched_at !== this._payload.searched_at);
+      if (newPredictions) {
         // The same pass can take another way across the sky now.
         this._detail = null;
         this._detailFor = null;
@@ -433,6 +440,7 @@ export class SatellitePassesView extends BaseElement {
       this._delay = 0;
       this._fmt.setUnits(payload?.settings?.units);
       this._render();
+      if (newPredictions) this._followInStreet();
       this._schedule(REFRESH_MS);
     } catch (err) {
       if (gen !== this._gen || !this._started) return;
@@ -441,6 +449,24 @@ export class SatellitePassesView extends BaseElement {
       this._render();
       this._schedule(this._delay);
     }
+  }
+
+  /** New predictions with the street view open: the pass it shows, as it is now, and its path. */
+  async _followInStreet() {
+    const street = this._street;
+    const was = street?.pass;
+    if (!was) return;
+    const passes = this._payload?.passes || [];
+    const pass = passes.find((p) => p.id === was.id) ?? passesModule.passItBecame(was, passes);
+    // Gone: it stays as it was, as nothing else can be said about it.
+    if (!pass) return;
+    let detail = null;
+    try {
+      detail = await this._client.passTrack(pass.id, { entryId: this._config.entry_id });
+    } catch {
+      // It asks for itself, and says if that fails.
+    }
+    if (this._street === street) street.setPass(pass, detail);
   }
 
   /** The next refresh: after `ms`, or just after the pass on screen ends, whichever is sooner. */
@@ -507,6 +533,7 @@ export class SatellitePassesView extends BaseElement {
           <span class="facts bright" hidden></span>
           <span class="facts path" hidden></span>
           <span class="facts moon" hidden></span>
+          <span class="facts stale" hidden></span>
           <span class="text" hidden></span>
         </button>
         <div class="actions" hidden>
@@ -522,7 +549,7 @@ export class SatellitePassesView extends BaseElement {
     this._els = {
       hero: $(".hero"), main: $(".main"), state: $(".state"), label: $(".state .label"), chip: $(".state .chip"),
       clock: $(".clock"), when: $(".when"), name: $(".name"), facts: $(".facts.bright"), text: $(".text"), chart: $(".chart"),
-      path: $(".facts.path"), moon: $(".facts.moon"), actions: $(".actions"), sim: $(".btn.sim"), street: $(".btn.street"),
+      path: $(".facts.path"), moon: $(".facts.moon"), stale: $(".facts.stale"), actions: $(".actions"), sim: $(".btn.sim"), street: $(".btn.street"),
       announce: $("[aria-live]"),
       list: $(".list"), foot: $(".foot"), all: $(".all"),
     };
@@ -594,6 +621,9 @@ export class SatellitePassesView extends BaseElement {
 
     if (pass) this._renderPass(state, nowS);
     else this._renderMessage(state);
+    const stale = passesModule.staleNote(this._fmt, this._freshAtS, !!this._error, nowS);
+    e.stale.hidden = !stale;
+    setText(e.stale, stale);
 
     // The passes after the one on top.
     const rest = pass
@@ -636,7 +666,7 @@ export class SatellitePassesView extends BaseElement {
         e.clock,
         at && at.elevation > 0
           ? t("card.look_up", { direction: fmt.direction(compassPoint(at.azimuth)), elevation: fmt.degrees(at.elevation) })
-          : t("card.look_towards", { direction: from && to ? `${from} → ${to}` : fmt.direction(pass.peak?.direction ?? "") })
+          : t("card.look_toward", { direction: from && to ? `${from} → ${to}` : fmt.direction(pass.peak?.direction ?? "") })
       );
       const ending = { set: "card.ends_set", shadow: "card.ends_shadow", sky: "card.ends_sky" }[primary?.end_reason] ?? "card.ends_set";
       const endsIn = t("card.ends_in", { countdown: fmt.countdown(wholeSeconds(pass.end - nowS)) });
@@ -759,7 +789,8 @@ export class SatellitePassesView extends BaseElement {
     const show = this._config.show_chart !== false && !!pass && !!rows;
     el.hidden = !show;
     if (!show) return;
-    const key = `${pass.id}|${this._fmt.language}|${this._fmt.timeZone}`;
+    // By the text in use, which comes later than the language says, and what its numbers look like.
+    const key = `${pass.id}|${this._fmt.strings.language}|${this._fmt.magnitude(pass.magnitude)}|${this._fmt.timeZone}`;
     if (key !== this._chartKey) {
       this._chartKey = key;
       const detail = this._detail;
@@ -899,6 +930,20 @@ export class SatellitePassesView extends BaseElement {
         pass,
         detail,
         onClose: () => this._closeStreet(),
+        nextPass: () => {
+          const nowS = this._nowS();
+          return passesModule.nextPass((this._payload?.passes || []).filter((p) => passesModule.matchesFilters(p, this._filters())), nowS);
+        },
+        onShowPass: async (next) => {
+          const street = this._street;
+          let track = null;
+          try {
+            track = await this._client.passTrack(next.id, { entryId: this._config.entry_id });
+          } catch {
+            // It asks for itself, and says if that fails.
+          }
+          if (this._street === street) street.setPass(next, track);
+        },
         onNeedDetail: async (passId) => {
           const id = passId ?? pass.id;
           const next = (this._payload?.passes || []).find((p) => p.id === id) ?? pass;

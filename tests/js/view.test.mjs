@@ -15,6 +15,7 @@ const { SatelliteGlobeView, simulationWindow, speedFromRows, tickStepMinutes, tr
 const { mergeRows, rowsCover, transitRows } = await import("../../custom_components/satellite_spotter/frontend/sat-course.js");
 const { nextClockOffset } = await import("../../custom_components/satellite_spotter/frontend/sat-client.js");
 const passesModule = await import("../../custom_components/satellite_spotter/frontend/sat-passes.js");
+const { PASS_TAIL_S } = await import("../../custom_components/satellite_spotter/frontend/sat-clock.js");
 const GERMAN = JSON.parse(readFileSync(new URL("../../custom_components/satellite_spotter/frontend/translations/de.json", import.meta.url), "utf8"));
 
 globalThis.CustomEvent ??= class {
@@ -354,7 +355,7 @@ test("a new location's retries start quickly, however far the last one's backed 
     for (let i = 0; i < 10; i++) view._retryRefresh();
     assert.equal(view._refreshDelay, 5 * 60 * 1000);
     view._locationChanged();
-    assert.equal(clock.timeouts.size, 0, "the old location's retry is cancelled");
+    assert.equal(clock.timeouts.size, 0, "the old location's retry is canceled");
     view._retryRefresh();
     assert.equal(view._refreshDelay, 3000);
   } finally {
@@ -867,8 +868,8 @@ test("errors read as sentences, whatever shape the websocket gives them", () => 
   assert.match(view._errorText({ error: { code: "not_found", message: "x" } }), /Set up the Satellite Spotter/);
   assert.match(view._errorText({ code: "location_disabled", message: "x" }), /disabled/);
   assert.match(view._errorText({ code: "stale_catalog", message: "x" }), /out of date/);
-  assert.equal(view._errorText({ code: "not_ready", message: "Waiting for the satellite catalogue" }), "Waiting for satellite data…");
-  assert.equal(view._errorText({ code: "not_ready", message: "Catalogue download failed" }), "Waiting for satellite data… (Catalogue download failed)");
+  assert.equal(view._errorText({ code: "not_ready", message: "Waiting for the satellite catalog" }), "Waiting for satellite data…");
+  assert.equal(view._errorText({ code: "not_ready", message: "Catalog download failed" }), "Waiting for satellite data… (Catalog download failed)");
   assert.doesNotMatch(view._errorText({ error: { foo: 1 } }), /object Object/);
   assert.equal(view._errorMessage({ code: "home_assistant_error", message: "Not ready" }), "Not ready");
 });
@@ -1122,15 +1123,15 @@ test("refreshed predictions keep the user's pass up to a quarter of an hour away
   }
 });
 
-test("a pass gone from refreshed predictions is not taken for a neighbour starting close by", async () => {
+test("a pass gone from refreshed predictions is not taken for a neighbor starting close by", async () => {
   const clock = installClock(T0 * 1000);
   try {
     const first = makePass(T0 + 600, T0 + 900, { ids: [20580], kind: "hubble", title: "Hubble" });
-    const neighbour = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const neighbor = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
     const picked = makePass(T0 + 7200, T0 + 7500);
-    const { view } = passView(clock, [first, neighbour, picked]);
+    const { view } = passView(clock, [first, neighbor, picked]);
     await view._select(picked.id);
-    view._payload = makePayload([first, neighbour]);
+    view._payload = makePayload([first, neighbor]);
     view._reconcileSelection();
     assert.equal(view._userSelected, false, "it has gone");
     assert.equal(view._selectedId, first.id, "back to the next pass");
@@ -1139,15 +1140,15 @@ test("a pass gone from refreshed predictions is not taken for a neighbour starti
   }
 });
 
-test("a refreshed pass is found by its satellites, even with a neighbour nearer its old start", async () => {
+test("a refreshed pass is found by its satellites, even with a neighbor nearer its old start", async () => {
   const clock = installClock(T0 * 1000);
   try {
-    const neighbour = makePass(T0 + 7150, T0 + 7160, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const neighbor = makePass(T0 + 7150, T0 + 7160, { ids: [48274], kind: "tiangong", title: "Tiangong" });
     const picked = makePass(T0 + 7200, T0 + 7500, { ids: [25544, 20580] });
-    const { view } = passView(clock, [neighbour, picked]);
+    const { view } = passView(clock, [neighbor, picked]);
     await view._select(picked.id);
     const moved = makePass(T0 + 7260, T0 + 7560, { ids: [99999, 20580] });
-    view._payload = makePayload([neighbour, moved]);
+    view._payload = makePayload([neighbor, moved]);
     view._reconcileSelection();
     assert.equal(view._selectedId, moved.id, "a brighter satellite joined, and the brightest left");
     assert.equal(view._userSelected, true);
@@ -1165,15 +1166,15 @@ test("a refreshed pass is found by its satellites, even with a neighbour nearer 
   }
 });
 
-test("a neighbour's path is not kept or drawn for a pass gone from the integration's predictions", async () => {
+test("a neighbor's path is not kept or drawn for a pass gone from the integration's predictions", async () => {
   const clock = installClock(T0 * 1000);
   try {
-    const neighbour = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const neighbor = makePass(T0 + 7100, T0 + 7110, { ids: [48274], kind: "tiangong", title: "Tiangong" });
     const pass = makePass(T0 + 7200, T0 + 7500);
     const { view, fake } = passView(clock, [pass]);
     const drawn = [];
     view._detailArrived = (p) => drawn.push(p.id);
-    let answer = makeDetail(neighbour);
+    let answer = makeDetail(neighbor);
     fake.hass.callWS = async () => answer;
     assert.equal(await view._loadDetail(pass), null);
     assert.equal(view._details.has(pass.id), false);
@@ -1778,7 +1779,7 @@ test("every satellite's position: every five minutes while shown, around the pas
     view._config = { show_satellites: true };
     await view._loadCloud();
     assert.deepEqual(asked().map((m) => [m.span, m.step, m.start]), [[600, 60, undefined]]);
-    assert.equal(clouds, 1, "the cloud gets its satellites once per catalogue");
+    assert.equal(clouds, 1, "the cloud gets its satellites once per catalog");
     assert.equal(view._cloud.byId.get(25544).name, "ISS");
     await view._loadCloud();
     clock.now += 4 * 60 * 1000;
@@ -2298,6 +2299,307 @@ test("a pin that has stepped aside is out of the keyboard's way too", () => {
   try {
     const source = globe.SatelliteGlobeView.prototype._placeLabels.toString();
     assert.match(source, /el\.inert = away/);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a frame that throws is reported, and does not stop the globe for good", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    view._running = true;
+    view._frameDelay = () => 5;
+    view._frame = () => {
+      throw new Error("a frame went wrong");
+    };
+    view._scheduleFrames();
+    const [timer] = [...clock.timeouts.values()];
+    assert.throws(() => timer.fn(), /a frame went wrong/);
+    assert.notEqual(view._frameTimer, null, "the next is on its way");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("rings that breathe count only where they can be seen", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    view._space.animating = true;
+    view._els.map = { clientWidth: 800, clientHeight: 600 };
+    view._map.project = ([lon, lat]) => ({ x: (lon + 71) * 10 + 400, y: (42 - lat) * 10 + 300 });
+    let where = null;
+    view._cloud.whereIs = () => where;
+    view._rings = [25544];
+    assert.equal(view._ringsBreathing(), true, "not known where: it draws");
+    where = { lat: 42, lon: -71 };
+    assert.equal(view._ringsBreathing(), true, "in the middle of the view");
+    where = { lat: 42, lon: -130 };
+    assert.equal(view._ringsBreathing(), false, "off the edge");
+    // Behind the Earth: MapLibre's project() still gives a place on the screen.
+    const project = view._map.project;
+    view._map.project = () => ({ x: 400, y: 300 });
+    where = { lat: -42, lon: 109 };
+    assert.equal(view._ringsBreathing(), false, "behind the Earth");
+    view._flat = true;
+    assert.equal(view._ringsBreathing(), true, "a flat map has no far side");
+    view._flat = false;
+    view._map.project = project;
+    where = { lat: 42, lon: -130 };
+    view._flat = true;
+    assert.equal(view._ringsBreathing(), false, "off the flat map too");
+    view._flat = false;
+    where = { lat: 42, lon: -71 };
+    view._space.animating = false;
+    assert.equal(view._ringsBreathing(), false, "no ring at all");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("without a map a replay's clock still runs, and a link still selects its pass", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const a = makePass(T0 + 600, T0 + 900);
+    const b = makePass(T0 + 7200, T0 + 7500);
+    const { view } = passView(clock, [a, b]);
+    view._map = null;
+    view._loaded = false;
+    view._noMap = true;
+    view._renderMission = () => {};
+    view._clock.simulate({ fromS: a.start - 60, toS: a.end + 60, visibleStartS: a.start, visibleEndS: a.end });
+    const from = view._clock.simMs;
+    view._frame();
+    clock.now += 1000;
+    view._frame();
+    assert.ok(view._clock.simMs > from, "time moves");
+    view._clock.live();
+    view.selectPass(b.id);
+    await flush();
+    assert.equal(view._selectedId, b.id);
+    assert.equal(view._pendingSelect, null);
+    // One that came before it was known there would be no map, and was left for the map to be ready.
+    view._noMap = false;
+    view.selectPass(a.id);
+    assert.equal(view._selectedId, b.id);
+    view._els.map = { clientWidth: 800, clientHeight: 600 };
+    view.toggleAttribute = () => {};
+    view._applyLayout = () => {};
+    view._renderList = view._renderStrip = () => {};
+    view._showWithoutMap();
+    await flush();
+    assert.equal(view._selectedId, a.id);
+    view._pause();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a failed raster tile is asked for again through its whole source, and others by name", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = stubView(clock);
+    const refreshed = [];
+    view._map.getSource = (id) => ({ type: id === "streets" ? "vector" : "raster" });
+    view._map.refreshTiles = (id, tiles) => refreshed.push([id, tiles]);
+    view._failedTiles = { imagery: new Map([["1/0/0", { x: 0, y: 0, z: 1 }]]), streets: new Map([["2/1/1", { x: 1, y: 1, z: 2 }]]) };
+    view._refreshFailedTiles();
+    assert.deepEqual(refreshed, [["imagery", undefined], ["streets", [{ x: 1, y: 1, z: 2 }]]]);
+    assert.equal(view._failedTiles.imagery.size, 0);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("building the map again after a lost context leaves the street view and the replay alone", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 900);
+    const { view } = passView(clock, [pass]);
+    let closed = 0;
+    let removed = 0;
+    view._street = { pass, dispose: () => closed++, remove() {} };
+    view._map.remove = () => removed++;
+    view.removeAttribute = () => {};
+    view._clock.simulate({ fromS: pass.start - 60, toS: pass.end + 60 });
+    view._teardown({ rebuilding: true });
+    assert.equal(removed, 1);
+    assert.equal(view._map, null);
+    assert.ok(view._street);
+    assert.equal(closed, 0);
+    assert.equal(view._clock.mode, "sim");
+    view._teardown();
+    assert.equal(view._street, null, "for good: it goes too");
+    assert.equal(closed, 1);
+    assert.equal(view._clock.mode, "live");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("the address follows a pick moved by new predictions, and lets go of a link that finds nothing", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const picked = makePass(T0 + 7200, T0 + 7500);
+    const { view, calls, fake } = passView(clock, [picked]);
+    await view._select(picked.id);
+    const moved = makePass(T0 + 7205, T0 + 7505);
+    view._payload = makePayload([moved]);
+    view._reconcileSelection();
+    assert.deepEqual(calls.events.at(-1), ["pass-selected", { id: moved.id, view: null }]);
+    fake.hass.callWS = async () => {
+      throw { code: "unknown_pass", message: "No such pass" };
+    };
+    view.selectPass("25544-1");
+    await flush();
+    assert.deepEqual(calls.events.filter(([type]) => type === "pass-selected").at(-1), ["pass-selected", { id: null, view: null }]);
+    assert.equal(calls.events.at(-1)[0], "hass-notification");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("another location's passes do not go under this one's name", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 900);
+    const { view } = passView(clock, [pass]);
+    view._config = { entry_id: HOME.entry_id };
+    assert.deepEqual(view._passes().map((p) => p.id), [pass.id]);
+    view._config = { entry_id: "somewhere else" };
+    assert.equal(view._elsewhere(), true);
+    assert.deepEqual(view._passes(), []);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("back to live, a pick that has gone gives way to the next pass", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const a = makePass(T0 + 7200, T0 + 7500);
+    const b = makePass(T0 + 90000, T0 + 90300, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const { view } = passView(clock, [a, b]);
+    await view._select(a.id, { view: "simulate" });
+    await flush();
+    assert.equal(view._clock.mode, "sim");
+    view._payload = makePayload([b]);
+    view._clock.live();
+    assert.equal(view._selectedId, b.id);
+    assert.equal(view._userSelected, false);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a replayed pass moved by new predictions: what the replay highlights moves with it", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const a = makePass(T0 + 7200, T0 + 7500);
+    const { view } = passView(clock, [a]);
+    view._sim = { pass: a };
+    const shown = [];
+    view._street = { pass: a, setPass: (...args) => shown.push(args) };
+    view._clock.simulate({ fromS: a.start - 120, toS: a.end + 60, visibleStartS: a.start, visibleEndS: a.end });
+    const moved = makePass(a.start + 20, a.end + 20);
+    view._payload = makePayload([moved]);
+    view._details.set(moved.id, makeDetail(moved));
+    view._followMovedPass();
+    assert.deepEqual(shown.map(([pass, detail]) => [pass.id, detail.pass_id]), [[moved.id, moved.id]], "the street view goes along, with its path");
+    assert.equal(view._sim.pass.id, moved.id);
+    assert.equal(view._clock.window.visibleStartS, moved.start);
+    assert.equal(view._clock.window.visibleEndS, moved.end);
+    assert.equal(view._clock.window.fromS, a.start - 120, "the replay itself goes on");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("as time passes: a pick stays only a minute past its pass, and a new part of the day words the chart anew", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 660);
+    const later = makePass(T0 + 90000, T0 + 90300, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const { view } = passView(clock, [pass, later]);
+    await view._select(pass.id);
+    delete view._tick;
+    for (const name of ["_measureHud", "_renderMission", "_renderTelemetry", "_renderStrip", "_updateCloudFlags", "_loadFocusTrack", "_refreshAfterPass"]) view[name] = () => {};
+    let charts = 0;
+    view._renderSky = () => charts++;
+    let part = "this evening";
+    view._fmt.group = () => ({ key: part, label: part });
+    view._tick();
+    const worded = charts;
+    assert.ok(worded >= 1);
+    part = "tomorrow morning";
+    view._tick();
+    assert.equal(charts, worded + 1);
+    assert.equal(view._selectedId, pass.id);
+    clock.now = (pass.end + PASS_TAIL_S + 2) * 1000;
+    view._tick();
+    assert.equal(view._userSelected, false);
+    assert.equal(view._selectedId, later.id);
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a ring is counted only for what has one: a satellite drawn as a sprite has none", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const shown = makePass(T0 - 60, T0 + 240);
+    const other = makePass(T0 - 50, T0 + 250, { ids: [48274], kind: "tiangong", title: "Tiangong" });
+    const { view } = passView(clock, [shown, other]);
+    await view._select(shown.id);
+    view._details.set(shown.id, makeDetail(shown));
+    view._cloud.setFlags = (marks) => {
+      marks(() => {});
+      return false;
+    };
+    view._updateCloudFlags();
+    assert.deepEqual(view._rings, [48274]);
+    view._details.clear();
+    view._updateCloudFlags();
+    assert.deepEqual(view._rings, [25544, 48274], "with no path yet, it is one of the cloud too");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a lost context that comes back builds the map again, and leaves the street view and the replay alone", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 900);
+    const { view } = passView(clock, [pass]);
+    const heard = {};
+    view._map.getCanvas = () => ({ addEventListener: (type, fn) => (heard[type] = fn) });
+    view._map.remove = () => {};
+    view.removeAttribute = () => {};
+    view.isConnected = true;
+    let started = 0;
+    view._start = () => started++;
+    view._street = { pass, dispose() {}, remove() {} };
+    view._clock.simulate({ fromS: pass.start - 60, toS: pass.end + 60 });
+    view._watchContext(view._map);
+    heard.webglcontextrestored();
+    assert.equal(started, 1);
+    assert.ok(view._street, "the street view stays");
+    assert.equal(view._clock.mode, "sim", "and so does its replay");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("no map's chart or list goes under the wrong name: the mission card says nothing while another location's data is in", () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const pass = makePass(T0 + 600, T0 + 900);
+    const { view } = passView(clock, [pass]);
+    assert.equal(view._passById(pass.id)?.id, pass.id);
+    view._config = { ...view._config, entry_id: "somewhere else" };
+    assert.equal(view._passById(pass.id), null);
+    assert.equal(view._selectedPass(), null);
   } finally {
     clock.restore();
   }

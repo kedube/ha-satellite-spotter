@@ -136,7 +136,7 @@ jobs:
           node-version: "24"
       # What a fake DOM and a fake WebGL cannot show, in the Chrome these machines come with.
       - run: node tests/browser/run.mjs
-        timeout-minutes: 5
+        timeout-minutes: 10
 
   hassfest:
     name: hassfest

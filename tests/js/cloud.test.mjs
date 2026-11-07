@@ -77,7 +77,7 @@ test("a new layer hears of the flags again, though nothing has changed since the
   assert.deepEqual(second.made.flags, [[0, 8, 0]]);
 });
 
-test("a list that differs anywhere gets the catalogue's order again", async () => {
+test("a list that differs anywhere gets the catalog's order again", async () => {
   let ids = [1, 2, 3];
   const { made, calls } = cloud({ fetchPositions: async () => positions(ids) });
   made.attach(layer());
@@ -90,7 +90,7 @@ test("a list that differs anywhere gets the catalogue's order again", async () =
   assert.equal(made._index.get(4), 1);
 });
 
-test("the same list again asks for no catalogue", async () => {
+test("the same list again asks for no catalog", async () => {
   const { made, calls } = cloud();
   made.attach(layer());
   await made.load();
@@ -205,4 +205,31 @@ test("without a layer nothing breaks", async () => {
   assert.equal(made.pick(1, 1, 1, 1, 1), null);
   made.detach();
   made.reset();
+});
+
+test("the layer is sent positions only when they moved, as an upload costs the GPU", async () => {
+  const { made } = cloud();
+  const first = layer();
+  made.attach(first);
+  await made.load();
+  assert.ok(made.moveTo(T0 + 60));
+  assert.ok(first.made.moved.at(-1).xy, "the first");
+  made.moveTo(T0 + 60.1, { slow: true });
+  assert.equal(first.made.moved.at(-1).xy, null, "too soon");
+  assert.equal(first.made.moved.at(-1).options.visible, true);
+  made.moveTo(T0 + 70, { slow: true });
+  assert.ok(first.made.moved.at(-1).xy, "time enough");
+  made.moveTo(T0 + 70.1);
+  assert.ok(first.made.moved.at(-1).xy, "a replay asks each frame");
+});
+
+test("it can say where a satellite is, once it has been somewhere", async () => {
+  const { made } = cloud();
+  made.attach(layer());
+  assert.equal(made.whereIs(2), null, "nothing known");
+  await made.load();
+  assert.equal(made.whereIs(2), null, "not moved yet");
+  made.moveTo(T0 + 60);
+  assert.deepEqual(made.whereIs(2), { lat: 10, lon: 10 });
+  assert.equal(made.whereIs(99), null, "not in the cloud");
 });

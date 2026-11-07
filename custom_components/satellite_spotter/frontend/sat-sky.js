@@ -11,7 +11,7 @@ const DEG = Math.PI / 180;
 const { esc } = await import(`./sat-text.js${new URL(import.meta.url).search}`);
 const f1 = (v) => v.toFixed(1);
 
-/** Polar position of an azimuth/elevation on a dome of radius r centred at (c, c). */
+/** Polar position of an azimuth/elevation on a dome of radius r centered at (c, c). */
 export function skyXY(azimuth, elevation, r, c) {
   const rr = (Math.max(0, 90 - elevation) / 90) * r;
   return [c + rr * Math.sin(azimuth * DEG), c - rr * Math.cos(azimuth * DEG)];
@@ -51,7 +51,7 @@ function split(track, visibleStart, visibleEnd) {
   return { above, visible };
 }
 
-/** A five-pointed star of outer radius r centred at (x, y). */
+/** A five-pointed star of outer radius r centered at (x, y). */
 function starPath(x, y, r) {
   let d = "";
   for (let i = 0; i < 10; i++) {

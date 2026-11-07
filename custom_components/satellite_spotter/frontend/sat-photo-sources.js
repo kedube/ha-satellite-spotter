@@ -13,13 +13,13 @@
  * need, and `taken` is only the month (`approximate`). rankPhotos() puts
  * the services' lists together, best first.
  *
- * Orientation, in sat-photo.js's terms (heading of the picture's centre,
+ * Orientation, in sat-photo.js's terms (heading of the picture's center,
  * pitch nose up, roll right side down):
  *  - Mapillary's reconstruction gives computed_rotation, OpenSfM's
  *    world-to-camera rotation as an angle-axis vector, with the camera's x
  *    right, y down and z forward and the world east, north, up; without it
  *    the compass angle, level;
- *  - Google gives the heading of the picture's centre, its tilt (90° is
+ *  - Google gives the heading of the picture's center, its tilt (90° is
  *    level: the camera looks 90° − tilt above the horizon there) and the
  *    roll that levels it.
  *
@@ -44,7 +44,7 @@ export const SOURCE_NAMES = { google: "Google Street View", mapillary: "Mapillar
  * no referrer at all).
  */
 export const GOOGLE_REFERRER = "strict-origin-when-cross-origin";
-/** Mapillary's photos are all under this licence. */
+/** Mapillary's photos are all under this license. */
 const MAPILLARY_LICENSE = { license: "CC BY-SA 4.0", licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0/" };
 const MAPILLARY_FIELDS = [
   "id",

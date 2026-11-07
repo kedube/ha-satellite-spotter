@@ -111,7 +111,7 @@ def unreadable_csv() -> str:
 
 
 def cloud_percent(hour: int) -> int:
-    """Return the mocked forecast's value for the hour labelled with these Unix seconds.
+    """Return the mocked forecast's value for the hour labeled with these Unix seconds.
 
     It is the number of hours since the Unix epoch, modulo 101: a value that differs from each
     hour to the next, and runs through 0 to 100.

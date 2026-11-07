@@ -13,7 +13,7 @@
     "bright": "Ljusstark",
     "when": "{day} · {time}",
     "look_up": "Titta mot {direction}, {elevation} upp",
-    "look_towards": "Titta mot {direction}",
+    "look_toward": "Titta mot {direction}",
     "ends_in": "Slutar om {countdown}",
     "ends_set": "går ned i {direction}",
     "ends_shadow": "försvinner in i jordskuggan i {direction}",
@@ -84,7 +84,7 @@
     "reload": "Ladda om sidan",
     "load_failed": "Globen kunde inte läsas in ({error}). Ladda om sidan för att försöka igen.",
     "load_retrying": "Globen kunde inte läsas in ({error}). Den försöker igen; att ladda om sidan hjälper också.",
-    "no_webgl": "Den här webbläsaren kan inte visa 3D-globen (WebGL 2 krävs): {error}",
+    "no_webgl": "Den här webbläsaren kan inte visa 3D-globen (WebGL 2 krävs).",
     "connection_lost": "anslutningen bröts",
     "reconnecting": "Anslutningen till Home Assistant bröts. Ansluter igen…",
     "not_set_up": "Konfigurera integrationen Satellite Spotter för att se satelliter här.",
@@ -147,7 +147,7 @@
     "about": "Om den här satelliten",
     "about_name": "Om {name}",
     "look_up": "Titta mot {direction}, {elevation}° upp",
-    "look_towards": "Titta mot {direction}",
+    "look_toward": "Titta mot {direction}",
     "ends_in": "Slutar om {countdown} och går ned i {direction}",
     "ends_shadow": "Slutar om {countdown} · försvinner in i jordskuggan i {direction}",
     "ends_sky": "Slutar om {countdown} · bleknar bort i {direction}",
@@ -239,6 +239,7 @@
     "last_night": "I går kväll"
   },
   "passes": {
+    "not_connected": "Ingen anslutning. Tider från {time}.",
     "train_title": "Starlink-tåg · {count}",
     "cloud_clear": "Klar himmel",
     "cloud_partly": "Delvis molnigt",
@@ -336,6 +337,7 @@
     "after": "efter passagen"
   },
   "street": {
+    "next_pass": "Nästa: {title} kl. {time}",
     "title": "Gatuvy",
     "state_sim": "Simulering",
     "state_live": "Live",
@@ -404,7 +406,7 @@
     "props": "Träd och gatlyktor",
     "constellations": "Stjärnbilder",
     "eye_height": "Ögonhöjd",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} fot",
     "sky": "Natthimmel",
     "sky_rural": "Mörk",

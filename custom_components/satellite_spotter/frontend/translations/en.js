@@ -31,7 +31,7 @@ export default {
     when: "{day} · {time}",
     // {direction} is a compass point; {elevation} an angle such as "26°".
     look_up: "Look {direction}, {elevation} up",
-    look_towards: "Look {direction}",
+    look_toward: "Look {direction}",
     // {countdown} is a time such as "02:13"; then how the pass ends.
     ends_in: "Ends in {countdown}",
     ends_set: "sets in the {direction}",
@@ -55,9 +55,9 @@ export default {
     // {text} is one of the other messages; {error} why the download failed.
     with_error: "{text} ({error})",
     paused_detail: "Passes come back once fresh orbit data downloads.",
-    waiting: "Waiting for the satellite catalogue…",
+    waiting: "Waiting for the satellite catalog…",
     // {reason} is a short technical message.
-    waiting_because: "Waiting for the satellite catalogue… ({reason})",
+    waiting_because: "Waiting for the satellite catalog… ({reason})",
     not_set_up: "Set up the Satellite Spotter integration to see passes here.",
     location_gone: "The location this card shows no longer exists. Edit the card and choose a location.",
     location_disabled:
@@ -86,7 +86,7 @@ export default {
     show_countdown: "Next pass and countdown",
     show_stats: "Position and speed",
     show_satellites: "Every bright satellite",
-    show_satellites_helper: "All the satellites of the catalogue as dots around the Earth.",
+    show_satellites_helper: "All the satellites of the catalog as dots around the Earth.",
     show_passes: "Upcoming passes",
     show_passes_helper: "A strip of the next passes under the countdown.",
     street_view: "Street view button",
@@ -113,7 +113,7 @@ export default {
     // {error} is a technical message, usually in English.
     load_failed: "The globe could not load ({error}). Reload the page to try again.",
     load_retrying: "The globe could not load ({error}). It will try again; reloading the page also helps.",
-    no_webgl: "This browser cannot show the 3D globe (WebGL 2 is needed): {error}",
+    no_webgl: "This browser cannot show the 3D globe (WebGL 2 is needed).",
     connection_lost: "connection lost",
     reconnecting: "Lost the connection to Home Assistant. Reconnecting…",
     not_set_up: "Set up the Satellite Spotter integration to see satellites here.",
@@ -123,7 +123,7 @@ export default {
       "This location is disabled. Enable it under Settings > Devices & services, or choose another location.",
     waiting: "Waiting for satellite data…",
     waiting_because: "Waiting for satellite data… ({reason})",
-    stale_catalog: "The satellite catalogue is out of date, so predictions are paused.",
+    stale_catalog: "The satellite catalog is out of date, so predictions are paused.",
     data_failed: "Could not load the satellite passes: {error}",
     simulation_failed: "The simulation is unavailable: {error}",
     street_failed: "The street view could not load: {error}",
@@ -147,7 +147,7 @@ export default {
     chase: "Fly along with the satellite",
     flat: "Switch between globe and flat map",
     flat_label: "Flat map",
-    satellites: "Show every satellite in the catalogue",
+    satellites: "Show every satellite in the catalog",
     satellites_label: "All satellites",
     imagery: "Change the imagery",
     imagery_menu: "Imagery",
@@ -184,7 +184,7 @@ export default {
     about: "About this satellite",
     about_name: "About {name}",
     look_up: "Look {direction}, {elevation}° up",
-    look_towards: "Look {direction}",
+    look_toward: "Look {direction}",
     ends_in: "Ends in {countdown}, setting in the {direction}",
     ends_shadow: "Ends in {countdown} · fades into Earth's shadow in the {direction}",
     ends_sky: "Ends in {countdown} · fades from view in the {direction}",
@@ -196,11 +196,11 @@ export default {
     none_soon: "None soon",
     paused_clock: "Satellite data out of date",
     paused_age: {
-      one: "The satellite catalogue is {count} day old",
-      other: "The satellite catalogue is {count} days old",
+      one: "The satellite catalog is {count} day old",
+      other: "The satellite catalog is {count} days old",
     },
-    paused_detail: "Passes come back once a fresh catalogue downloads. Positions shown are approximate.",
-    paused_list: "Predictions are paused until a fresh satellite catalogue downloads.",
+    paused_detail: "Passes come back once a fresh catalog downloads. Positions shown are approximate.",
+    paused_list: "Predictions are paused until a fresh satellite catalog downloads.",
     // What may make a pass easier or harder to see (the cloud and the Moon are passes.cloud_at and passes.moon).
     before_sunset: "Before sunset: the sky is still bright",
     train_hint: "A train of satellites: scan along the whole path",
@@ -229,7 +229,7 @@ export default {
     // Above the list beside the globe.
     list: "Visible passes",
     strip: "Passes",
-    // How many times the satellite goes round the Earth before the pass.
+    // How many times the satellite goes around the Earth before the pass.
     orbits_away: {
       one: "{count} orbit away",
       other: "{count} orbits away",
@@ -296,6 +296,8 @@ export default {
   // (see the design spec); re-read this file immediately before every edit.
   // Pass list, its groups and filters (track D2).
   passes: {
+    // Refreshes have been failing for a while. {time}: when the times on show were last renewed.
+    not_connected: "Not connected. Times are from {time}.",
     // {count} satellites following each other across the sky.
     train_title: "Starlink train · {count}",
     // Forecast cloud cover at the time of a pass.
@@ -444,6 +446,8 @@ export default {
     magnitude: "magnitude {magnitude}",
     appears_in: "Appears in {countdown} in the {direction}",
     gone: "Out of sight",
+    // Offered when a live pass has gone by. {title}: the next pass's name, {time}: when it starts.
+    next_pass: "Next: {title} at {time}",
     // Markers on the path.
     appears: "Appears {time}",
     emerges: "Emerges from shadow {time}",
@@ -502,7 +506,7 @@ export default {
     props: "Trees and street lights",
     constellations: "Constellations",
     eye_height: "Eye height",
-    metres: "{value} m",
+    meters: "{value} m",
     feet: "{value} ft",
     // How light-polluted the sky is, which decides how many stars show.
     sky: "Night sky",
@@ -551,9 +555,9 @@ export default {
     credit_terrain_text: "{tiles} on AWS Open Data (USGS 3DEP, SRTM, GMTED2010, EU-DEM, ETOPO1 and others)",
     credit_stars_text:
       "Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren 1991; VizieR V/50, CDS Strasbourg); star names: IAU Working Group on Star Names (CC BY 4.0); constellation figures: {d3celestial} © 2015 Olaf Frohn (BSD-3-Clause), after the IAU and Sky & Telescope charts",
-    // {author} links to the photo on Panoramax (its photographer), {license} to its licence, {panoramax} to Panoramax.
+    // {author} links to the photo on Panoramax (its photographer), {license} to its license, {panoramax} to Panoramax.
     credit_photo_text: "{author}, {license}, from {panoramax}",
-    // {author} links to the photo on Mapillary, {license} to its licence, {mapillary} to Mapillary.
+    // {author} links to the photo on Mapillary, {license} to its license, {mapillary} to Mapillary.
     credit_photo_mapillary_text: "{author}, {license}, from {mapillary}",
     // {copyright} is Google's own line ("© 2024 Google"), {google} links to the panorama on Google Maps.
     credit_photo_google_text: "{copyright}, from {google}",

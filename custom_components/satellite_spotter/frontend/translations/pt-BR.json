@@ -13,7 +13,7 @@
     "bright": "Brilhante",
     "when": "{day} · {time}",
     "look_up": "{direction}, {elevation} acima",
-    "look_towards": "Olhe para o {direction}",
+    "look_toward": "Olhe para o {direction}",
     "ends_in": "Termina em {countdown}",
     "ends_set": "se põe no {direction}",
     "ends_shadow": "some na sombra da Terra no {direction}",
@@ -84,7 +84,7 @@
     "reload": "Recarregar a página",
     "load_failed": "Não foi possível carregar o globo ({error}). Recarregue a página para tentar de novo.",
     "load_retrying": "Não foi possível carregar o globo ({error}). Ele vai tentar de novo; recarregar a página também ajuda.",
-    "no_webgl": "Este navegador não consegue mostrar o globo 3D (é preciso WebGL 2): {error}",
+    "no_webgl": "Este navegador não consegue mostrar o globo 3D (é preciso WebGL 2).",
     "connection_lost": "conexão perdida",
     "reconnecting": "Conexão com o Home Assistant perdida. Reconectando…",
     "not_set_up": "Configure a integração Satellite Spotter para ver os satélites aqui.",
@@ -147,7 +147,7 @@
     "about": "Sobre este satélite",
     "about_name": "Sobre {name}",
     "look_up": "Olhe para o {direction}, {elevation}° acima",
-    "look_towards": "Olhe para o {direction}",
+    "look_toward": "Olhe para o {direction}",
     "ends_in": "Termina em {countdown} · se põe no {direction}",
     "ends_shadow": "Termina em {countdown} · some na sombra da Terra no {direction}",
     "ends_sky": "Termina em {countdown} · some de vista no {direction}",
@@ -239,6 +239,7 @@
     "last_night": "Ontem à noite"
   },
   "passes": {
+    "not_connected": "Sem conexão. Horários das {time}.",
     "train_title": "Trem Starlink · {count}",
     "cloud_clear": "Céu limpo",
     "cloud_partly": "Parcialmente nublado",
@@ -336,6 +337,7 @@
     "after": "depois da passagem"
   },
   "street": {
+    "next_pass": "Próximo: {title} às {time}",
     "title": "Vista de rua",
     "state_sim": "Simulação",
     "state_live": "Ao vivo",
@@ -404,7 +406,7 @@
     "props": "Árvores e postes de luz",
     "constellations": "Constelações",
     "eye_height": "Altura dos olhos",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Céu noturno",
     "sky_rural": "Escuro",

@@ -37,7 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION = ROOT / "custom_components/satellite_spotter"
 MANIFEST = INTEGRATION / "manifest.json"
 CHANGELOG = ROOT / "CHANGELOG.md"
-LICENCES = ("LICENSE", "LICENSES/MIT-see-a-satellite.txt")
+LICENSES = ("LICENSE", "LICENSES/MIT-see-a-satellite.txt")
 REPOSITORY = "kedube/ha-satellite-spotter"
 VERSION_RE = re.compile(r"(\d+)\.(\d{2})")
 # A release ships the integration's files, not caches left by running it.
@@ -162,8 +162,8 @@ def package(out: Path, source: Path = INTEGRATION) -> list[str]:
     if "manifest.json" not in names:
         raise ValueError(f"{source} has no manifest.json")
     files = {name: (source / name).read_bytes() for name in names}
-    # The zip is all that people who install it receive, so the licences go with it.
-    files |= {name: (ROOT / name).read_bytes() for name in LICENCES}
+    # The zip is all that people who install it receive, so the licenses go with it.
+    files |= {name: (ROOT / name).read_bytes() for name in LICENSES}
     for name in names:
         if SERVED_COMPRESSED.match(name):
             files[f"{name}.gz"] = gzip.compress(files[name], compresslevel=9, mtime=0)

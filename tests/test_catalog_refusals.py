@@ -321,7 +321,7 @@ async def test_a_plain_failure_after_a_refusal_stops_counting_as_refused(
     fetch.side_effect = CatalogError("no route")
     with pytest.raises(CatalogError):
         await manager.async_satellites()
-    # Nothing left to honour, so removing the last location leaves nothing behind.
+    # Nothing left to honor, so removing the last location leaves nothing behind.
     await async_remove_catalog(hass)
     assert STORE_KEY not in hass_storage
 

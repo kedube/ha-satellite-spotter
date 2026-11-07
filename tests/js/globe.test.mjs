@@ -133,7 +133,7 @@ test("circle radius, distance, bearing and speed", () => {
 });
 
 test("each satellite's own period, orbit size and speed (vis-viva)", () => {
-  // The ISS makes about 15.49 orbits a day: 92.9 minutes, an orbit 6,796 km across from the centre.
+  // The ISS makes about 15.49 orbits a day: 92.9 minutes, an orbit 6,796 km across from the center.
   close(semiMajorAxisKm(5574), 6796, 2);
   close(semiMajorAxisKm(86164.1), 42164, 1, "geostationary");
   assert.ok(Number.isNaN(semiMajorAxisKm(-1)));
@@ -165,7 +165,7 @@ test("display altitude: true up to 2,000 km, then compressed so high orbits stay
   // Smooth at the knee: the slope is 1 on both sides.
   close(displayAltitudeKm(2001) - displayAltitudeKm(2000), 1, 0.001);
   close(displayAltitudeKm(35786), 6737, 2, "geostationary");
-  // The highest apogee in the catalogue (an Ariane 44 upper stage) is drawn within 1.25 globe radii above the ground.
+  // The highest apogee in the catalog (an Ariane 44 upper stage) is drawn within 1.25 globe radii above the ground.
   assert.ok(displayAltitudeKm(73958) / 6371 < 1.25);
 });
 
@@ -318,7 +318,7 @@ test("CPU projection uses MapLibre's globe axes and hides the far side", () => {
   const front = layer.project(0, 0, 0, 200, 200); // (0, 0) faces +z
   close(front.x, 100, 1e-6);
   close(front.y, 100, 1e-6);
-  const east = layer.project(0, 60, 0, 200, 200); // 60E: x = sin(60) > 0, right of centre
+  const east = layer.project(0, 60, 0, 200, 200); // 60E: x = sin(60) > 0, right of center
   assert.ok(east.x > 150);
   const north = layer.project(45, 0, 0, 200, 200); // north is up the screen
   assert.ok(north.y < 100);

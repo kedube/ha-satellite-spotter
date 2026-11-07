@@ -12,7 +12,7 @@ const { english } = await import("../../custom_components/satellite_spotter/fron
 const { Formatter } = await import("../../custom_components/satellite_spotter/frontend/sat-format.js");
 const {
   PassList, brightestMember, cloudHour, cloudText, currentPass, endedPass, groupPasses, matchesFilters, moonGlyph, moonText,
-  nextPass, normalizeFilters, notableMember, passDirections, passExtent, passItBecame, passMoon, rowParts, shareSatellite,
+  nextPass, normalizeFilters, notableMember, passDirections, passExtent, passItBecame, passMoon, rowParts, shareSatellite, staleNote,
 } = await import("../../custom_components/satellite_spotter/frontend/sat-passes.js");
 const astro = await import("../../custom_components/satellite_spotter/frontend/sat-astro.js");
 const { compass } = await import("../../custom_components/satellite_spotter/frontend/sat-geo.js");
@@ -95,19 +95,19 @@ test("what a pass became: the same crossing, with its brightest satellite if it 
   assert.ok(!shareSatellite(was, crossing(0, 3, 4)));
   assert.ok(!shareSatellite(was, {}));
   assert.ok(!shareSatellite({}, was));
-  const neighbour = crossing(5002, 3);
+  const neighbor = crossing(5002, 3);
   const inOrder = (expected, passes, label) => {
     assert.equal(passItBecame(was, passes), expected, label);
     assert.equal(passItBecame(was, [...passes].reverse()), expected, `${label}, in the other order`);
   };
   const withBrightest = crossing(5220, 1, 7);
   const fainter = crossing(5096, 2);
-  inOrder(withBrightest, [fainter, withBrightest, neighbour], "a split group: the part it is named after, though another is nearer");
+  inOrder(withBrightest, [fainter, withBrightest, neighbor], "a split group: the part it is named after, though another is nearer");
   const near = crossing(5010, 1);
   inOrder(near, [crossing(5040, 1), near], "the nearer of two with its brightest");
   const left = crossing(5100, 2, 8);
-  inOrder(left, [crossing(5200, 2), left, neighbour], "its brightest has left: the nearer of the rest, not its neighbour");
-  assert.equal(passItBecame(was, [neighbour]), null, "it has gone");
+  inOrder(left, [crossing(5200, 2), left, neighbor], "its brightest has left: the nearer of the rest, not its neighbor");
+  assert.equal(passItBecame(was, [neighbor]), null, "it has gone");
   assert.equal(passItBecame(was, []), null);
   assert.equal(passItBecame(was, null), null);
   assert.equal(passItBecame({ start: 5000 }, [near]), null, "nothing to know it by");
@@ -588,7 +588,7 @@ test("the Moon counts only when it is up and over 40 % lit, at night", () => {
   assert.ok(moon);
   assert.equal(plain(moonText(moon, fmt)), "Moon 43% lit, 21° up in the S");
   assert.ok(moon.waxing);
-  close(moon.litSide, 90, 25, "lit on the right, towards the set Sun");
+  close(moon.litSide, 90, 25, "lit on the right, toward the set Sun");
   assert.equal(passMoon(byId("25544-1792400980"), BOSTON), null, "Monday 05:09 EDT: the Moon has set");
   assert.equal(passMoon({ ...evening, sun_up: true }, BOSTON), null, "a daylight pass: the sky is bright anyway");
   assert.equal(passMoon(evening, null), null, "no place, no Moon");
@@ -680,4 +680,13 @@ test("a row says how the pass rates, to the eye and to a screen reader", () => {
   assert.match(label, /Rating: Great/);
   const unrated = rowParts({ ...rated, rating: undefined }, fmt);
   assert.doesNotMatch(unrated.html, /class="rate/);
+});
+
+test("data that refreshes keep failing to renew says how old it is, after a while", () => {
+  const at = BOSTON_NOW;
+  assert.equal(staleNote(fmt, at, false, at + 3600), "", "refreshes are working");
+  assert.equal(staleNote(fmt, at, true, at + 599), "", "not for one failure");
+  assert.equal(staleNote(fmt, undefined, true, at), "", "nothing yet to go by");
+  assert.equal(staleNote(fmt, at, true, at + 600), `Not connected. Times are from ${fmt.time(at)}.`);
+  assert.equal(staleNote(fmt, at, true, at + 13 * 3600), `Not connected. Times are from ${fmt.dateTime(at)}.`, "from another day, it says which");
 });

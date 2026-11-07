@@ -81,8 +81,8 @@ def test_mmts_list_gives_the_medians_of_objects_with_norad_numbers() -> None:
         "StdMag_R_Sigma StdMag_Clear_Median StdMag_Clear_Min StdMag_Clear_Max Type Id\n"
     )
 
-    def row(catalogue: str, number: object, name: str, median: object) -> str:
-        return f'{catalogue} {number} "{name}" XX 0 0 9 0 0 0 0 0 0 0 {median} 8 10 PAY {number}\n'
+    def row(catalog: str, number: object, name: str, median: object) -> str:
+        return f'{catalog} {number} "{name}" XX 0 0 9 0 0 0 0 0 0 0 {median} 8 10 PAY {number}\n'
 
     text = (
         header
@@ -340,8 +340,8 @@ def test_a_rocket_stage_launched_since_takes_its_familys_median_from_the_list() 
     assert result[4] == (2.0, "family")
 
 
-def test_a_rocket_stage_catalogued_after_the_last_update_still_takes_its_familys_median() -> None:
-    """It can reach the catalogue days after its launch, and the table is updated every week."""
+def test_a_rocket_stage_cataloged_after_the_last_update_still_takes_its_familys_median() -> None:
+    """It can reach the catalog days after its launch, and the table is updated every week."""
     result = _update(_stages("2026-10-29"), {1: 1.0, 2: 2.0, 3: 3.0}, {})
     assert result[4] == (2.0, "family")
 

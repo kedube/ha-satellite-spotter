@@ -39,7 +39,7 @@ function tile(fn) {
   return out;
 }
 
-test("Terrarium pixels decode to metres", () => {
+test("Terrarium pixels decode to meters", () => {
   assert.equal(terrariumHeight(128, 0, 0), 0);
   assert.equal(terrariumHeight(0, 0, 0), -32768);
   close(terrariumHeight(128, 10, 128), 10.5, 1e-12);
@@ -61,16 +61,16 @@ test("tile coordinates and URLs", () => {
   assert.match(TERRARIUM, /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\/terrarium\//);
 });
 
-test("heights sit at pixel centres and are interpolated between them", () => {
+test("heights sit at pixel centers and are interpolated between them", () => {
   const at = (i, j) => i * 10 + j;
-  close(bilinear(at, 0.5, 0.5), 0, 1e-12, "a pixel's centre is its own value");
+  close(bilinear(at, 0.5, 0.5), 0, 1e-12, "a pixel's center is its own value");
   close(bilinear(at, 1.5, 0.5), 10, 1e-12);
-  close(bilinear(at, 1.0, 0.5), 5, 1e-12, "half way between centres");
+  close(bilinear(at, 1.0, 0.5), 5, 1e-12, "half way between centers");
   close(bilinear(at, 2.25, 3.75), 17.5 + 3.25, 1e-12);
 });
 
 test("single-pixel spikes are clamped before interpolating, real slopes are not", () => {
-  // Boulder at z10: one pixel 780 m above its neighbours.
+  // Boulder at z10: one pixel 780 m above its neighbors.
   assert.deepEqual(despike(1593, 1590, 2373, 1600), [1593, 1590, 1596.5 + 60, 1600]);
   assert.deepEqual(despike(100, 140, 120, 160), [100, 140, 120, 160], "a slope within 60 m of the median stays");
   const spiky = (i, j) => (i === 5 && j === 5 ? 2000 : 100);

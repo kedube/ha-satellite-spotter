@@ -8,7 +8,7 @@
  * tree (the street view inside the globe) inherits the same values.
  */
 
-/** Design tokens. Colours are the ISS Tracker's dark glass palette. */
+/** Design tokens. Colors are the ISS Tracker's dark glass palette. */
 export const TOKENS_CSS = `
 :host {
   --sat-glass: linear-gradient(160deg, rgba(15,23,42,.86), rgba(15,23,42,.66));
@@ -69,7 +69,7 @@ export const BUTTON_CSS = `
 .ibtn[aria-pressed="true"] { background: var(--sat-sky); color: #0f172a; }`;
 
 /**
- * Outlined pills for short states: "chip" (current colour), "chip gold"
+ * Outlined pills for short states: "chip" (current color), "chip gold"
  * (bright), "chip warn" (daylight), "chip dim" (secondary facts).
  */
 export const CHIP_CSS = `
@@ -198,7 +198,7 @@ export function kindIcon(kind, { train = false } = {}) {
 const escapeAttr = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /**
- * An icon as inline SVG in the current text colour. Decorative (hidden from
+ * An icon as inline SVG in the current text color. Decorative (hidden from
  * screen readers) unless it has a title, which also becomes its label.
  */
 export function svgIcon(key, { title } = {}) {

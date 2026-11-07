@@ -1,6 +1,7 @@
 // A clock the tests drive: Date.now, setTimeout/clearTimeout and
 // setInterval/clearInterval run on fake time, advanced with clock.advance(ms).
 // Not a test file: tests import it.
+import { makeStrict } from "./strict-timers.mjs";
 
 /**
  * @param {number} startMs the fake Date.now() to begin with
@@ -28,6 +29,7 @@ export function installClock(startMs) {
     return id;
   };
   globalThis.clearInterval = (id) => timers.delete(id);
+  makeStrict(["setTimeout", "clearTimeout", "setInterval", "clearInterval"]);
   const settle = async () => {
     for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   };

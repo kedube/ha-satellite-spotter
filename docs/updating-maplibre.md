@@ -17,7 +17,7 @@ Read the notes of every version since the one in use. These parts matter most:
 | The files the package ships | `sat-maplibre.js` loads them, and step 2 copies them |
 | Custom layers or shaders | The orbit lines and satellites (`sat-space.js`) and the trees and street lights (`sat-street-props.js`) are custom layers |
 | The camera, terrain or `jumpTo` | The 3D street view puts the camera at eye level, which MapLibre was not designed for (`sat-street-scene.js`) |
-| The globe's size or reach near the poles | The zoom maths in `sat-globe.js` mirrors it |
+| The globe's size or reach near the poles | The zoom math in `sat-globe.js` mirrors it |
 | The wording of its controls | `MAPLIBRE_TEXT` in `sat-maplibre.js` translates them, and a new text stays in English until it is added there |
 
 The 3D street view also uses MapLibre's private code, which the notes do not cover:
@@ -89,10 +89,12 @@ When it fails, this is where to start:
 |---|---|---|
 | `none of the integration's files is missing`, or `MapLibre's worker read the map's tiles` | The package's files have changed | Step 2, and what `sat-maplibre.js` loads |
 | `the private near and far planes hold`, or `and outlast a move of the camera` | `overrideNearFarZ` has changed. Without it, hills beyond about 18 km are cut off | `overrideFarPlane` in `sat-street-scene.js` |
-| `the camera is at the eye`, or `the sky stays on the map` | The camera's maths has changed, so the sky no longer lines up with the buildings | `eyeCamera` in `sat-street-scene.js`, and `makeProjector` in `sat-planetarium.js` |
+| `the camera is at the eye`, or `the sky stays on the map` | The camera's math has changed, so the sky no longer lines up with the buildings | `eyeCamera` in `sat-street-scene.js`, and `makeProjector` in `sat-planetarium.js` |
 | `the trees' layer can read the size of the world` | `transform.worldSize` has moved | `PropsLayer` in `sat-street-props.js` |
 | `the northern limb glows`, or `the southern limb glows` | The light's frame has changed, so the atmosphere glows on the wrong side | `sunLight` in `sat-globe.js` |
 | `which grows no further there`, or `as the zoom limit of a camera following it assumes` | The globe's size near the poles has changed | `_trackZoomLimit` in `sat-globe.js` |
+| `a tile fails` | How MapLibre asks again for a failed picture has changed. Naming one in `refreshTiles` makes it draw nothing, and it is checked through the private `style.tileManagers` | `_refreshFailedTiles` in `sat-globe.js` |
+| `fullscreen` | The fullscreen control's own handling has changed, as a map built again has to take over from the last one | `_createMap` in `sat-globe.js` |
 
 Then look for yourself, because tests cannot judge how it looks. In Home Assistant, open the panel and
 check:
@@ -106,5 +108,5 @@ check:
 Add a line to `CHANGELOG.md` saying what people get from the new version, and whether the download has
 grown much. Commit and release as usual.
 
-The licence comes along as `LICENSE.txt`. If it is ever no longer BSD-3-Clause, update the credit in the
+The license comes along as `LICENSE.txt`. If it is ever no longer BSD-3-Clause, update the credit in the
 README and `engine` in `sat-street.js`.

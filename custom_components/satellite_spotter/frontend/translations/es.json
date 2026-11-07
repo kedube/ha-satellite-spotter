@@ -13,7 +13,7 @@
     "bright": "Brillante",
     "when": "{day} · {time}",
     "look_up": "Mira al {direction}, a {elevation}",
-    "look_towards": "Mira al {direction}",
+    "look_toward": "Mira al {direction}",
     "ends_in": "Termina en {countdown}",
     "ends_set": "se pone por el {direction}",
     "ends_shadow": "entra en la sombra de la Tierra por el {direction}",
@@ -84,7 +84,7 @@
     "reload": "Volver a cargar la página",
     "load_failed": "No se pudo cargar el globo ({error}). Vuelve a cargar la página para intentarlo de nuevo.",
     "load_retrying": "No se pudo cargar el globo ({error}). Volverá a intentarlo; recargar la página también ayuda.",
-    "no_webgl": "Este navegador no puede mostrar el globo en 3D (necesita WebGL 2): {error}",
+    "no_webgl": "Este navegador no puede mostrar el globo en 3D (necesita WebGL 2).",
     "connection_lost": "conexión perdida",
     "reconnecting": "Se ha perdido la conexión con Home Assistant. Reconectando…",
     "not_set_up": "Configura la integración Satellite Spotter para ver aquí los satélites.",
@@ -147,7 +147,7 @@
     "about": "Acerca de este satélite",
     "about_name": "Acerca de {name}",
     "look_up": "Mira al {direction}, a {elevation}° de altura",
-    "look_towards": "Mira al {direction}",
+    "look_toward": "Mira al {direction}",
     "ends_in": "Termina en {countdown}, se pone por el {direction}",
     "ends_shadow": "Termina en {countdown} · entra en la sombra de la Tierra por el {direction}",
     "ends_sky": "Termina en {countdown} · se pierde de vista por el {direction}",
@@ -239,6 +239,7 @@
     "last_night": "Anoche"
   },
   "passes": {
+    "not_connected": "Sin conexión. Horas de las {time}.",
     "train_title": "Tren de Starlink · {count}",
     "cloud_clear": "Cielo despejado",
     "cloud_partly": "Parcialmente nublado",
@@ -336,6 +337,7 @@
     "after": "después del paso"
   },
   "street": {
+    "next_pass": "Siguiente: {title} a las {time}",
     "title": "Vista de calle",
     "state_sim": "Simulación",
     "state_live": "En directo",
@@ -404,7 +406,7 @@
     "props": "Árboles y farolas",
     "constellations": "Constelaciones",
     "eye_height": "Altura de los ojos",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Cielo nocturno",
     "sky_rural": "Oscuro",

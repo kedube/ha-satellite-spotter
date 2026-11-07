@@ -1,5 +1,5 @@
 // Tests for the street view's sky (sat-planetarium.js): the projector against
-// MapLibre's own camera matrix, framing, the sky's colours and the stars'
+// MapLibre's own camera matrix, framing, the sky's colors and the stars'
 // visibility, the satellite paths, ticks, labels, the edge arrow and the
 // occlusion read-back: node --test "tests/js/*.test.mjs"
 import assert from "node:assert/strict";
@@ -129,9 +129,9 @@ test("a pass is framed inside the HUD's safe area, with the horizon when it fits
 
 // ---- the sky's light ---------------------------------------------------------
 
-test("the sky's colour follows sat-astro's, plus the town's glow and the haze below the horizon", () => {
+test("the sky's color follows sat-astro's, plus the town's glow and the haze below the horizon", () => {
   const sun = { azimuth: 250, elevation: -6 };
-  // Rural with the Sun high enough for no town glow: exactly sat-astro's colours.
+  // Rural with the Sun high enough for no town glow: exactly sat-astro's colors.
   const day = { azimuth: 120, elevation: 15 };
   const m = skyModel(day, { lightPollution: "rural" });
   for (const [az, el] of [[0, 0], [120, 2], [300, 40], [120, 85]]) {
@@ -159,7 +159,7 @@ test("the sky is painted again once the Sun has moved a quarter of a degree, not
   assert.equal(key(120.1, 30.1), painted);
   assert.notEqual(key(120.2, 30), painted);
   assert.notEqual(key(120, 30.2), painted);
-  // The colours it is painted with are the Sun's own, however the key is rounded.
+  // The colors it is painted with are the Sun's own, however the key is rounded.
   assert.equal(skyModel({ azimuth: 120.1, elevation: 30.1 }).sunElevation, 30.1);
 });
 
@@ -201,7 +201,7 @@ test("positions between samples are interpolated, across north too", () => {
   ];
   const d = trackFromRows(rows);
   const s = sampleAt(d, 101);
-  close(s.azimuth > 180 ? s.azimuth - 360 : s.azimuth, 0, 0.05, "through north, not round the back");
+  close(s.azimuth > 180 ? s.azimuth - 360 : s.azimuth, 0, 0.05, "through north, not around the back");
   close(s.elevation, 21, 0.05);
   close(s.magnitude, -1.2, 1e-6);
   assert.equal(s.lit, true);
@@ -231,7 +231,7 @@ test("paths split into visible, sunlit and shadow runs that join up", () => {
   assert.ok(runs.every(([, a, b]) => b > a));
 });
 
-test("ticks every 30 s on the clock, labelled at least 70 px apart", () => {
+test("ticks every 30 s on the clock, labeled at least 70 px apart", () => {
   assert.deepEqual(tickTimes(1000, 1100), [1020, 1050, 1080]);
   assert.deepEqual(tickTimes(990, 1020, 15), [990, 1005, 1020]);
   assert.deepEqual(tickTimes(5, 4), []);
@@ -328,7 +328,7 @@ test("the occlusion probe reads the map's alpha along the path from one band", (
   assert.equal(bandFor([{ x: -1, y: 2 }], width, height), null);
 });
 
-test("hidden stretches merge neighbouring samples within the visible window", () => {
+test("hidden stretches merge neighboring samples within the visible window", () => {
   const d = trackFromRows([0, 2, 4, 6, 8, 10, 12, 14].map((t) => [t, 0, 0, 400, 1, 100, 30, 1000, 0, 1]));
   const hidden = new Map([[2, true], [4, true], [6, false], [10, true], [12, true], [14, true]]);
   assert.deepEqual(hiddenStretches(d, hidden, 0, 14), [[2, 4], [10, 14]]);
@@ -406,7 +406,7 @@ test("in the 2D fallback the hills hide the path and the dot behind them, as the
   p.setObserver({ latitude: 40.01, longitude: -105.27, elevation: 1650 });
   p.setFormatter(fakeFormatter());
   p.resize(1280, 800, 1);
-  // A low pass (15° at most, in the NNW) behind a ridge 20° high all round.
+  // A low pass (15° at most, in the NNW) behind a ridge 20° high all around.
   const { pass, detail } = syntheticPass({ peak: 15 });
   p.setPass(pass, detail);
   const ridge = (elevation) => ({ stepDeg: 1, profile: Array.from({ length: 360 }, (_, i) => ({ azimuth: i, elevation, distance: 3000 })) });

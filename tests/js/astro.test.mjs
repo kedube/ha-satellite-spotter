@@ -34,7 +34,7 @@ import {
   sunAzEl,
   sunPosition,
   toHorizon,
-  towards,
+  toward,
   twilight,
   vectorRaDec,
 } from "../../custom_components/satellite_spotter/frontend/sat-astro.js";
@@ -175,7 +175,7 @@ test("refraction matches Skyfield's refract()", () => {
   assert.ok(refraction(0, 900, 30) < refraction(0, 1030, -10));
 });
 
-test("air mass and extinction grow towards the horizon", () => {
+test("air mass and extinction grow toward the horizon", () => {
   close(airmass(90), 1, 1e-3, "zenith");
   close(airmass(30), 1.995, 0.01, "30 deg");
   close(airmass(10), 5.59, 0.02, "10 deg");
@@ -199,9 +199,9 @@ test("sky directions and great-circle steps", () => {
   close(skyDirection({ azimuth: 180, elevation: 30 }, { azimuth: 180, elevation: 10 }), 180, 1e-9, "down");
   const a = { azimuth: 120, elevation: 20 };
   const b = { azimuth: 200, elevation: 55 };
-  assert.ok(apart(towards(a, b, 0), a) < 1e-6);
-  assert.ok(apart(towards(a, b, apart(a, b)), b) < 1e-6);
-  close(apart(towards(a, b, 5), a), 5, 1e-9);
+  assert.ok(apart(toward(a, b, 0), a) < 1e-6);
+  assert.ok(apart(toward(a, b, apart(a, b)), b) < 1e-6);
+  close(apart(toward(a, b, 5), a), 5, 1e-9);
 });
 
 test("the lit part of the Moon as a path", () => {
@@ -234,7 +234,7 @@ test("the sky darkens through twilight and glows on the Sun's side", () => {
   assert.equal(skyPalette(-30, { elevation: -10, fraction: 1 }).limit, 6);
 });
 
-test("star colours, sizes and opacities", () => {
+test("star colors, sizes and opacities", () => {
   close(bvToTemperature(0.65), 5780, 100, "the Sun");
   close(bvToTemperature(0), 10000, 300, "Vega");
   const [r1, , b1] = bvToRgb(-0.3);
@@ -250,9 +250,9 @@ test("star colours, sizes and opacities", () => {
 });
 
 test("galactic coordinates", () => {
-  const centre = galacticToRaDec(0, 0);
-  close(centre.ra, 266.405, 0.001);
-  close(centre.dec, -28.936, 0.001);
+  const center = galacticToRaDec(0, 0);
+  close(center.ra, 266.405, 0.001);
+  close(center.dec, -28.936, 0.001);
   const pole = galacticToRaDec(123, 90);
   close(pole.ra, 192.8595, 0.001);
   close(pole.dec, 27.1283, 0.001);

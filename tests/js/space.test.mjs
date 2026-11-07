@@ -67,7 +67,7 @@ test("points high above the ground stay in view past the limb, as far as the pla
 
 test("on the globe the depth never puts a point in view in front of the near plane, however high; a hidden one is always past the far plane", () => {
   // projectAlt()'s own lines, from the vertex shader the GPU is given, run here: z / w for a point
-  // `lifted` k globe radii from the centre, with MapLibre's clipping plane facing a camera D radii away.
+  // `lifted` k globe radii from the center, with MapLibre's clipping plane facing a camera D radii away.
   const { gl, created } = fakeGL();
   new SpaceLayer().prerender(gl, argsFor(true));
   const program = created.find(([name]) => name === "createProgram")[1];
@@ -82,7 +82,7 @@ test("on the globe the depth never puts a point in view in front of the near pla
     return (${line("globePos.z")}) / globePos.w;`
   );
   const wrong = [];
-  // Up to the highest apogee in the catalogue, from a camera close in to one far out (zoom 3.2 to 0).
+  // Up to the highest apogee in the catalog, from a camera close in to one far out (zoom 3.2 to 0).
   for (const km of [1, 420, 1000, 2000, 2500, 3000, 8000, 20200, 35786, 100000, 400000]) {
     const k = 1 + displayAltitudeKm(km) / 6371.0088;
     for (const D of [1.5, 2, 2.4, 3.79, 6, 9.5, 15.7, 20]) {
@@ -102,9 +102,9 @@ test("on the globe the depth never puts a point in view in front of the near pla
   assert.deepEqual(wrong.slice(0, 5), []);
 });
 
-test("on the flat map a point is placed on the copy of the world nearest the centre", () => {
+test("on the flat map a point is placed on the copy of the world nearest the center", () => {
   const layer = new SpaceLayer();
-  // Clip x = 10 * (mercator x - 1.02): the view is centred on 187.2 E, past the antimeridian.
+  // Clip x = 10 * (mercator x - 1.02): the view is centered on 187.2 E, past the antimeridian.
   const main = [10, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -10.2, 0, 0, 1];
   layer._last = { main, fallback: main, plane: [0, 0, 0, 0], transition: 0, globe: false, center: 1.02 };
   const east = layer.project(0, -179, 0, 200, 200); // mercator x 0.003, drawn at 1.003
@@ -178,7 +178,7 @@ test("a ring numbers its points, so a dashed ring has dashes", () => {
     close(data[i * 2 * 12 + 10], i, 1e-6);
     close(data[(i * 2 + 1) * 12 + 10], i, 1e-6);
   }
-  // Across the prime meridian the cut gets an index between its neighbours.
+  // Across the prime meridian the cut gets an index between its neighbors.
   layer.setRing("footprint", circleRing(0, 0, 10, 8), 0);
   const r = layer._ribbons.get("footprint");
   assert.equal(r.segments.length, 3);
@@ -187,10 +187,10 @@ test("a ring numbers its points, so a dashed ring has dashes", () => {
 });
 
 /**
- * Rasterise flat-map triangles [x, y, elevation, alpha] (mercator units, y clamped to the map)
+ * Rasterize flat-map triangles [x, y, elevation, alpha] (mercator units, y clamped to the map)
  * and compare with the true circle around home.
  */
-function rasterise(data, home, radiusDeg, W = 360) {
+function rasterize(data, home, radiusDeg, W = 360) {
   const x0 = toMercator(home.latitude, home.longitude)[0];
   const [yLo, yHi] = home.latitude > 0 ? [0, 0.42] : [0.58, 1];
   const H = Math.round(W * (yHi - yLo));
@@ -253,7 +253,7 @@ test("a cone around a pole gets a flat-map shape that fills its circle and nothi
       assert.ok(Math.max(...xs) - Math.min(...xs) < 0.5, `${name}: a face spans ${Math.max(...xs) - Math.min(...xs)} worlds`);
     }
     assert.ok(flat.every(Number.isFinite), name);
-    const { inCap, gaps, outside, overlaps } = rasterise(flat, home, radius);
+    const { inCap, gaps, outside, overlaps } = rasterize(flat, home, radius);
     assert.equal(overlaps, 0, `${name}: overlapping faces`);
     assert.ok(gaps / inCap < 0.003 && outside / inCap < 0.003, `${name}: gaps ${gaps}, outside ${outside} of ${inCap}`);
   }
@@ -506,18 +506,18 @@ test("on the flat map every draw is repeated for each copy of the world in view"
   assert.equal(draws(calls).length, 3);
 });
 
-test("while the globe flattens, each piece goes on the copy nearest the centre", () => {
+test("while the globe flattens, each piece goes on the copy nearest the center", () => {
   const { gl, calls } = fakeGL();
   const nightLayer = night();
   nightLayer.onAdd(fakeMap({ lng: 179 }));
   nightLayer.render(gl, argsFor(true, 0.5));
-  // The night mesh starts half a world before the centre, on a cell boundary.
+  // The night mesh starts half a world before the center, on a cell boundary.
   const [offset] = uniformValues(calls, "u_offset").at(-1);
   const center = (179 + 180) / 360;
   assert.ok(offset <= center - 0.5 && offset > center - 0.5 - 1 / 96, `${offset}`);
   assert.equal(draws(calls).length, 1);
 
-  // A line just east of the antimeridian is moved next to a centre just west of it.
+  // A line just east of the antimeridian is moved next to a center just west of it.
   const space = new SpaceLayer();
   const s = fakeGL();
   space.onAdd(fakeMap({ lng: 179 }));
@@ -530,7 +530,7 @@ test("while the globe flattens, each piece goes on the copy nearest the centre",
 });
 
 test("while the globe flattens, a cone around a pole is drawn on both sides of the meridian opposite home", () => {
-  // 80 N 40 W with a 0 deg mask: the circle reaches 10 deg past the pole; the view is centred on 140 E.
+  // 80 N 40 W with a 0 deg mask: the circle reaches 10 deg past the pole; the view is centered on 140 E.
   const home = { latitude: 80, longitude: -40 };
   const radius = visibilityRadius(420, 0);
   const space = new SpaceLayer();
@@ -791,15 +791,15 @@ test("the cloud is one instanced draw per copy of the world in view, four corner
   const drawn = cloudDraws(calls);
   assert.deepEqual(drawn.map(([m]) => m[12]), [-1, 0, 1]);
   for (const [, first, count, instances] of drawn) assert.deepEqual([first, count, instances], [0, 4, 3]);
-  // The corners are shared; position, look, colour and flags advance once per satellite.
+  // The corners are shared; position, look, color and flags advance once per satellite.
   const divisors = calls.filter(([n]) => n === "vertexAttribDivisor").map(([, loc, d]) => [loc, d]);
   assert.deepEqual(divisors, [[1, 1], [2, 1], [3, 1], [4, 1]]);
   const pointer = (loc) => calls.find(([n, l]) => n === "vertexAttribPointer" && l === loc);
   assert.deepEqual(pointer(1).slice(2, 4), [4, gl.FLOAT]);
-  assert.deepEqual(pointer(3).slice(2, 5), [4, gl.UNSIGNED_BYTE, true], "colour, normalised bytes");
+  assert.deepEqual(pointer(3).slice(2, 5), [4, gl.UNSIGNED_BYTE, true], "color, normalized bytes");
   assert.deepEqual(pointer(4).slice(2, 5), [1, gl.UNSIGNED_BYTE, false], "flags, as numbers");
 
-  // On the globe a single draw: each satellite finds the copy nearest the centre itself.
+  // On the globe a single draw: each satellite finds the copy nearest the center itself.
   const globe = cloudLayer(fakeMap({ lng: 170 }));
   const g = fakeGL();
   globe.render(g.gl, argsFor(true, 0.5));
@@ -809,7 +809,7 @@ test("the cloud is one instanced draw per copy of the world in view, four corner
   assert.equal(fallback[3][12], 0, "not shifted as a whole");
 });
 
-test("the cloud keeps its looks from the catalogue: size and brightness by magnitude, colour and glyph by kind", () => {
+test("the cloud keeps its looks from the catalog: size and brightness by magnitude, color and glyph by kind", () => {
   const space = cloudLayer();
   const { style, color } = space._cloud;
   const radius = (i) => style[i * 4];
@@ -879,7 +879,7 @@ test("cloud flags are uploaded when they change and say when the cloud moves by 
   assert.equal(space.animating, false);
 });
 
-test("a new catalogue keeps the cloud's positions only when it has the same satellites", () => {
+test("a new catalog keeps the cloud's positions only when it has the same satellites", () => {
   const space = cloudLayer();
   space.setCloudFlags(new Uint8Array([0, 8, 0]));
   const pos = space._cloud.pos;
@@ -940,7 +940,7 @@ test("on a flat map showing the world more than once, pick() finds a satellite o
   space.setFrame({ ...plain, iss: null, showTrack: false, showCone: false, showFootprint: false });
   const W = 1000;
   const y = (0.5 - 0.5 * 0.5) * W; // the equator: mercator y 0.5
-  // Clip x = s (x - 0.5): a view centred on the world, 4 and then 10 worlds wide (the cloud stops at 3 copies out).
+  // Clip x = s (x - 0.5): a view centered on the world, 4 and then 10 worlds wide (the cloud stops at 3 copies out).
   for (const [s, drawn] of [[0.5, [-2, -1, 0, 1, 2]], [0.2, [-3, -2, -1, 0, 1, 2, 3]]]) {
     space.onAdd(fakeMap({ west: (0.5 - 1 / s) * 360 - 180, east: (0.5 + 1 / s) * 360 - 180 }));
     const main = [s, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.5 * s, 0, 0, 1];

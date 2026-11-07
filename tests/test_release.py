@@ -245,7 +245,7 @@ def test_a_folder_without_a_manifest_is_not_packaged(tmp_path: Path) -> None:
         release.package(tmp_path / "out.zip", tmp_path / "src")
 
 
-def test_the_package_carries_the_licences(tmp_path: Path) -> None:
+def test_the_package_carries_the_licenses(tmp_path: Path) -> None:
     out = tmp_path / "out.zip"
     names = release.package(out)
     assert {"LICENSE", "LICENSES/MIT-see-a-satellite.txt"} <= set(names)

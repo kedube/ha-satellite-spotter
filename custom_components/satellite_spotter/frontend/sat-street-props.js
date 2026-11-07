@@ -12,10 +12,10 @@
  *    30 to 40 m on one side. At night their lamps glow, with a pool of light
  *    on the street under each (a circle layer, draped on the terrain).
  *
- * Positions are metres east and north of the observer on MapLibre's own
+ * Positions are meters east and north of the observer on MapLibre's own
  * Mercator scale there (so they line up with the buildings exactly); heights
- * are metres above sea level, from the terrain as rendered. The custom layer
- * draws in those metres: its matrix is MapLibre's float64 view-projection
+ * are meters above sea level, from the terrain as rendered. The custom layer
+ * draws in those meters: its matrix is MapLibre's float64 view-projection
  * with the observer's place taken out, so nothing jitters at street level.
  * The trees hide the sky as the buildings do (the street view's occlusion
  * probe sees them); the street lights are left out of the probe, being thin,
@@ -42,8 +42,8 @@ const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 // Places
 
 /**
- * Metres east and north of a place on Web Mercator's scale there, and back.
- * Within a few kilometres this is the map's own geometry to a millimetre.
+ * Meters east and north of a place on Web Mercator's scale there, and back.
+ * Within a few kilometers this is the map's own geometry to a millimeter.
  */
 export function localFrame(latitude, longitude) {
   const scale = EARTH_CIRCUMFERENCE * Math.cos(latitude * DEG);
@@ -55,7 +55,7 @@ export function localFrame(latitude, longitude) {
       const y = y0 - n / scale;
       return [longitude + (e / scale) * 360, (360 / Math.PI) * Math.atan(Math.exp(((180 - y * 360) * Math.PI) / 180)) - 90];
     },
-    /** Whether GeoJSON coordinates (any depth) come within r metres of the place, in degrees: cheaper than projecting them. */
+    /** Whether GeoJSON coordinates (any depth) come within r meters of the place, in degrees: cheaper than projecting them. */
     reaches(coordinates, r) {
       const dLat = r / 111000 + 1e-4;
       const dLon = r / (111000 * Math.cos(latitude * DEG)) + 1e-4;
@@ -124,7 +124,7 @@ const bboxOf = (points) => {
   return [x0, y0, x1, y1];
 };
 
-/** Things with a bounding box, found again by place (bins of `size` metres). */
+/** Things with a bounding box, found again by place (bins of `size` meters). */
 export class Bins {
   constructor(size = 40) {
     this.size = size;
@@ -153,7 +153,7 @@ export class Bins {
   }
 }
 
-/** A polygon's rings in local metres, from GeoJSON (Polygon or MultiPolygon): one entry per polygon within r. */
+/** A polygon's rings in local meters, from GeoJSON (Polygon or MultiPolygon): one entry per polygon within r. */
 function polygonsOf(geometry, frame, r) {
   if (!geometry) return [];
   const polys = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.type === "MultiPolygon" ? geometry.coordinates : [];
@@ -165,7 +165,7 @@ function polygonsOf(geometry, frame, r) {
     });
 }
 
-/** A line's points in local metres, from GeoJSON (LineString or MultiLineString): one entry per line within r. */
+/** A line's points in local meters, from GeoJSON (LineString or MultiLineString): one entry per line within r. */
 function linesOf(geometry, frame, r) {
   if (!geometry) return [];
   const lines = geometry.type === "LineString" ? [geometry.coordinates] : geometry.type === "MultiLineString" ? geometry.coordinates : [];
@@ -322,7 +322,7 @@ export function placeLamps({ streets = [], buildings = null }, { radius = PROPS_
 /**
  * The map's features near the observer (map.querySourceFeatures of the
  * OpenFreeMap source, by layer) as the planting and lighting want them:
- * tree areas, buildings, water and roads, in local metres, within the radius.
+ * tree areas, buildings, water and roads, in local meters, within the radius.
  */
 export function readMap(features, frame, { radius = PROPS_RADIUS_M } = {}) {
   const areas = [];
@@ -434,11 +434,11 @@ export function coniferMesh(segments = 10, layers = [[0, 0.62, 1], [0.32, 0.86, 
       const a = (s / segments) * 2 * Math.PI;
       vertices.push([r * Math.cos(a), r * Math.sin(a), z0]);
     }
-    const centre = vertices.length;
+    const center = vertices.length;
     vertices.push([0, 0, z0]);
     for (let s = 0; s < segments; s++) {
       const [i, j] = [ring + s, ring + ((s + 1) % segments)];
-      faces.push([apex, i, j], [centre, j, i]);
+      faces.push([apex, i, j], [center, j, i]);
     }
   }
   return indexedMesh(vertices, faces);
@@ -490,12 +490,12 @@ const mix = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 
 /**
  * The instances of each mesh for these trees and lights, standing on the
- * ground at `elevation(x, y)` (m above sea level). Colours are the day's
+ * ground at `elevation(x, y)` (m above sea level). Colors are the day's
  * (the shader dims them for the night).
  */
 export function instances(trees, lamps, elevation) {
   const out = { trunk: [], leafy: [], leafyFar: [], conifer: [], pole: [], arm: [], head: [] };
-  const put = (list, x, y, z, sx, sy, sz, colour, emission, yaw) => list.push(x, y, z, sx, sy, sz, colour[0], colour[1], colour[2], emission, yaw);
+  const put = (list, x, y, z, sx, sy, sz, color, emission, yaw) => list.push(x, y, z, sx, sy, sz, color[0], color[1], color[2], emission, yaw);
   for (const t of trees) {
     const z = elevation(t.x, t.y);
     const yaw = t.tint * 2 * Math.PI;
@@ -522,12 +522,12 @@ export function instances(trees, lamps, elevation) {
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, new Float32Array(v)]));
 }
 
-/** Where each light's glow is (its lamp) and its colour: x, y, z, r, g, b. */
+/** Where each light's glow is (its lamp) and its color: x, y, z, r, g, b. */
 export function glows(lamps, elevation) {
   const out = [];
   for (const l of lamps) {
-    const colour = l.kind === "sodium" ? [1, 0.6, 0.26] : [1, 0.85, 0.66];
-    out.push(l.x + l.ax * 1.4, l.y + l.ay * 1.4, elevation(l.x, l.y) + l.height - 0.3, ...colour);
+    const color = l.kind === "sodium" ? [1, 0.6, 0.26] : [1, 0.85, 0.66];
+    out.push(l.x + l.ax * 1.4, l.y + l.ay * 1.4, elevation(l.x, l.y) + l.height - 0.3, ...color);
   }
   return new Float32Array(out);
 }
@@ -544,13 +544,13 @@ export function poolMesh(lamps, elevation, { grid = 5 } = {}) {
   for (const l of lamps) {
     const [cx, cy] = [l.x + l.ax * 1.4, l.y + l.ay * 1.4];
     const radius = l.height * 1.3;
-    const colour = l.kind === "sodium" ? [1, 0.62, 0.3] : [1, 0.86, 0.68];
+    const color = l.kind === "sodium" ? [1, 0.62, 0.3] : [1, 0.86, 0.68];
     const first = vertices.length / 8;
     for (let j = 0; j < grid; j++) {
       for (let i = 0; i < grid; i++) {
         const [u, v] = [(2 * i) / (grid - 1) - 1, (2 * j) / (grid - 1) - 1];
         const [x, y] = [cx + u * radius, cy + v * radius];
-        vertices.push(x, y, elevation(x, y), u, v, ...colour);
+        vertices.push(x, y, elevation(x, y), u, v, ...color);
       }
     }
     for (let j = 0; j < grid - 1; j++) {
@@ -567,9 +567,9 @@ export function poolMesh(lamps, elevation, { grid = 5 } = {}) {
 // The matrix
 
 /**
- * Column-major float32 matrix from local metres (east, north, metres above
+ * Column-major float32 matrix from local meters (east, north, meters above
  * sea level) to clip space: MapLibre's float64 view-projection (world
- * pixels, metres up) times the place's offset and Mercator scale, multiplied
+ * pixels, meters up) times the place's offset and Mercator scale, multiplied
  * in float64 so nothing is lost at street level.
  */
 export function localMatrix(viewProj, worldSize, latitude, longitude) {
@@ -597,10 +597,10 @@ layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
 layout(location = 2) in vec3 i_pos;
 layout(location = 3) in vec3 i_scale;
-layout(location = 4) in vec4 i_colour;
+layout(location = 4) in vec4 i_color;
 layout(location = 5) in float i_yaw;
 out vec3 v_normal;
-out vec3 v_colour;
+out vec3 v_color;
 out float v_emit;
 out float v_up;
 out vec3 v_model;
@@ -613,8 +613,8 @@ void main() {
   vec3 n = a_normal / i_scale;
   n.xy = turn * n.xy;
   v_normal = normalize(n);
-  v_colour = i_colour.rgb;
-  v_emit = i_colour.a;
+  v_color = i_color.rgb;
+  v_emit = i_color.a;
   v_up = a_pos.z;
   v_model = a_pos;
   gl_Position = u_matrix * vec4(i_pos + p, 1.0);
@@ -622,15 +622,15 @@ void main() {
 
 const MESH_FS = `#version 300 es
 precision highp float;
-// Towards the light (the Sun or the Moon), its colour, the sky's light, how dark the night makes things, lamps on.
+// Toward the light (the Sun or the Moon), its color, the sky's light, how dark the night makes things, lamps on.
 uniform vec3 u_light;
-uniform vec3 u_lightColour;
+uniform vec3 u_lightColor;
 uniform vec3 u_ambient;
 uniform float u_lampsOn;
 // 0: wood and metal; 1: a leafy crown (a sphere, -1 to 1 up); 2: a conifer (0 to 1 up).
 uniform float u_crown;
 in vec3 v_normal;
-in vec3 v_colour;
+in vec3 v_color;
 in float v_emit;
 in float v_up;
 in vec3 v_model;
@@ -642,10 +642,10 @@ void main() {
   float up = u_crown > 1.5 ? v_up : 0.5 + 0.5 * v_up;
   float under = u_crown > 0.5 ? 0.5 + 0.5 * clamp(up, 0.0, 1.0) : 1.0;
   float speckle = u_crown > 0.5 ? 0.8 + 0.2 * fract(sin(dot(floor(v_model * 7.0), vec3(12.9898, 78.233, 37.719))) * 43758.5453) : 1.0;
-  vec3 colour = v_colour * (u_ambient + u_lightColour * diffuse) * under * speckle;
+  vec3 color = v_color * (u_ambient + u_lightColor * diffuse) * under * speckle;
   // A lamp that is on is its own light.
-  colour = mix(colour, v_colour * 1.15, v_emit * u_lampsOn);
-  fragColor = vec4(colour, 1.0);
+  color = mix(color, v_color * 1.15, v_emit * u_lampsOn);
+  fragColor = vec4(color, 1.0);
 }`;
 
 const GLOW_VS = `#version 300 es
@@ -655,12 +655,12 @@ uniform vec3 u_up;
 uniform float u_size;
 layout(location = 0) in vec2 a_corner;
 layout(location = 2) in vec3 i_pos;
-layout(location = 3) in vec3 i_colour;
+layout(location = 3) in vec3 i_color;
 out vec2 v_uv;
-out vec3 v_colour;
+out vec3 v_color;
 void main() {
   v_uv = a_corner;
-  v_colour = i_colour;
+  v_color = i_color;
   gl_Position = u_matrix * vec4(i_pos + (a_corner.x * u_right + a_corner.y * u_up) * u_size, 1.0);
 }`;
 
@@ -668,27 +668,27 @@ const GLOW_FS = `#version 300 es
 precision highp float;
 uniform float u_strength;
 in vec2 v_uv;
-in vec3 v_colour;
+in vec3 v_color;
 out vec4 fragColor;
 void main() {
   float r2 = dot(v_uv, v_uv);
   if (r2 > 1.0) discard;
   // A soft halo and a bright core; light is added, the alpha (what hides the sky) left alone.
   float g = 0.55 * exp(-r2 * 6.0) + 1.4 * exp(-r2 * 90.0);
-  fragColor = vec4(v_colour * g * u_strength, 0.0);
+  fragColor = vec4(v_color * g * u_strength, 0.0);
 }`;
 
 const POOL_VS = `#version 300 es
 uniform mat4 u_matrix;
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec2 a_uv;
-layout(location = 2) in vec3 a_colour;
+layout(location = 2) in vec3 a_color;
 out vec2 v_uv;
-out vec3 v_colour;
+out vec3 v_color;
 void main() {
   v_uv = a_uv;
-  v_colour = a_colour;
-  // A few centimetres up, and pulled towards the eye, so the terrain does not cover it.
+  v_color = a_color;
+  // A few centimeters up, and pulled toward the eye, so the terrain does not cover it.
   gl_Position = u_matrix * vec4(a_pos + vec3(0.0, 0.0, 0.05), 1.0);
 }`;
 
@@ -696,14 +696,14 @@ const POOL_FS = `#version 300 es
 precision highp float;
 uniform float u_strength;
 in vec2 v_uv;
-in vec3 v_colour;
+in vec3 v_color;
 out vec4 fragColor;
 void main() {
   float r2 = dot(v_uv, v_uv);
   if (r2 >= 1.0) discard;
   // Brightest under the lamp, gone at the edge; light added, the alpha left alone.
   float f = (1.0 - r2) * (1.0 - r2) * exp(-r2 * 1.5);
-  fragColor = vec4(v_colour * f * u_strength, 0.0);
+  fragColor = vec4(v_color * f * u_strength, 0.0);
 }`;
 
 /**
@@ -765,7 +765,7 @@ export class PropsLayer {
       gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fs));
       gl.linkProgram(program);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(`street props program: ${gl.getProgramInfoLog(program)}`);
-      const names = ["u_matrix", "u_light", "u_lightColour", "u_ambient", "u_lampsOn", "u_crown", "u_right", "u_up", "u_size", "u_strength"];
+      const names = ["u_matrix", "u_light", "u_lightColor", "u_ambient", "u_lampsOn", "u_crown", "u_right", "u_up", "u_size", "u_strength"];
       return { program, u: Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(program, n)])) };
     };
     this._programs = { mesh: compile(MESH_VS, MESH_FS), glow: compile(GLOW_VS, GLOW_FS), pool: compile(POOL_VS, POOL_FS) };
@@ -888,7 +888,7 @@ export class PropsLayer {
     gl.useProgram(m.program);
     gl.uniformMatrix4fv(m.u.u_matrix, false, matrix);
     gl.uniform3fv(m.u.u_light, look.light);
-    gl.uniform3fv(m.u.u_lightColour, look.lightColour);
+    gl.uniform3fv(m.u.u_lightColor, look.lightColor);
     gl.uniform3fv(m.u.u_ambient, look.ambient);
     gl.uniform1f(m.u.u_lampsOn, look.lampsOn ? 1 : 0);
     // Closed meshes, drawn without culling (MapLibre's projection flips the winding).
@@ -950,4 +950,4 @@ export class PropsLayer {
 }
 
 /** The look of the trees and lights before the scene has one (a dark night). */
-export const DEFAULT_PROPS_LOOK = Object.freeze({ light: [0, 0, 1], lightColour: [0.05, 0.05, 0.06], ambient: [0.12, 0.13, 0.16], lampsOn: true, glow: 1, pool: 0.3 });
+export const DEFAULT_PROPS_LOOK = Object.freeze({ light: [0, 0, 1], lightColor: [0.05, 0.05, 0.06], ambient: [0.12, 0.13, 0.16], lampsOn: true, glow: 1, pool: 0.3 });

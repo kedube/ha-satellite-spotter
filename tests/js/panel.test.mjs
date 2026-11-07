@@ -320,3 +320,57 @@ test("the menu button opens Home Assistant's sidebar, and shows only when its ow
   assert.equal(toggled, 1);
   panel.remove();
 });
+
+test("Back closes a street view opened here, its own button leaves no entry behind, and a link closes it too", async () => {
+  store.clear();
+  const { panel, view } = await open({ locations: [HOME], at: "/satellite-spotter?pass=1-1" });
+  let left = 0;
+  let replayEnded = 0;
+  view().leaveStreet = () => left++;
+  view().leaveReplay = () => replayEnded++;
+  const pushed = nav.pushed.length;
+  view().fire("pass-selected", { id: "1-1", view: "street" });
+  assert.equal(location.search, "?pass=1-1&view=street");
+  assert.equal(nav.pushed.length, pushed + 1, "an entry of its own");
+  view().fire("pass-selected", { id: "1-2", view: "street" });
+  assert.equal(location.search, "?pass=1-2&view=street");
+  assert.equal(nav.pushed.length, pushed + 1, "moving on while open is not another");
+  assert.equal(left, 0);
+  history.back();
+  assert.equal(location.search, "?pass=1-1");
+  assert.equal(left, 1, "Back closes it");
+  assert.equal(replayEnded, 1, "and the replay it started: the address asks for neither");
+
+  view().fire("pass-selected", { id: "1-3", view: "street" });
+  const entries = nav.entries.length;
+  view().fire("pass-selected", { id: "1-3", view: null });
+  assert.equal(nav.entries.length, entries - 1, "its button goes back over the entry");
+  assert.equal(location.search, "?pass=1-3", "with the address put right");
+  assert.equal(left, 1, "and it was closed already");
+
+  view().fire("pass-selected", { id: "1-4", view: "street" });
+  nav.go("/satellite-spotter?pass=2-2");
+  assert.equal(left, 2, "a link that asks for no street view closes it");
+  assert.equal(replayEnded, 2);
+  nav.go("/satellite-spotter?pass=2-3&view=street");
+  assert.equal(left, 2, "one that does leaves it to the view");
+  assert.deepEqual(view().calls.at(-1), ["selectPass", "2-3", { view: "street" }]);
+  nav.go("/satellite-spotter?pass=2-3&view=simulate");
+  assert.equal(left, 3, "as for one that asks for a replay");
+  assert.equal(replayEnded, 2, "which stays");
+  panel.remove();
+});
+
+test("while it loads, it says so in Home Assistant's words", async () => {
+  store.clear();
+  nav.go("/satellite-spotter");
+  const panel = document.createElement("satellite-spotter-panel");
+  panel.route = { prefix: "/satellite-spotter", path: "" };
+  panel.hass = { language: "de", localize: (key) => (key === "ui.common.loading" ? "Wird geladen" : key), callWS: async () => [HOME] };
+  document.body.appendChild(panel);
+  const booting = panel.shadowRoot.querySelector(".booting");
+  assert.equal(booting.textContent, "Wird geladen");
+  assert.equal(booting.getAttribute("aria-label"), "Wird geladen");
+  await flush();
+  panel.remove();
+});

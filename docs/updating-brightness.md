@@ -76,7 +76,7 @@ curl --referer http://mmt.favor2.info -o satellites_list.txt http://mmt.favor2.i
 
 ### What the update changes
 
-The command downloads the orbit lists the integration uses and CelesTrak's catalogue. A Home
+The command downloads the orbit lists the integration uses and CelesTrak's catalog. A Home
 Assistant on the same connection may then be refused its next download of those lists, and it tries
 again by itself two hours later.
 
@@ -121,7 +121,7 @@ raw file names observers and where they stood.
 | SCORE observations | The all-observations download on <https://score.cps.iau.org> | `satellite_observations_all.csv`, inside the zip |
 | Stellarium's list | <https://raw.githubusercontent.com/Stellarium/stellarium/master/plugins/Satellites/resources/satellites.json> | `satellites.json` |
 | GCAT | <https://planet4589.org/space/gcat/tsv/cat/satcat.tsv> and <https://planet4589.org/space/gcat/tsv/cat/satcat100k.tsv> | `satcat.tsv` and `satcat100k.tsv` |
-| CelesTrak's catalogue | <https://celestrak.org/pub/satcat.csv> | `satcat.csv` |
+| CelesTrak's catalog | <https://celestrak.org/pub/satcat.csv> | `satcat.csv` |
 | CelesTrak's orbit lists | See below | `visual.csv`, `rocket_bodies.csv` and `active.csv` |
 
 Download everything but MMT's list and SCORE's zip like this. CelesTrak refuses a repeat of the same

@@ -128,7 +128,7 @@ MAX_SIGHTINGS: Final = 60
 
 # Rough guide to how far the timing of a prediction can be trusted, by how far
 # the pass is from the epoch of the satellite's orbital elements. Drag and
-# manoeuvres make far-off predictions drift by minutes. A rule of thumb, not a
+# maneuvers make far-off predictions drift by minutes. A rule of thumb, not a
 # formal error bound.
 CONFIDENCE_HIGH_DAYS: Final = 3
 CONFIDENCE_MEDIUM_DAYS: Final = 7

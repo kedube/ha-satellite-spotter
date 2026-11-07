@@ -94,7 +94,7 @@ async def test_the_location_picker_has_no_radius(hass: HomeAssistant) -> None:
     assert schema.schema[key_of(result, CONF_LOCATION)].config["radius"] is False
 
 
-async def test_the_elevation_box_is_in_metres_from_the_dead_sea_to_everest(
+async def test_the_elevation_box_is_in_meters_from_the_dead_sea_to_everest(
     hass: HomeAssistant,
 ) -> None:
     result = await start(hass)
@@ -314,8 +314,8 @@ async def test_submitting_again_after_a_failed_download_tries_at_once(
     ("latitude", "longitude"),
     [
         pytest.param(21.3069, -157.8583, id="the same"),
-        pytest.param(21.30691, -157.85834, id="within ten metres"),
-        pytest.param(21.30686, -157.85826, id="within ten metres, the other way"),
+        pytest.param(21.30691, -157.85834, id="within ten meters"),
+        pytest.param(21.30686, -157.85826, id="within ten meters, the other way"),
         pytest.param(21.3069, 202.1417, id="written 0 to 360"),
     ],
 )
@@ -338,7 +338,7 @@ async def test_the_same_place_is_refused_without_asking_for_anything(
         pytest.param(21.3069, -157.85825, id="east at the fourth decimal"),
     ],
 )
-async def test_a_place_over_ten_metres_away_is_another_place(
+async def test_a_place_over_ten_meters_away_is_another_place(
     hass: HomeAssistant, fetch: AsyncMock, latitude: float, longitude: float
 ) -> None:
     MockConfigEntry(domain=DOMAIN, data=dict(HONOLULU), unique_id="21.3069_-157.8583").add_to_hass(

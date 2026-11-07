@@ -134,7 +134,7 @@ test("a countdown to the next pass, then the passes after it", async () => {
   assert.equal(c.root.querySelector(".chart").hidden, false);
   assert.match(c.root.querySelector(".chart").innerHTML, /<svg[^>]*role="img"/);
   assert.equal(c.root.querySelector(".chart .live-dot").getAttribute("display"), "none", "not up yet");
-  // Too small for times: only the highest point and the brightness are labelled.
+  // Too small for times: only the highest point and the brightness are labeled.
   assert.doesNotMatch(c.root.querySelector(".chart").innerHTML, /class="lbl">/);
   assert.match(c.root.querySelector(".chart").innerHTML, /class="lbl peak">/);
   // The list's evening passes get the small Moon too.
@@ -272,7 +272,7 @@ test("paused predictions, no passes, and errors say so", async () => {
     ["not_found", "No location", "Set up the Satellite Spotter integration to see passes here."],
     ["unknown_location", "Gone", "The location this card shows no longer exists. Edit the card and choose a location."],
     ["location_disabled", "Disabled", "This location is disabled. Enable it under Settings > Devices & services, or choose another location."],
-    ["not_ready", "Starting up", "Waiting for the satellite catalogue… (Starting up)"],
+    ["not_ready", "Starting up", "Waiting for the satellite catalog… (Starting up)"],
     ["home_assistant_error", "Boom", "Could not load the passes (Boom). Trying again shortly."],
   ]) {
     c = await mount({ fail: { code, message } });
@@ -554,7 +554,7 @@ test("another location shows its own passes", async () => {
   await c.unmount();
 });
 
-test("light dashboards get the light colours; the night sky stays dark", async () => {
+test("light dashboards get the light colors; the night sky stays dark", async () => {
   const c = await mount({ dark: false });
   assert.equal(c.view.hasAttribute("light"), true);
   c.view.hass = { ...c.hass, themes: { darkMode: true } };
@@ -591,7 +591,7 @@ test("the card knows a light theme even before Home Assistant says which theme i
 
 // ---- the theme ----------------------------------------------------------------------
 
-test("how light a colour is, in the forms a theme gives it", () => {
+test("how light a color is, in the forms a theme gives it", () => {
   const { luminanceOf } = card;
   assert.equal(luminanceOf("#000"), 0);
   assert.ok(Math.abs(luminanceOf("#ffffff") - 1) < 1e-9);
@@ -607,7 +607,7 @@ test("how light a colour is, in the forms a theme gives it", () => {
   assert.equal(luminanceOf(undefined), null);
 });
 
-test("a card's text goes by the colour it is on, whatever the theme calls itself", () => {
+test("a card's text goes by the color it is on, whatever the theme calls itself", () => {
   const { cardIsLight } = card;
   const style = (vars) => () => ({ getPropertyValue: (name) => vars[name] ?? "" });
   const notDark = { themes: { darkMode: false } };
@@ -726,5 +726,58 @@ test("the keyboard that wanders out of the street view goes back to its scene", 
   c.view._focusIn({ composedPath: () => [] });
   assert.equal(focused, 1);
   c.view._closeStreet();
+  await c.unmount();
+});
+
+test("refreshes failing for a while say how old the times are, until one works", async () => {
+  let failing = null;
+  const c = await mount({ fail: (msg) => (msg.type === "satellite_spotter/passes" ? failing : null) });
+  const stale = c.root.querySelector(".facts.stale");
+  assert.equal(stale.hidden, true);
+  failing = { code: 3, message: "Connection lost" };
+  await c.clock.advance(5 * 60000 + 1000);
+  assert.equal(stale.hidden, true, "one failure says nothing");
+  await c.clock.advance(6 * 60000);
+  assert.equal(stale.hidden, false);
+  assert.match(c.text(".facts.stale"), /^Not connected\. Times are from 5:00 PM\.$/);
+  failing = null;
+  await c.clock.advance(6 * 60000);
+  assert.equal(stale.hidden, true);
+  await c.unmount();
+});
+
+test("new predictions reach the street view open on a card, and so does Home Assistant's language", async () => {
+  const passes = [...PASSES];
+  const payload = { searched_at: 1 };
+  const c = await mount({ panel: false, passes, payload });
+  c.root.querySelector(".btn.street").click();
+  await c.clock.advance(0);
+  const street = c.root.querySelector("satellite-street-view");
+  assert.equal(street.pass.id, FIRST.id);
+  const moved = { ...FIRST, id: String(FIRST.start + 40), start: FIRST.start + 40, end: FIRST.end + 40 };
+  passes[0] = moved;
+  payload.searched_at = 2;
+  await c.view._refresh();
+  await c.clock.advance(0);
+  assert.deepEqual(street.calls.at(-1)[0], "setPass");
+  assert.equal(street.calls.at(-1)[1].id, moved.id);
+  assert.equal(street.calls.at(-1)[2].pass_id, moved.id);
+  const hass = { ...c.hass };
+  c.view.hass = hass;
+  assert.equal(street.hass, hass);
+  await c.unmount();
+});
+
+test("the news of a new search is not lost when the answer that brought it is overtaken", async () => {
+  const payload = { searched_at: 1 };
+  const c = await mount({ payload });
+  await c.clock.advance(0);
+  const asked = () => c.asked.filter((m) => m.type === "satellite_spotter/pass_track").length;
+  const before = asked();
+  assert.ok(before >= 1);
+  payload.searched_at = 2;
+  await Promise.all([c.view._refresh(), c.view._refresh()]);
+  await c.clock.advance(0);
+  assert.equal(asked(), before + 1, "the path is asked for again");
   await c.unmount();
 });

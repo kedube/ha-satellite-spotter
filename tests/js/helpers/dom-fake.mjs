@@ -806,7 +806,7 @@ export function keydown(el, key, extra = {}) {
  * history.pushState/replaceState, starting at `href`.
  */
 export function installLocation(href = "http://ha.local/satellite-spotter") {
-  const nav = { url: new URL(href), pushed: [], replaced: [] };
+  const nav = { url: new URL(href), pushed: [], replaced: [], entries: [href] };
   globalThis.location = {
     get href() {
       return nav.url.href;
@@ -827,11 +827,19 @@ export function installLocation(href = "http://ha.local/satellite-spotter") {
       nav.url = new URL(url, nav.url);
       this.state = state;
       nav.pushed.push(nav.url.href);
+      nav.entries.push(nav.url.href);
     },
     replaceState(state, _title, url) {
       nav.url = new URL(url, nav.url);
       this.state = state;
       nav.replaced.push(nav.url.href);
+      nav.entries[nav.entries.length - 1] = nav.url.href;
+    },
+    back() {
+      if (nav.entries.length < 2) return;
+      nav.entries.pop();
+      nav.url = new URL(nav.entries.at(-1));
+      globalThis.dispatchEvent(new FakeEvent("popstate"));
     },
   };
   /** Go somewhere as Home Assistant does: a new address, then "location-changed" on window. */

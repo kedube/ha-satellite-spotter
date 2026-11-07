@@ -69,7 +69,7 @@ jobs:
           git commit --all --message "Update the brightness table from Mini-MegaTORTORA's list"
           git push --force origin "$BRANCH"
           {
-            echo "This week's update from Mini-MegaTORTORA's list and CelesTrak's catalogue."
+            echo "This week's update from Mini-MegaTORTORA's list and CelesTrak's catalog."
             echo
             echo '```'
             cat "$RUNNER_TEMP/summary.txt"

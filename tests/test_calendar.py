@@ -250,7 +250,7 @@ def test_an_event_of_exactly_a_second_stays_a_second() -> None:
 
 
 def test_a_bright_pass_has_a_star_and_others_a_telescope_in_every_language() -> None:
-    # The blueprint recognises the star; CHANGELOG 1.11 says the titles are the same in every one.
+    # The blueprint recognizes the star; CHANGELOG 1.11 says the titles are the same in every one.
     for language in LANGUAGES:
         text = text_in(language)
         assert text.summary(bright_pass(NOW)) == "🌟 ISS"

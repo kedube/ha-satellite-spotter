@@ -91,8 +91,8 @@ export function magneticField(latDeg, lonDeg, altKm = 0, year = EPOCH) {
   const x = Math.sin(phiC);
   const c = Math.cos(phiC);
   // Associated Legendre functions of sin(phiC) and their derivatives with
-  // respect to colatitude, Gauss-normalised by recursion, and the factors
-  // that make them Schmidt semi-normalised, as the coefficients are.
+  // respect to colatitude, Gauss-normalized by recursion, and the factors
+  // that make them Schmidt semi-normalized, as the coefficients are.
   const P = [[1]];
   const dP = [[0]];
   const S = [[1]];

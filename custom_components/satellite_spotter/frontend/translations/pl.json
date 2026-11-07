@@ -13,7 +13,7 @@
     "bright": "Jasny",
     "when": "{day} · {time}",
     "look_up": "Na {direction}, {elevation} w górę",
-    "look_towards": "Na {direction}",
+    "look_toward": "Na {direction}",
     "ends_in": "Koniec za {countdown}",
     "ends_set": "zachodzi na {direction}",
     "ends_shadow": "znika w cieniu Ziemi na {direction}",
@@ -86,7 +86,7 @@
     "reload": "Odśwież stronę",
     "load_failed": "Nie udało się wczytać globusa ({error}). Odśwież stronę, aby spróbować ponownie.",
     "load_retrying": "Nie udało się wczytać globusa ({error}). Globus spróbuje ponownie; odświeżenie strony też pomaga.",
-    "no_webgl": "Ta przeglądarka nie może wyświetlić globusa 3D (wymagany jest WebGL 2): {error}",
+    "no_webgl": "Ta przeglądarka nie może wyświetlić globusa 3D (wymagany jest WebGL 2).",
     "connection_lost": "utracono połączenie",
     "reconnecting": "Utracono połączenie z Home Assistant. Ponowne łączenie…",
     "not_set_up": "Skonfiguruj integrację Satellite Spotter, aby zobaczyć tu satelity.",
@@ -151,7 +151,7 @@
     "about": "Więcej o tym satelicie",
     "about_name": "Więcej o {name}",
     "look_up": "Spójrz na {direction}, {elevation}° w górę",
-    "look_towards": "Spójrz na {direction}",
+    "look_toward": "Spójrz na {direction}",
     "ends_in": "Koniec za {countdown}, zachodzi na {direction}",
     "ends_shadow": "Koniec za {countdown} · znika w cieniu Ziemi na {direction}",
     "ends_sky": "Koniec za {countdown} · znika z oczu na {direction}",
@@ -247,6 +247,7 @@
     "last_night": "Wczoraj wieczorem"
   },
   "passes": {
+    "not_connected": "Brak połączenia. Czasy z {time}.",
     "train_title": "Pociąg Starlink · {count}",
     "cloud_clear": "Bezchmurnie",
     "cloud_partly": "Częściowe zachmurzenie",
@@ -352,6 +353,7 @@
     "after": "po przelocie"
   },
   "street": {
+    "next_pass": "Następny: {title} o {time}",
     "title": "Widok z ulicy",
     "state_sim": "Symulacja",
     "state_live": "Na żywo",
@@ -420,7 +422,7 @@
     "props": "Drzewa i latarnie",
     "constellations": "Gwiazdozbiory",
     "eye_height": "Wysokość oczu",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Nocne niebo",
     "sky_rural": "Ciemne",

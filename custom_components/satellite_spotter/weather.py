@@ -22,7 +22,7 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 _TIMEOUT = aiohttp.ClientTimeout(total=30)
 _ENTITY_TIMEOUT_S = 30
 _HOUR_S = 3600
-# About a kilometre: all a cloud forecast needs, and all Open-Meteo need learn.
+# About a kilometer: all a cloud forecast needs, and all Open-Meteo need learn.
 _COORDINATE_DIGITS = 2
 
 
@@ -32,7 +32,7 @@ class CloudCoverError(Exception):
 
 @dataclass(frozen=True)
 class CloudForecast:
-    """The cloud cover, by the Unix time each hour's forecast is labelled with."""
+    """The cloud cover, by the Unix time each hour's forecast is labeled with."""
 
     percent_by_hour: Mapping[int, int]
 
@@ -97,7 +97,7 @@ async def async_fetch_forecast(
 
 
 def _forecast_of_entity(rows: Iterable[Mapping[str, Any]]) -> CloudForecast:
-    """Read a weather entity's hourly forecast, whose hours are not always labelled on the hour."""
+    """Read a weather entity's hourly forecast, whose hours are not always labeled on the hour."""
     percents = _percents(
         (int(when.timestamp()) // _HOUR_S * _HOUR_S, row.get("cloud_coverage"))
         for row in rows

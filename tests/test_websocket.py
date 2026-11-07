@@ -483,7 +483,7 @@ async def test_track(ws: Any) -> None:
     ],
 )
 async def test_track_windows(ws: Any, begin: Any, end: Any) -> None:
-    """Backwards, over-long, out-of-range and far-off windows are refused."""
+    """Backward, over-long, out-of-range and far-off windows are refused."""
     msg = await ws(
         "track",
         norad_id=25544,

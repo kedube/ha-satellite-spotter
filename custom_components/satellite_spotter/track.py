@@ -1,7 +1,7 @@
 """Geometry and light: where satellites are, how they look from a place, whether they show.
 
 Nothing here touches Home Assistant, as it all runs in executor jobs. Times are Unix seconds,
-angles degrees unless stated, positions Earth-fixed metres. Everything works on NumPy arrays,
+angles degrees unless stated, positions Earth-fixed meters. Everything works on NumPy arrays,
 and an SGP4 failure shows up as a NaN position rather than an exception.
 """
 
@@ -31,7 +31,7 @@ _FLATTENING = 1 / 298.257223563
 _POLE_M = _EQUATOR_M * (1 - _FLATTENING)
 _ECCENTRICITY_SQUARED = _FLATTENING * (2 - _FLATTENING)
 
-_METRES_PER_AU = 149597870700.0
+_METERS_PER_AU = 149597870700.0
 # For orbit sizes: a spherical Earth, in km.
 _MU_KM3_PER_S2 = 398600.4418
 _EARTH_RADIUS_KM = 6378.137
@@ -173,25 +173,25 @@ def _earth_fixed(inertial: Floats, turned: Floats) -> Floats:
 
 
 def sun_at(ts: ArrayLike) -> Floats:
-    """Return the Sun's Earth-fixed position in metres (Meeus 1998, chapter 25, low accuracy)."""
+    """Return the Sun's Earth-fixed position in meters (Meeus 1998, chapter 25, low accuracy)."""
     t = _centuries(ts)
     mean_longitude = 280.46646 + 36000.76983 * t + 0.0003032 * t**2
     anomaly = np.radians(357.52911 + 35999.05029 * t - 0.0001537 * t**2)
     eccentricity = 0.016708634 - 0.000042037 * t - 0.0000001267 * t**2
-    centre = (
+    center = (
         (1.914602 - 0.004817 * t - 0.000014 * t**2) * np.sin(anomaly)
         + (0.019993 - 0.000101 * t) * np.sin(2 * anomaly)
         + 0.000289 * np.sin(3 * anomaly)
     )
-    true_anomaly = anomaly + np.radians(centre)
+    true_anomaly = anomaly + np.radians(center)
     distance = (
-        _METRES_PER_AU
+        _METERS_PER_AU
         * 1.000001018
         * (1 - eccentricity**2)
         / (1 + eccentricity * np.cos(true_anomaly))
     )
     # Less the aberration, with no nutation.
-    longitude = np.radians(mean_longitude + centre - 0.00569)
+    longitude = np.radians(mean_longitude + center - 0.00569)
     # Chapter 22: 23 degrees 26 minutes 21.448 seconds, then seconds per century.
     tilt = np.radians(
         23.0 + 26.0 / 60.0 + (21.448 - 46.8150 * t - 0.00059 * t**2 + 0.001813 * t**3) / 3600.0
@@ -208,7 +208,7 @@ def sun_at(ts: ArrayLike) -> Floats:
 
 
 def moon_at(ts: ArrayLike) -> Floats:
-    """Return the Moon's Earth-fixed position in metres, to a few tenths of a degree.
+    """Return the Moon's Earth-fixed position in meters, to a few tenths of a degree.
 
     The Astronomical Almanac's low-precision formulae, in the mean equator and equinox of date.
     """
@@ -300,7 +300,7 @@ def _dot(a: Floats, b: Floats) -> Floats:
 
 
 def look(observer: Observer, pos: Floats) -> tuple[Floats, Floats, Floats]:
-    """Return azimuth (0 to 360, clockwise from north), elevation and range in metres."""
+    """Return azimuth (0 to 360, clockwise from north), elevation and range in meters."""
     offset = pos - observer.position
     east, north, up = offset @ observer.east, offset @ observer.north, offset @ observer.normal
     azimuth = np.mod(np.degrees(np.arctan2(east, north)), 360.0)
@@ -314,7 +314,7 @@ def geodetic(pos: Floats) -> tuple[Floats, Floats, Floats]:
     across = np.hypot(x, y)
     second_eccentricity_squared = _ECCENTRICITY_SQUARED / (1 - _ECCENTRICITY_SQUARED)
     reduced = np.arctan2(z * _EQUATOR_M, across * _POLE_M)
-    # Twice is far closer than a millimetre, from the ground to beyond geostationary orbit.
+    # Twice is far closer than a millimeter, from the ground to beyond geostationary orbit.
     for _ in range(2):
         lat = np.arctan2(
             z + second_eccentricity_squared * _POLE_M * np.sin(reduced) ** 3,
@@ -345,11 +345,11 @@ def sunlit(origin: Floats, direction: Floats) -> Flags:
     or that cylinder is dark. NaN gives False.
     """
     place, sunward = origin / _SHADOW_RADII, direction / _SHADOW_RADII
-    from_centre_squared = _dot(place, place)
-    towards_sun = _dot(place, sunward)
-    from_axis_squared = from_centre_squared - towards_sun * towards_sun / _dot(sunward, sunward)
-    in_cylinder = (towards_sun < 0.0) & (from_axis_squared <= 1.0)
-    lit: Flags = (from_centre_squared > 1.0) & ~in_cylinder
+    from_center_squared = _dot(place, place)
+    toward_sun = _dot(place, sunward)
+    from_axis_squared = from_center_squared - toward_sun * toward_sun / _dot(sunward, sunward)
+    in_cylinder = (toward_sun < 0.0) & (from_axis_squared <= 1.0)
+    lit: Flags = (from_center_squared > 1.0) & ~in_cylinder
     return lit
 
 
@@ -401,7 +401,7 @@ class Photometry(NamedTuple):
     """How a satellite looks, for positions (n, 3)."""
 
     elevation: Floats  # Radians.
-    distance: Floats  # Metres.
+    distance: Floats  # Meters.
     sun_angle: Floats  # Radians from the zenith.
     lit: Flags
     magnitude: Floats  # Kept even when too low, faint or in shadow.
@@ -495,7 +495,7 @@ def brightest_possible(sat: Satellite, observer: Observer) -> float:
 
 
 def propagate(satrecs: Sequence[Satrec], ts: ArrayLike) -> Floats:
-    """Return positions (satellites, times, 3), Earth-fixed metres, NaN where SGP4 fails.
+    """Return positions (satellites, times, 3), Earth-fixed meters, NaN where SGP4 fails.
 
     SatrecArray works on its own copies, so the records can be shared between threads.
     """
@@ -504,8 +504,8 @@ def propagate(satrecs: Sequence[Satrec], ts: ArrayLike) -> Floats:
         return np.empty((0, times.size, 3))
     jd, fr = julian(times)
     errors, inertial, _ = SatrecArray(list(satrecs)).sgp4(jd, fr)
-    metres = np.where(errors[..., np.newaxis] == 0, inertial * 1000.0, np.nan)
-    return _earth_fixed(metres, _earth_turned(times))
+    meters = np.where(errors[..., np.newaxis] == 0, inertial * 1000.0, np.nan)
+    return _earth_fixed(meters, _earth_turned(times))
 
 
 def period_s(sat: Satellite) -> float:
@@ -697,9 +697,9 @@ def pass_track(
     ups = np.flatnonzero(above)
     if not ups.size:
         return None
-    centre = ups[np.argmin(np.abs(times[ups] - middle))]
+    center = ups[np.argmin(np.abs(times[ups] - middle))]
     breaks = np.flatnonzero(~above)
-    before, after = breaks[breaks < centre], breaks[breaks > centre]
+    before, after = breaks[breaks < center], breaks[breaks > center]
     first = int(before[-1]) if before.size else 0
     last = int(after[0]) if after.size else times.size - 1
     keep = first + np.flatnonzero(np.isfinite(places[first : last + 1]).all(axis=-1))

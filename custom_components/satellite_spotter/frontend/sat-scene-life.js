@@ -17,7 +17,7 @@ export class SceneLife {
    * @param {number} o.restoreMs how long a lost context has to come back
    * @param {() => void} o.onStillLost it did not: time for another start
    */
-  constructor({ later, cancel = clearTimeout, restoreMs, onStillLost }) {
+  constructor({ later, cancel = (id) => clearTimeout(id), restoreMs, onStillLost }) {
     this._later = later;
     this._cancel = cancel;
     this._restoreMs = restoreMs;

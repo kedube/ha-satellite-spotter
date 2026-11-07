@@ -99,7 +99,20 @@ class LazyCard extends BaseElement {
   set hass(hass) {
     this._hass = hass;
     if (this._view) this._view.hass = hass;
-    else this._ensure();
+    else {
+      this._localizeLoading();
+      this._ensure();
+    }
+  }
+
+  /** Home Assistant's own word for it: this comes before any text of ours is in. */
+  _localizeLoading() {
+    const booting = this._card?.querySelector(".booting");
+    const word = this._hass?.localize?.("ui.common.loading");
+    if (booting && word) {
+      booting.textContent = word;
+      booting.setAttribute("aria-label", word);
+    }
   }
 
   get hass() {
@@ -142,6 +155,7 @@ class LazyCard extends BaseElement {
         </style>
         <ha-card><div class="booting" role="status" aria-label="Loading">Loading…</div></ha-card>`;
       this._card = root.querySelector("ha-card");
+      this._localizeLoading();
       this._applyHeight();
     }
     const query = [VERSION && `v=${VERSION}`, this._attempt && `retry=${this._attempt}`].filter(Boolean).join("&");

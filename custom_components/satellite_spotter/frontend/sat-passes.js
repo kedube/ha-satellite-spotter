@@ -8,7 +8,7 @@
  *
  * Used by the globe view (sidebar panel and globe card) and the passes card.
  * The list draws itself in its own shadow root inside the container it is
- * given, so it looks the same in each; colours come from the --sat-* tokens
+ * given, so it looks the same in each; colors come from the --sat-* tokens
  * the host sets (sat-theme.js), with the dark glass look as the fallback.
  */
 
@@ -32,7 +32,9 @@ const MOON_LIT = 0.4;
 const MOON_CACHE_SIZE = 256;
 // How far a pass's start can be from an id from before a refresh (PASS_ID_TOLERANCE in const.py).
 const ID_TOLERANCE_S = 120;
-// A satellite takes about an hour and a half at the very least to come round again, so two passes
+// A refresh every 5 minutes: failing for this long says the times may be out of date.
+const STALE_AFTER_S = 600;
+// A satellite takes about an hour and a half at the very least to come around again, so two passes
 // this close with a satellite in common are the same crossing.
 const SAME_CROSSING_S = 900;
 
@@ -72,6 +74,12 @@ export function endedPass(passes, nowS) {
   return found;
 }
 
+/** Words for data that refreshes have been failing to renew for a while, or "". */
+export function staleNote(fmt, freshAtS, failing, nowS) {
+  if (!failing || !Number.isFinite(freshAtS) || nowS - freshAtS < STALE_AFTER_S) return "";
+  return fmt.t("passes.not_connected", { time: nowS - freshAtS < 12 * 3600 ? fmt.time(freshAtS) : fmt.dateTime(freshAtS) });
+}
+
 /** Whether two passes, or a pass and its pass_track payload, have a satellite in common. */
 export function shareSatellite(a, b) {
   const satellites = new Set(a?.transits?.map((t) => t.norad_id));
@@ -80,7 +88,7 @@ export function shareSatellite(a, b) {
 
 /**
  * Whether a pass_track payload belongs to a pass. An id from before a refresh is a moment from it,
- * but a neighbouring pass can start that close too, so they must also share a satellite.
+ * but a neighboring pass can start that close too, so they must also share a satellite.
  */
 export function detailMatches(pass, detail) {
   if (!pass || !detail) return false;
@@ -141,7 +149,7 @@ export function groupPasses(passes, fmt, nowS, { filters } = {}) {
 
 /**
  * What deserves a mention beside a pass's name, or null: a satellite of note (the
- * ISS, Tiangong, Hubble) travelling in another one's group, or whatever outshines a
+ * ISS, Tiangong, Hubble) traveling in another one's group, or whatever outshines a
  * train, which goes by "Starlink train" and so does not name it.
  */
 export function notableMember(pass) {
@@ -251,7 +259,7 @@ export function moonText(moon, fmt) {
 }
 
 /**
- * The Moon's phase as a small icon in the current colour: the lit part on a
+ * The Moon's phase as a small icon in the current color: the lit part on a
  * faint disc, turned the way it will be seen in the sky. Decorative unless
  * it has a title.
  */

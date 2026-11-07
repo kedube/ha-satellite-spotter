@@ -13,7 +13,7 @@
     "bright": "Helder",
     "when": "{day} · {time}",
     "look_up": "Kijk richting {direction}, {elevation} omhoog",
-    "look_towards": "Kijk richting {direction}",
+    "look_toward": "Kijk richting {direction}",
     "ends_in": "Eindigt over {countdown}",
     "ends_set": "gaat onder in het {direction}",
     "ends_shadow": "verdwijnt in het {direction} in de aardschaduw",
@@ -84,7 +84,7 @@
     "reload": "Pagina opnieuw laden",
     "load_failed": "De globe kon niet worden geladen ({error}). Laad de pagina opnieuw om het nog eens te proberen.",
     "load_retrying": "De globe kon niet worden geladen ({error}). Er wordt opnieuw geprobeerd; de pagina opnieuw laden helpt ook.",
-    "no_webgl": "Deze browser kan de 3D-globe niet tonen (WebGL 2 is nodig): {error}",
+    "no_webgl": "Deze browser kan de 3D-globe niet tonen (WebGL 2 is nodig).",
     "connection_lost": "verbinding verbroken",
     "reconnecting": "Verbinding met Home Assistant verbroken. Opnieuw verbinden…",
     "not_set_up": "Stel de integratie Satellite Spotter in om hier satellieten te zien.",
@@ -147,7 +147,7 @@
     "about": "Over deze satelliet",
     "about_name": "Over {name}",
     "look_up": "Kijk richting {direction}, {elevation}° omhoog",
-    "look_towards": "Kijk richting {direction}",
+    "look_toward": "Kijk richting {direction}",
     "ends_in": "Eindigt over {countdown}, gaat onder in het {direction}",
     "ends_shadow": "Eindigt over {countdown} · verdwijnt in het {direction} in de aardschaduw",
     "ends_sky": "Eindigt over {countdown} · vervaagt in het {direction}",
@@ -239,6 +239,7 @@
     "last_night": "Gisteravond"
   },
   "passes": {
+    "not_connected": "Geen verbinding. Tijden van {time}.",
     "train_title": "Starlink-trein · {count}",
     "cloud_clear": "Onbewolkt",
     "cloud_partly": "Half bewolkt",
@@ -336,6 +337,7 @@
     "after": "na de overkomst"
   },
   "street": {
+    "next_pass": "Volgende: {title} om {time}",
     "title": "Straatweergave",
     "state_sim": "Simulatie",
     "state_live": "Live",
@@ -404,7 +406,7 @@
     "props": "Bomen en straatlantaarns",
     "constellations": "Sterrenbeelden",
     "eye_height": "Ooghoogte",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Nachthemel",
     "sky_rural": "Donker",

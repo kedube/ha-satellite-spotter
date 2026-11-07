@@ -548,7 +548,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         """Move with the person or tracker, once far enough away, and not too often.
 
         The search takes seconds of work on a small computer, and passes barely change over
-        a few kilometres. The entry itself stays where it was set up.
+        a few kilometers. The entry itself stays where it was set up.
         """
         self._stop_follow_timer()
         self._stop_follow_timer = _nothing_to_stop
@@ -556,8 +556,8 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         place = None if followed is None else _place_of(self.hass.states.get(followed))
         if self._stopped or place is None:
             return
-        metres = location_distance(self.observer.latitude, self.observer.longitude, *place)
-        if metres is None or metres < FOLLOW_MIN_MOVE_KM * 1000.0:
+        meters = location_distance(self.observer.latitude, self.observer.longitude, *place)
+        if meters is None or meters < FOLLOW_MIN_MOVE_KM * 1000.0:
             return
         now = dt_util.utcnow()
         if self._moved_at is not None and (later := self._moved_at + FOLLOW_MIN_INTERVAL) > now:

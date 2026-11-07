@@ -37,7 +37,7 @@ const NOW_S = Date.UTC(2026, 9, 19) / 1000;
 
 // ---- finding photos -------------------------------------------------------------
 
-test("the search asks the meta-catalogue for 360° pictures around home, rounded to about 10 m", () => {
+test("the search asks the meta-catalog for 360° pictures around home, rounded to about 10 m", () => {
   const url = new URL(photoSearchUrl(52.370216, 4.895168));
   assert.equal(`${url.origin}${url.pathname}`, `${PANORAMAX_API}/search`);
   assert.equal(url.searchParams.get("place_position"), "4.8952,52.3702");
@@ -84,7 +84,7 @@ function feature(id, { dLat = 0, dLon = 0, fov = 360, dims = [5760, 2880], taken
 }
 
 test("photos near home: 360° pictures only, nearest first, spaced out, with what the view needs", () => {
-  const m = 1 / 111200; // a metre of latitude, in degrees
+  const m = 1 / 111200; // a meter of latitude, in degrees
   const collection = {
     features: [
       feature("far", { dLat: 230 * m }),
@@ -171,7 +171,7 @@ test("findPhotos asks Panoramax without cookies or referrer, falls back without 
 
 // ---- orientation ------------------------------------------------------------------
 
-test("the picture's centre is its heading, east of it to the right, the zenith at the top", () => {
+test("the picture's center is its heading, east of it to the right, the zenith at the top", () => {
   const R = photoRotation({ heading: 30 });
   const [u, v] = photoUV(R, 30, 0);
   close(u, 0.5, 1e-12);
@@ -228,7 +228,7 @@ test("the photo scene's rays are the planetarium's (sat-planetarium.js makeProje
 
 /**
  * A synthetic street panorama (level, heading 0): a sky that grows paler
- * towards the horizon, grey ground, a low brick building with dark windows,
+ * toward the horizon, gray ground, a low brick building with dark windows,
  * a tall one with a window that shows the sky, and a white cloud in the sky.
  */
 function streetPicture(width = 512, { night = false } = {}) {
@@ -273,8 +273,8 @@ test("the sky is found: the open sky and a cloud in it, not the buildings, a win
   const sky = (az, el) => photoShowsSky(found, R, az, el);
   for (const [az, el] of [[0, 60], [150, 20], [330, 5], [0, 89], [300, 50], [90, 40], [220, 60]]) assert.ok(sky(az, el), `sky at ${az}, ${el}`);
   for (const [az, el] of [[90, 20], [90, 30], [220, 44], [220, 30], [10, -5], [180, -45]]) assert.ok(!sky(az, el), `not sky at ${az}, ${el}`);
-  // Its colour by height, for the renderer: paler near the horizon.
-  assert.ok(found.colour[44][0] > found.colour[5][0]);
+  // Its color by height, for the renderer: paler near the horizon.
+  assert.ok(found.color[44][0] > found.color[5][0]);
 });
 
 test("a picture taken at night, or with no open sky, has no sky to show the planetarium through", () => {
@@ -287,7 +287,7 @@ test("a picture taken at night, or with no open sky, has no sky to show the plan
   assert.ok(MIN_SKY > 0, "and the scene refuses such a picture");
 });
 
-test("the renderer's textures: a softened sky, a band along its edge, and the colours either side", () => {
+test("the renderer's textures: a softened sky, a band along its edge, and the colors either side", () => {
   const { image, R } = streetPicture();
   const found = findSky(image, R);
   const t = skyTextures(image, found);
@@ -301,7 +301,7 @@ test("the renderer's textures: a softened sky, a band along its edge, and the co
   const soft = (az, el) => t.mask[4 * at(az, el)];
   assert.equal(soft(0, 60), 255, "open sky");
   assert.equal(soft(90, 15), 0, "the building");
-  assert.equal(band(90, 32.3), 255, "the roofline is decided by colour");
+  assert.equal(band(90, 32.3), 255, "the roofline is decided by color");
   assert.equal(band(0, 60), 0);
   assert.equal(band(90, 15), 0);
   const low = (rgba, az, el) => {
@@ -309,8 +309,8 @@ test("the renderer's textures: a softened sky, a band along its edge, and the co
     const i = Math.min(t.lowHeight - 1, Math.floor(v * t.lowHeight)) * t.lowWidth + Math.min(t.lowWidth - 1, Math.floor(u * t.lowWidth));
     return [rgba[4 * i], rgba[4 * i + 1], rgba[4 * i + 2]];
   };
-  const skyNearRoof = low(t.skyColour, 90, 34);
-  const wallNearRoof = low(t.otherColour, 90, 30);
+  const skyNearRoof = low(t.skyColor, 90, 34);
+  const wallNearRoof = low(t.otherColor, 90, 30);
   assert.ok(skyNearRoof[2] > 200 && skyNearRoof[2] > skyNearRoof[0], `sky by the roof is blue ${skyNearRoof}`);
   assert.ok(wallNearRoof[0] > wallNearRoof[2], `the wall by the roof is brick ${wallNearRoof}`);
 });
@@ -327,7 +327,7 @@ test("what the photo hides of a path: behind the building, then in the open sky"
 /**
  * A clear sky photographed with the camera facing 20° (its true heading),
  * with the Sun's glare at azimuth 200°, 30° up, and a sunlit white wall with
- * dark windows in the WNW, burnt out as white as the Sun.
+ * dark windows in the WNW, burned out as white as the Sun.
  */
 function sunnyPicture(width = 512, { overcast = false, sun = true } = {}) {
   const height = width / 2;
@@ -393,7 +393,7 @@ test("the photo is darkened, cooled and faded for the night, less so in twilight
   assert.ok(night.tint[2] > 1 && night.tint[0] < 1, "cool");
   assert.ok(night.groundTo < night.groundFrom, "the ground fades in going down");
   assert.notEqual(night.key, day.key);
-  assert.equal(photoLook({ elevation: -30.001 }).key, night.key, "quantised: tiny moves of the Sun change nothing");
+  assert.equal(photoLook({ elevation: -30.001 }).key, night.key, "quantized: tiny moves of the Sun change nothing");
 });
 
 // ---- the scene ------------------------------------------------------------------------
@@ -561,7 +561,7 @@ test("the scene turns a photo to match the Sun in it, when it knows when and whe
     assert.deepEqual(asked, [{ ms: 1751976000000, place: { latitude: 52.37, longitude: 4.89 } }]);
     // The turned rotation puts the Sun where it was.
     const [u] = photoUV(s.scene.rotation, 200, 30);
-    close((u - (0.5 + (200 - 20) / 360) + 1.5) % 1 - 0.5, 0, 0.004, "180° from the picture's centre, at its seam");
+    close((u - (0.5 + (200 - 20) / 360) + 1.5) % 1 - 0.5, 0, 0.004, "180° from the picture's center, at its seam");
   } finally {
     s.restore();
   }
@@ -592,7 +592,7 @@ test("taking a scene away gives up its context, which is nothing to recover from
   }
 });
 
-// A round, burnt-out blob in a dark band of a picture: glare, as far as findSun can tell.
+// A round, burned-out blob in a dark band of a picture: glare, as far as findSun can tell.
 function pictureWithGlare(azimuth, elevation, W = 512, H = 256) {
   const R = photoRotation({ heading: 0, pitch: 0, roll: 0 });
   const data = new Uint8ClampedArray(W * H * 4);

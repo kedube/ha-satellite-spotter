@@ -38,7 +38,7 @@ export const mat4 = {
 const DEG = Math.PI / 180;
 
 /**
- * MapLibre's view and pixel matrices for a camera (centre at the origin of
+ * MapLibre's view and pixel matrices for a camera (center at the origin of
  * the world, which is x east, y south, z up, in pixels): {view, pixel, camera}
  * where camera is the eye's world position.
  */

@@ -33,7 +33,7 @@ const turnTo = (a, b) => ((((b - a) % 360) + 540) % 360) - 180;
 const HOME = { latitude: 52.3702, longitude: 4.8952 };
 const NOW_S = Date.UTC(2026, 9, 19) / 1000;
 const NOW_MS = NOW_S * 1000;
-/** A point some metres north and east of home. */
+/** A point some meters north and east of home. */
 const near = (north, east) => ({ lat: HOME.latitude + north / 111320, lon: HOME.longitude + east / (111320 * Math.cos((HOME.latitude * Math.PI) / 180)) });
 
 /** A rotation matrix's angle-axis vector (away from 180°). */
@@ -84,7 +84,7 @@ test("Mapillary is asked for 360° pictures in a square about home, from its pos
     assert.ok(url.searchParams.get("fields").split(",").includes(field), field);
   }
   const [w, s, e, n] = url.searchParams.get("bbox").split(",").map(Number);
-  close((w + e) / 2, 4.8952, 1e-5, "centred on the rounded position");
+  close((w + e) / 2, 4.8952, 1e-5, "centered on the rounded position");
   close((s + n) / 2, 52.3702, 1e-5);
   close(distanceBearing(s, w, s, e).distance, 500, 2, "250 m each way");
   close(distanceBearing(s, w, n, w).distance, 500, 2);
@@ -259,7 +259,7 @@ test("a Google panorama's details make a candidate: its heading, the tilt and ro
   assert.equal(photo.id, "google:pano-1");
   close(photo.distance, 20, 0.2);
   close(photo.heading, 94.35, 1e-9);
-  close(photo.pitch, 90 - 88.39652, 1e-9, "the camera looks this far above the horizon at the picture's centre");
+  close(photo.pitch, 90 - 88.39652, 1e-9, "the camera looks this far above the horizon at the picture's center");
   close(photo.roll, 1.7181772, 1e-9);
   assert.equal(photo.taken, Date.UTC(2023, 0, 15) / 1000);
   assert.equal(photo.approximate, true, "only the month: not enough for the Sun");

@@ -2,7 +2,7 @@
  * <satellite-street-view>: a pass seen from the street. A 360° street photo
  * near home (Panoramax, and with the integration's keys Mapillary and Google
  * Street View: sat-photo*.js), or else an eye-level 3D model of the
- * neighbourhood from open data (OpenFreeMap buildings, trees and street
+ * neighborhood from open data (OpenFreeMap buildings, trees and street
  * lights on AWS terrain, optional aerial imagery: sat-street-scene.js), lit
  * for the moment of the pass, under the planetarium sky of that moment, with
  * the satellite's path, time ticks, markers and a moving dot sized by its
@@ -106,7 +106,7 @@ const LIVE_IDLE_MS = 1000;
 // The HUD's words change at most this often (ms).
 const HUD_MS = 250;
 // Credits by source. The links fill the translated sentences; Esri's line is
-// their required wording, and the engine is a name and a licence.
+// their required wording, and the engine is a name and a license.
 const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
 const CREDIT_LINKS = {
   openfreemap: link("https://openfreemap.org", "OpenFreeMap"),
@@ -306,6 +306,8 @@ const STYLE = `
 .title .look.dim { color: var(--sat-ink-2); font-weight: 600; }
 .title .look .mag { color: var(--sat-ink-2); font-weight: 500; font-size: 12.5px; }
 .title .note { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #fde68a; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--sat-rule); }
+.title .next { display: block; pointer-events: auto; margin-top: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title .next[hidden] { display: none; }
 .title .note::before { content: ""; width: 9px; height: 9px; border-radius: 50%; border: 1.5px dashed #fde68a; flex: none; }
 
 .tools { top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); display: flex; gap: 6px; padding: 5px; border-radius: 999px; }
@@ -463,7 +465,11 @@ export class SatelliteStreetView extends BaseElement {
     this._onKeyDown = (ev) => this._keyDown(ev);
     this._onMotion = () => this._planetarium?.setOptions({ reducedMotion: prefersReducedMotion() });
     // Home Assistant is back after a restart or a dropped connection: a path still missing is asked for again.
-    this._onReady = () => this._asking && this._requestDetail({ again: true });
+    this._onReady = () => {
+      if (this._asking) this._requestDetail({ again: true });
+      this._networkBack();
+    };
+    this._onOnline = () => this._networkBack();
   }
 
   // -- properties ----------------------------------------------------------------
@@ -517,6 +523,7 @@ export class SatelliteStreetView extends BaseElement {
   _reword() {
     if (!this._formatter || !this._els) return;
     this._planetarium?.setFormatter(this._formatter);
+    this._timebar?.refresh?.();
     this._applyText();
     this._drawn = null;
     this._kick();
@@ -628,6 +635,7 @@ export class SatelliteStreetView extends BaseElement {
     this._gen++;
     this._buildDom();
     globalThis.document?.addEventListener("visibilitychange", this._onVisibility);
+    globalThis.addEventListener?.("online", this._onOnline);
     this.addEventListener?.("keydown", this._onKeyDown);
     this._watchConnection();
     this._motionQuery = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -665,6 +673,7 @@ export class SatelliteStreetView extends BaseElement {
     this._timers.clear();
     this._stopAsking();
     globalThis.document?.removeEventListener("visibilitychange", this._onVisibility);
+    globalThis.removeEventListener?.("online", this._onOnline);
     this.removeEventListener?.("keydown", this._onKeyDown);
     this._watchConnection();
     this._motionQuery?.removeEventListener?.("change", this._onMotion);
@@ -746,6 +755,7 @@ export class SatelliteStreetView extends BaseElement {
           <div class="when"></div>
           <div class="look"></div>
           <div class="note" hidden></div>
+          <button class="btn next" type="button" hidden></button>
           <div class="banner" role="status" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${WARN_ICON}"/></svg><span></span></div>
         </section>
         <div class="hud tools glass">
@@ -816,6 +826,7 @@ export class SatelliteStreetView extends BaseElement {
       when: $(".title .when"),
       look: $(".title .look"),
       note: $(".title .note"),
+      next: $(".title .next"),
       tools: $(".tools"),
       cam: $(".cam"),
       layersBtn: $(".layers-btn"),
@@ -847,6 +858,9 @@ export class SatelliteStreetView extends BaseElement {
     els.closeBtn.addEventListener("click", () => this._close());
     els.layersBtn.addEventListener("click", () => this._toggleMenu());
     els.infoBtn.addEventListener("click", () => this._toggleSheet());
+    els.next.addEventListener("click", () => {
+      if (this._nextOffered) this.dispatchEvent(new CustomEvent("show-pass", { detail: { pass: this._nextOffered }, bubbles: false }));
+    });
     els.compassBtn.addEventListener("click", () => this._frame(true));
     els.lookBtn.addEventListener("click", () => this._lookAtSatellite());
     els.followBtn.addEventListener("click", () => this._setOptions({ ...this._options, follow: !this._options.follow }));
@@ -931,7 +945,7 @@ export class SatelliteStreetView extends BaseElement {
   _height(m) {
     const imperial = this._units === "imperial" || (this._units !== "metric" && !!this._formatter?.imperial);
     if (imperial) return this._t("street.feet", { value: this._formatter?.num(Math.round(m * 3.28084)) ?? Math.round(m * 3.28084) });
-    return this._t("street.metres", { value: this._formatter?.num(m, m < 10 && m % 1 ? 1 : 0) ?? m });
+    return this._t("street.meters", { value: this._formatter?.num(m, m < 10 && m % 1 ? 1 : 0) ?? m });
   }
 
   _syncControls() {
@@ -1001,7 +1015,7 @@ export class SatelliteStreetView extends BaseElement {
   _distance(m) {
     const imperial = this._units === "imperial" || (this._units !== "metric" && !!this._formatter?.imperial);
     const value = imperial ? Math.round((m * 3.28084) / 5) * 5 : m < 20 ? Math.round(m) : Math.round(m / 5) * 5;
-    return this._t(imperial ? "street.feet" : "street.metres", { value: this._formatter?.num(value) ?? value });
+    return this._t(imperial ? "street.feet" : "street.meters", { value: this._formatter?.num(value) ?? value });
   }
 
   /** "July 2025", in the user's language. */
@@ -1110,7 +1124,7 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   /**
-   * A photo's credit, as its service asks: the photographer and the licence
+   * A photo's credit, as its service asks: the photographer and the license
    * (CC BY-SA asks for both) for Panoramax and Mapillary; Google's
    * copyright, and its link to report a problem with the image.
    */
@@ -1128,7 +1142,7 @@ export class SatelliteStreetView extends BaseElement {
   /**
    * The photo's credit in the corner, over the photo: Google asks for its
    * copyright and its report link at the bottom right of the image; the
-   * others' photographers and licences are shown the same way.
+   * others' photographers and licenses are shown the same way.
    */
   _renderCredit() {
     const els = this._els;
@@ -1242,7 +1256,11 @@ export class SatelliteStreetView extends BaseElement {
     const nowS = clock.simMs / 1000;
     const w = clock.window;
     if (clock.mode === "live" && passIsLive(pass, nowS)) return;
-    if (w && w.fromS <= pass.start && w.toS >= pass.end) return;
+    if (w && w.fromS <= pass.start && w.toS >= pass.end) {
+      // New predictions may have moved it a little: what the replay highlights moves with it.
+      clock.setVisible?.(pass.start, pass.end);
+      return;
+    }
     const reduced = prefersReducedMotion();
     clock.simulate({
       fromS: pass.start - PASS_LEAD_S,
@@ -1359,6 +1377,7 @@ export class SatelliteStreetView extends BaseElement {
       ml = await timeLimit(this._loadMapLibre(), STEP_MS);
     } catch (err) {
       console.warn("Satellite Spotter: could not load the map library:", err?.message || err);
+      this._missedNetwork = true;
       if (start.isCurrent()) this._fallback("failed", await ground, start);
       return;
     }
@@ -1424,6 +1443,7 @@ export class SatelliteStreetView extends BaseElement {
     } catch (err) {
       if (!start.isCurrent()) return true;
       console.info("Satellite Spotter: no street photos (no service answered):", err?.message || err);
+      this._missedNetwork = true;
       this._photoNote = "street.photo_unavailable";
       this._syncControls();
       return false;
@@ -1539,6 +1559,8 @@ export class SatelliteStreetView extends BaseElement {
       this._settings = { entry, value };
       return value;
     } catch (err) {
+      // An older Home Assistant has no such command, and will not have one when the network is back.
+      if (err?.code !== "unknown_command") this._missedNetwork = true;
       console.info("Satellite Spotter: no street photo settings from Home Assistant (photos from Panoramax):", err?.message || err);
       return NO_SETTINGS;
     }
@@ -1645,6 +1667,7 @@ export class SatelliteStreetView extends BaseElement {
   }
 
   _degraded({ source }) {
+    this._missedNetwork = true;
     const key = `street.degraded_${source}`;
     this._banner(this._t(key));
     if (source === "imagery") this._syncControls();
@@ -1652,7 +1675,13 @@ export class SatelliteStreetView extends BaseElement {
     this._probeSoon();
   }
 
+  /** The network is back: a start that went without what it could not reach has another go, once. */
+  _networkBack() {
+    if (this._opened && this._missedNetwork) this._restartScene();
+  }
+
   _restartScene() {
+    this._missedNetwork = false;
     this._life.clear();
     this._renderCredit();
     this._skylineData = null;
@@ -1671,6 +1700,12 @@ export class SatelliteStreetView extends BaseElement {
 
   _contextRestored(scene) {
     if (!this._life.restored(scene)) return;
+    // MapLibre brings its style back, but stale textures of its own come with it (the terrain drapes
+    // other tiles' pictures on the ground): a new map, as the globe does. A photo restores itself.
+    if (this._mode === "3d") {
+      this._restartScene();
+      return;
+    }
     this._hideVeil();
     this._scene?.setView(this._view);
   }
@@ -2163,7 +2198,7 @@ export class SatelliteStreetView extends BaseElement {
     const scene = this._scene;
     const sky = this._planetarium?._skyAt;
     if (!scene || !sky) return;
-    // Each kind of scene has its own look (the photo's is a grade, the model's its colours and light,
+    // Each kind of scene has its own look (the photo's is a grade, the model's its colors and light,
     // with as many windows lit as at that hour: local solar time is near enough).
     const solarHour = (((tS / 3600 + (this._location?.longitude ?? 0) / 15) % 24) + 24) % 24;
     const look = scene.lookFor ? scene.lookFor(sky.sun, sky.moon) : sceneLook(sky.sun, sky.moon, { solarHour });
@@ -2184,7 +2219,7 @@ export class SatelliteStreetView extends BaseElement {
     els.root.classList.toggle("has-title", !!pass);
     els.icon.innerHTML = svgIcon(kindIcon(pass?.kind, { train: !!pass?.train }));
     setText(els.name, pass ? f.passTitle?.(pass) ?? pass.title : this._location?.title ?? "");
-    setText(els.when, pass ? `${f.dateTime(pass.start)} · ${f.duration?.(pass.duration ?? pass.end - pass.start) ?? ""}` : "");
+    setText(els.when, pass ? `${f.dateTime(pass.start)} · ${f.duration?.(passesModule.passExtent(pass).duration) ?? ""}` : "");
     const chips = [];
     if (pass?.bright) chips.push(`<span class="chip gold">★ ${escapeHtml(this._t("street.bright"))}</span>`);
     if (pass?.sun_up) chips.push(`<span class="chip warn">${escapeHtml(this._t("street.daylight"))}</span>`);
@@ -2210,6 +2245,7 @@ export class SatelliteStreetView extends BaseElement {
     let look = "";
     let dim = false;
     let mag = "";
+    let next = null;
     // The satellite to look for: the primary, or the member of a group still to be seen.
     const track = s?.focus ?? this._planetarium?.primary;
     if (!pass) {
@@ -2234,7 +2270,10 @@ export class SatelliteStreetView extends BaseElement {
     } else {
       look = this._t("street.gone");
       dim = true;
+      // Gone by, live: nothing more will happen here, so the next pass is offered.
+      if (live) next = this.nextPass?.() ?? null;
     }
+    this._offerNext(next);
     if (els.look.dataset.text !== `${look}|${mag}`) {
       els.look.dataset.text = `${look}|${mag}`;
       els.look.innerHTML = `${escapeHtml(look)}${mag ? ` <span class="mag">· ${escapeHtml(mag)}</span>` : ""}`;
@@ -2257,6 +2296,18 @@ export class SatelliteStreetView extends BaseElement {
     const visibleNow = !!(live && cur?.visible && !cur.hidden);
     if (visibleNow && !this._saidVisible) this._announce(look);
     this._saidVisible = visibleNow;
+  }
+
+  _offerNext(next) {
+    const els = this._els;
+    this._nextOffered = next;
+    const f = this._formatter;
+    const text = next ? this._t("street.next_pass", { title: f.passTitle?.(next) ?? next.title, time: f.time(next.start) }) : "";
+    if (els.next.hidden !== !text) {
+      els.next.hidden = !text;
+      this._measureHud();
+    }
+    setText(els.next, text);
   }
 
   _updateCompass() {

@@ -132,7 +132,7 @@ export class Formatter {
     this._units = units || "auto";
   }
 
-  /** Miles rather than kilometres: the Units option, or Home Assistant's unit system on "auto". */
+  /** Miles rather than kilometers: the Units option, or Home Assistant's unit system on "auto". */
   get imperial() {
     if (this._units === "metric" || this._units === "imperial") return this._units === "imperial";
     return this._hass?.config?.unit_system?.length === "mi";

@@ -18,9 +18,9 @@ export const KINDS = Object.freeze(Object.keys(KIND_CODES).sort((a, b) => KIND_C
 export const SPRITES = Object.freeze([...KINDS, "train", "glow", "dot"]);
 
 /**
- * Colour of each kind in the satellite cloud, [r, g, b] in 0..1: the stations
+ * Color of each kind in the satellite cloud, [r, g, b] in 0..1: the stations
  * gold and amber, Hubble lilac, other satellites cyan, Starlinks periwinkle,
- * rocket bodies a warm peach, debris grey.
+ * rocket bodies a warm peach, debris gray.
  */
 export const KIND_COLORS = Object.freeze({
   iss: [0.99, 0.83, 0.3],
@@ -175,7 +175,7 @@ export function drawStation(size = 256) {
   g.fillStyle = "#f8fafc";
   g.fillRect(92, 100, 10, 22);
   g.fillRect(154, 134, 10, 22);
-  // Pressurised modules along the direction of travel.
+  // Pressurized modules along the direction of travel.
   const mod = g.createLinearGradient(116, 0, 140, 0);
   mod.addColorStop(0, "#94a3b8");
   mod.addColorStop(0.4, "#ffffff");
@@ -441,7 +441,7 @@ const DRAW = {
   debris: drawDebris,
 };
 
-/** A soft round glow from `inner` at the centre to `outer` at the edge. */
+/** A soft round glow from `inner` at the center to `outer` at the edge. */
 export function drawGlow(size, inner, outer) {
   const c = canvas(size);
   const g = c.getContext("2d");
@@ -455,7 +455,7 @@ export function drawGlow(size, inner, outer) {
 
 /**
  * A canvas of `size` px with the sprite of a kind (see SPRITES; anything else
- * is drawn as a satellite), nose up, its colours not premultiplied.
+ * is drawn as a satellite), nose up, its colors not premultiplied.
  */
 export function drawSprite(kind, size = 256) {
   const k = spriteKind(kind);

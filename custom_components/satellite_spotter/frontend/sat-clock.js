@@ -141,6 +141,17 @@ export class PassClock {
     this._emit("live");
   }
 
+  /** The pass replayed moved within the window: the part highlighted moves with it, and the time stays. */
+  setVisible(visibleStartS, visibleEndS) {
+    const w = this._window;
+    if (!w) return;
+    const vs = clamp(visibleStartS, w.fromS, w.toS);
+    const ve = clamp(visibleEndS, vs, w.toS);
+    if (vs === w.visibleStartS && ve === w.visibleEndS) return;
+    this._window = Object.freeze({ ...w, visibleStartS: vs, visibleEndS: ve });
+    this._emit("visible");
+  }
+
   /**
    * Replay a pass.
    * @param {object} o

@@ -256,7 +256,7 @@ def _exact_sightings(
     return sightings
 
 
-def _with_neighbours(flags: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+def _with_neighbors(flags: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
     """Return flags, also set next to where they are set."""
     near = flags.copy()
     near[1:] |= flags[:-1]
@@ -277,14 +277,14 @@ def _promising_minutes(
     can fall between two minutes with the satellite too low at one and in shadow at the other.
     """
     high = track.above_horizon(observer, places, _PROMISING_BELOW_DEGREES)
-    near = _with_neighbours(high)
+    near = _with_neighbors(high)
     if not near.any():
         return near
     light = track.photometry(sat, observer, places[near], sun[near])
     could = high[near] & track.bright_enough_nearby(
         light, cutoff, _PROMISING_PAST_CUTOFF, _PROMISING_PAST_SKY
     )
-    near[near] = _with_neighbours(could) & _with_neighbours(light.lit)
+    near[near] = _with_neighbors(could) & _with_neighbors(light.lit)
     return near
 
 

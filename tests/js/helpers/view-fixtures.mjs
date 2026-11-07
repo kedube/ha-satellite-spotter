@@ -3,6 +3,7 @@
 // pass_track payloads in the integration's shapes (DESIGN §2.3), and a fake
 // Home Assistant that answers the satellite_spotter/* commands from them.
 import { lookAngles } from "../../../custom_components/satellite_spotter/frontend/sat-geo.js";
+import { makeStrict } from "./strict-timers.mjs";
 
 export const T0 = Date.parse("2026-10-10T22:00:00Z") / 1000;
 export const HOME = { entry_id: "a", title: "Home", latitude: 42.36, longitude: -71.06, elevation: 10 };
@@ -41,6 +42,7 @@ export function installClock(startMs) {
     return id;
   };
   globalThis.clearInterval = (id) => clock.timeouts.delete(id);
+  makeStrict(["requestAnimationFrame", "cancelAnimationFrame", "setTimeout", "clearTimeout", "setInterval", "clearInterval"]);
   const listeners = new Map();
   globalThis.document = {
     ...(saved.document || {}),

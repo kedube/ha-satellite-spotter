@@ -170,7 +170,7 @@ async def test_saving_the_same_place_when_loaded_does_not_reload(
     assert entry.runtime_data is before
 
 
-async def test_a_small_move_within_ten_metres_is_saved(
+async def test_a_small_move_within_ten_meters_is_saved(
     hass: HomeAssistant, mock_downloads: dict[str, AsyncMock]
 ) -> None:
     entry = await add_location(hass, unique_id="21.3069_-157.8583")

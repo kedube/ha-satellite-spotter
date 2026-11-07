@@ -1,6 +1,6 @@
 name: HACS
 
-# HACS's checks of the repository: hacs.json, the brand images, the licence,
+# HACS's checks of the repository: hacs.json, the brand images, the license,
 # and the repository's own settings on GitHub (a description, topics and
 # issues). On its own, so that a setting fixed on GitHub rather than in a
 # commit never holds up a release.

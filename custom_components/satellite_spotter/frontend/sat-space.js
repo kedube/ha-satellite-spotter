@@ -6,25 +6,25 @@
  *  - SpaceLayer: satellites at their altitude. The focus satellite as a sprite
  *    of its kind with a glow, its shadow and a line down to the ground; the
  *    other satellites of the selected pass as smaller sprites; every satellite
- *    in the catalogue as a cloud of dots (one instanced draw); and lines in
+ *    in the catalog as a cloud of dots (one instanced draw); and lines in
  *    space from a table of styles: the orbit as a glowing ribbon fading out
  *    about one period ahead, the pass in gold, the visibility cone above the
  *    observer and its ring.
  *
  * Both use MapLibre's projection prelude, so they follow the globe-to-map
  * transition. Everything is in MapLibre "mercator units" (0..1) plus an
- * altitude in metres. Callers give true altitudes; the layer draws them at
+ * altitude in meters. Callers give true altitudes; the layer draws them at
  * displayAltitudeKm() so that high orbits stay in front of the camera
  * (setCloudPositions() alone takes display altitudes, see cloudPositions()).
  * Shaders are compiled in prerender(); other GL resources are created lazily
- * inside render(), where MapLibre restores its own GL state afterwards.
+ * inside render(), where MapLibre restores its own GL state afterward.
  */
 
 const VERSION = new URL(import.meta.url).search;
 
 const [geo, sprites] = await Promise.all([import(`./sat-geo.js${VERSION}`), import(`./sat-sprites.js${VERSION}`)]);
 // Mercator units of a point (sat-geo.js): latitudes are clamped to the flat
-// map's limit unless a shape that reaches past it towards a pole passes
+// map's limit unless a shape that reaches past it toward a pole passes
 // POLE_LAT, so the globe draws it where it is (the flat map still sets it on
 // its edge, see PROJECT_GLSL).
 const { MAX_ROW_GAP_S, displayAltitudeKm, mercator } = geo;
@@ -37,14 +37,14 @@ const GLOBE_RADIUS_M = 6371008.8;
 // Just short of the pole, where mercator y is infinite.
 const POLE_LAT = 89.9999;
 
-/** The altitude in metres to draw something at that is altitudeM above the ground. */
+/** The altitude in meters to draw something at that is altitudeM above the ground. */
 function displayAltitudeM(altitudeM) {
   return displayAltitudeKm(altitudeM / 1000) * 1000;
 }
 
 // Shared by every shader: project a mercator point at an altitude. On the
 // globe the altitude is real; as the globe flattens into a map everything
-// settles onto the ground. Points beyond the mercator limit (towards a pole)
+// settles onto the ground. Points beyond the mercator limit (toward a pole)
 // sit on the edge of the flat map.
 const PROJECT_GLSL = `
 uniform vec2 u_viewport;
@@ -174,7 +174,7 @@ const COPY_MARGIN = 0.1;
  * How this frame puts the world on screen. The flat map repeats the world
  * sideways and MapLibre draws every copy in view (wraps -3..3), so there a
  * shape is drawn once for each copy it is in view on. While the globe flattens
- * into the map, each shape is instead placed on the copy nearest the centre of
+ * into the map, each shape is instead placed on the copy nearest the center of
  * the view, as MapLibre does with its tiles.
  */
 function viewOf(map, args) {
@@ -234,7 +234,7 @@ function setProjectionUniforms(gl, prog, view) {
 /**
  * Run draw() for a shape within `reach` of mercator x: on the flat map once for
  * each copy of the world it is in view on; on the globe once, with the flat
- * half of the transition on the copy nearest the centre.
+ * half of the transition on the copy nearest the center.
  */
 function drawCopies(gl, prog, view, x, reach, draw) {
   const u = prog.uniforms;
@@ -488,7 +488,7 @@ export class NightLayer {
     gl.uniform1f(u.u_strength, state.strength);
     gl.uniform1f(u.u_lights_mix, state.lightsMix);
     gl.uniform1f(u.u_has_lights, this._texture ? 1 : 0);
-    // On the globe the mesh starts half a world before the centre of the view (on a cell boundary).
+    // On the globe the mesh starts half a world before the center of the view (on a cell boundary).
     const offset = view.globe ? Math.floor((view.center - 0.5) * NIGHT_GRID) / NIGHT_GRID : 0;
     gl.uniform1f(u.u_offset, offset);
     if (this._texture) {
@@ -632,7 +632,7 @@ const MEMBER_SCALE = 1.35;
 const HOVER_MIN_RADIUS = 15;
 
 // The cloud: one quad per satellite, all in one instanced draw. Positions
-// change every frame; size, glyph, colour and flags only with the catalogue,
+// change every frame; size, glyph, color and flags only with the catalog,
 // the selection or the pointer.
 const CLOUD_VERTEX = `
 in vec2 a_corner;
@@ -671,7 +671,7 @@ void main() {
   vec2 p = a_pos.xy;
 #ifdef GLOBE
   // The sphere repeats every world, so this only moves the flat half of the
-  // transition onto the copy of the world nearest the centre.
+  // transition onto the copy of the world nearest the center.
   p.x += floor(u_center_x - p.x + 0.5);
 #endif
   vec4 c = projectAlt(p, a_pos.z);
@@ -687,7 +687,7 @@ void main() {
   v_inner = radius / quad;
   vec2 halfVp = u_viewport * 0.5;
   gl_Position = vec4(c.xy + a_corner * quad * u_px / halfVp * c.w, c.z, c.w);
-  // In sunlight a white-hot core in a glow of the kind's colour; in Earth's
+  // In sunlight a white-hot core in a glow of the kind's color; in Earth's
   // shadow, where nobody could see it, a dim dot of a cooler tone.
   float lit = clamp(a_pos.w, 0.0, 1.0);
   vec3 kind = member ? vec3(1.0, 0.8, 0.32) : a_color.rgb;
@@ -752,7 +752,7 @@ const RIBBON_STRIDE = 12; // floats per vertex
  * It is split where it crosses the antimeridian, so the flat map never draws a
  * line across the world, and where it crosses the prime meridian, so each
  * piece spans at most half a world and can be put on the copy of the world
- * nearest the centre of the view. Returns {data, segments: [first, count, midX, halfWidth]}.
+ * nearest the center of the view. Returns {data, segments: [first, count, midX, halfWidth]}.
  */
 export function buildRibbon(points) {
   const runs = [];
@@ -895,7 +895,7 @@ function poleCapFill(home, ring, elevationM, radiusDeg) {
     const [e1, m1, r1] = rows[i];
     const [e2, m2, r2] = rows[i + 1];
     tris.push(...e1, ...e2, ...m2, ...e1, ...m2, ...m1, ...m1, ...m2, ...r2, ...m1, ...r2, ...r1);
-    // Beyond the edge, towards the pole (a mercator y far past the edge projects onto it).
+    // Beyond the edge, toward the pole (a mercator y far past the edge projects onto it).
     tris.push(...e1, ...e2, (e1[0] + e2[0]) / 2, north ? -2 : 3, out * elevationM, out);
   }
   return tris;
@@ -981,7 +981,7 @@ export function orbitSpans(periodS) {
 /**
  * The cloud's per-satellite data from the `satellite_spotter/catalog` payload,
  * in the order of `ids` (a positions payload's ids), for setCloud(). A
- * satellite missing from the catalogue is drawn as a faint satellite.
+ * satellite missing from the catalog is drawn as a faint satellite.
  */
 export function cloudFromCatalog(catalog, ids) {
   const byId = new Map((catalog?.satellites || []).map((s) => [s.norad_id, s]));
@@ -1024,7 +1024,7 @@ export function cloudPositions(positions, out) {
   return res;
 }
 
-// Base radius of a cloud dot in CSS px, by intrinsic magnitude (the catalogue's
+// Base radius of a cloud dot in CSS px, by intrinsic magnitude (the catalog's
 // MAG: brightness at 1,000 km, half lit) and kind.
 function cloudRadius(mag, kind) {
   const m = Number.isFinite(mag) ? mag : 5;
@@ -1223,10 +1223,10 @@ export class SpaceLayer {
   }
 
   /**
-   * The satellite cloud: every satellite of the catalogue, in a fixed order
+   * The satellite cloud: every satellite of the catalog, in a fixed order
    * (setCloudPositions and setCloudFlags use the same one). `kinds` are
    * KIND_CODES, `mags` intrinsic magnitudes (size and brightness). Call it
-   * when the catalogue changes; see cloudFromCatalog().
+   * when the catalog changes; see cloudFromCatalog().
    */
   setCloud({ ids = [], kinds = [], mags = [] } = {}) {
     const n = ids.length;
@@ -1642,7 +1642,7 @@ export class SpaceLayer {
     c.dirty = { pos: false, style: false, flags: false };
     if (!g.atlas) {
       // One 128 px layer per kind, in KIND_CODES order, mipmapped per layer
-      // (a 2D atlas would bleed between neighbours as it shrinks).
+      // (a 2D atlas would bleed between neighbors as it shrinks).
       g.atlas = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, g.atlas);
       const levels = Math.log2(CLOUD_ATLAS_SIZE) + 1;
@@ -1692,7 +1692,7 @@ export class SpaceLayer {
     gl.bindVertexArray(c.gl.vao);
     const draw = () => gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, c.count);
     if (view.globe) {
-      // Each satellite finds the copy nearest the centre in the shader (u_center_x).
+      // Each satellite finds the copy nearest the center in the shader (u_center_x).
       draw();
     } else {
       for (const w of this._last.copies) {
@@ -1744,7 +1744,7 @@ export class SpaceLayer {
   /**
    * Where a point at an altitude appears on screen, in CSS pixels, using the
    * matrices of the last frame; null if hidden behind the globe or off screen.
-   * On the flat map it is the copy of the world nearest the centre of the view,
+   * On the flat map it is the copy of the world nearest the center of the view,
    * which is where MapLibre puts its markers too. The altitude is the true one,
    * drawn (as everything) at its display altitude; a latitude past the flat
    * map's limit is where it is on the globe and on the map's edge when flat.
@@ -1757,7 +1757,7 @@ export class SpaceLayer {
   /**
    * project() for a point already in mercator units at its display altitude
    * (as the cloud's positions are). `copy` shifts it by whole worlds from the
-   * copy nearest the centre of the view (the flat map repeats the world).
+   * copy nearest the center of the view (the flat map repeats the world).
    */
   projectMercator(x, y, displayAltM, width, height, copy = 0) {
     const L = this._last;

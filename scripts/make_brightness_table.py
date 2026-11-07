@@ -96,8 +96,8 @@ MMT_REFERER = "http://mmt.favor2.info"
 # wrong than new.
 LARGE_CHANGE = 1.0
 MOST_LARGE_CHANGES = 0.25
-# An object can reach the catalogue days after its launch, with the table updated in between.
-CATALOGUING_DAYS = 30
+# An object can reach the catalog days after its launch, with the table updated in between.
+CATALOGING_DAYS = 30
 
 # From McCants's 100% illumination to the half illumination of a standard magnitude.
 # ResolveSky documents the same conversion, https://resolvesky.com.
@@ -219,10 +219,10 @@ def read_mccants(text: str) -> dict[int, float]:
 
 
 def intrinsic(apparent: float, range_km: float, phase_deg: float) -> float | None:
-    """Turn an observed magnitude into a standard one: the predictions' formula run backwards.
+    """Turn an observed magnitude into a standard one: the predictions' formula run backward.
 
     Removes the distance and the phase, but not the air's dimming: magnitudes
-    calibrated against nearby stars have that cancelled already.
+    calibrated against nearby stars have that canceled already.
     """
     if range_km <= 0 or not 0 < phase_deg <= MAX_PHASE_DEG:
         return None
@@ -301,7 +301,7 @@ def size_constants(
     gcat: dict[int, dict[str, str]],
     satcat: dict[int, dict[str, str]],
 ) -> dict[str, float]:
-    """Fit how bright a square metre looks, per kind, on the objects McCants measured.
+    """Fit how bright a square meter looks, per kind, on the objects McCants measured.
 
     Reflected light goes with area, so the slope of -2.5 is physics, not fitted.
     """
@@ -447,7 +447,7 @@ def update(
     since the table was built (``built``, a date), or just before, can take its family's value.
     """
     families = family_medians(mmt, satcat)
-    since = (datetime.fromisoformat(built) - timedelta(days=CATALOGUING_DAYS)).date().isoformat()
+    since = (datetime.fromisoformat(built) - timedelta(days=CATALOGING_DAYS)).date().isoformat()
     rows = []
     for norad, record in sorted(satcat.items()):
         name = record.get("OBJECT_NAME", "")

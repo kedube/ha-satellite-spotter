@@ -65,21 +65,21 @@ def test_sunlit_worked_out_by_hand(
     assert bool(track.sunlit(np.array(place), np.array(to_sun, dtype=float))) is lit
 
 
-def test_sunlit_agrees_with_walking_towards_the_sun() -> None:
+def test_sunlit_agrees_with_walking_toward_the_sun() -> None:
     """No formula: step along each ray, 10 km at a time, and see whether it meets the Earth."""
     rng = np.random.default_rng(1947)
     count = 800
-    towards = rng.normal(size=(count, 3))
-    towards /= np.linalg.norm(towards, axis=-1, keepdims=True)
+    toward = rng.normal(size=(count, 3))
+    toward /= np.linalg.norm(toward, axis=-1, keepdims=True)
     places = rng.normal(size=(count, 3))
     places *= (rng.uniform(6.3e6, 9e6, count) / np.linalg.norm(places, axis=-1))[:, None]
     steps = np.arange(0.0, 2e7, 1e4)
     radii = np.array((EQUATOR_M, EQUATOR_M, POLE_M)) + CLEARS_M
-    walk = places[:, None, :] + steps[None, :, None] * towards[:, None, :]
+    walk = places[:, None, :] + steps[None, :, None] * toward[:, None, :]
     nearest = ((walk / radii) ** 2).sum(axis=-1).min(axis=1)
     # A ray that all but touches can fall between two steps.
     clear = np.abs(nearest - 1.0) > 2e-3
-    lit = track.sunlit(places, towards)
+    lit = track.sunlit(places, toward)
     assert np.array_equal(lit[clear], nearest[clear] > 1.0)
     assert clear.sum() > 0.9 * count
     assert 0.1 * count < lit[clear].sum() < 0.9 * count
@@ -147,7 +147,7 @@ def test_sighting_shapes(place: tuple[str, track.Observer], sightings: list[Any]
                 assert el[outside] >= 10 and lit[outside]
 
 
-def test_the_formula_is_mmts_definition_run_backwards(catalog: list[Satellite]) -> None:
+def test_the_formula_is_mmts_definition_run_backward(catalog: list[Satellite]) -> None:
     """A standard magnitude is for 1000 km and half lit, so 2.5 log10(1 + cos phase) of phase."""
     sat = replace(catalog[0], standard_magnitude=3.0, curve=None)
     observer = track.Observer(*PLACES["denver"])
@@ -310,7 +310,7 @@ def test_unix_times() -> None:
 def test_sidereal_time_is_the_one_sgp4_uses() -> None:
     ts = NOW.timestamp() + np.arange(0, 4 * 365 * 86400, 86400 * 3.37)
     theirs = np.array([gstime(jd + fr) for jd, fr in zip(*track.julian(ts), strict=True)])
-    # Compared round the circle: 1e-8 radians is 6 cm at the equator.
+    # Compared around the circle: 1e-8 radians is 6 cm at the equator.
     difference = (track._earth_turned(ts) - theirs + math.pi) % math.tau - math.pi
     assert np.abs(difference).max() < 1e-8
 
@@ -332,12 +332,12 @@ def test_the_sun_matches_the_worked_example_in_its_source() -> None:
     tilt = math.radians(23.4402298)
     longitude = math.degrees(math.atan2(y * math.cos(tilt) + z * math.sin(tilt), x))
     assert longitude % 360 == pytest.approx(199.90988 - 0.00569, abs=1e-4)
-    assert math.sqrt(x * x + y * y + z * z) / track._METRES_PER_AU == pytest.approx(
+    assert math.sqrt(x * x + y * y + z * z) / track._METERS_PER_AU == pytest.approx(
         0.99766, abs=1e-5
     )
 
 
-# Sunlight along +x, past a point this far behind the Earth's centre.
+# Sunlight along +x, past a point this far behind the Earth's center.
 BEHIND = -7_000_000.0
 SUN = np.array([[1e11, 0.0, 0.0]])
 AIR = track._SUNLIGHT_CLEARS_M
@@ -346,7 +346,7 @@ AIR = track._SUNLIGHT_CLEARS_M
 @pytest.mark.parametrize(
     ("position", "lit"),
     [
-        # Past the equator and past the pole, which is nearer the centre: clear of the
+        # Past the equator and past the pole, which is nearer the center: clear of the
         # air that stops sunlight, or just inside it.
         ((BEHIND, track._EQUATOR_M + AIR + 1000, 0.0), True),
         ((BEHIND, track._EQUATOR_M + AIR - 1000, 0.0), False),
@@ -355,7 +355,7 @@ AIR = track._SUNLIGHT_CLEARS_M
         # Straight behind the Earth, and straight in front of it.
         ((BEHIND, 0.0, 0.0), False),
         ((7_000_000.0, 0.0, 0.0), True),
-        # Off to the side but sunward of the centre: the line leads away from the Earth.
+        # Off to the side but sunward of the center: the line leads away from the Earth.
         ((1000.0, track._EQUATOR_M + AIR + 1, 0.0), True),
         # Within the air itself, on the sunward side.
         ((track._EQUATOR_M + AIR - 1000, 0.0, 0.0), False),

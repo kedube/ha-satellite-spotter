@@ -5,7 +5,7 @@
  * true altitude on its orbit, the part of the pass you can see in gold, a
  * countdown, a sky chart of where to look, and a simulation of the pass that
  * plays on the globe or from your street (sat-street.js). Optionally every
- * satellite in the catalogue at once.
+ * satellite in the catalog at once.
  *
  * Shared by the dashboard card (sat-card.js) and the sidebar panel
  * (sat-panel.js) as <satellite-globe-view>. The integration predicts the
@@ -93,6 +93,10 @@ const IDLE_REPAINT_MS = 5000;
 // The passes are asked for this often (Home Assistant answers from its cache),
 // and so are the positions of every satellite while they are shown.
 const REFRESH_MS = 5 * 60 * 1000;
+// A ring is out of sight this far around the globe from the middle of the view (a satellite stands
+// a little above the horizon a quarter of the way around), or this far off the edge of the map.
+const RING_HIDDEN_KM = 11000;
+const RING_MARGIN_PX = 40;
 // A frame while a visible satellite's ring only breathes: enough to look smooth, and a phone rests.
 const BREATHING_FRAME_MS = 60;
 // Below this the satellites cross the screen too slowly to see from frame to frame (px per s).
@@ -372,6 +376,8 @@ const STYLE = `
 .loader .orbit::after { content: ""; position: absolute; top: -4px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%;
   background: #fde68a; box-shadow: 0 0 10px #fde68a; transform-origin: 4px 36px; }
 .loader .reload-btn { pointer-events: auto; margin-top: 12px; }
+/* No globe: the words go below the passes rather than over them, clear of the time bar. */
+:host([no-map]) .loader { align-items: end; padding-bottom: 96px; }
 /* box-shadow cannot be animated on the compositor, so pulse only briefly,
    and continuously only while a pass is on or a simulation plays. */
 @media (prefers-reduced-motion: no-preference) {
@@ -453,6 +459,8 @@ export class SatelliteGlobeView extends BaseElement {
         this._strings = strings;
         this._fmt.update(this._hass, strings);
         this._applyStrings();
+        // Its text waited for this too: the same formatter again rewords it.
+        if (this._street) this._street.formatter = this._fmt;
       },
       { have: i18n.english }
     );
@@ -565,7 +573,10 @@ export class SatelliteGlobeView extends BaseElement {
       return;
     }
     // The camera flies to the new home when its data arrives (see _refresh).
-    if (moved) this._refresh(true);
+    if (moved) {
+      this._showMessage(this._t("globe.acquiring"), { spinner: true });
+      this._refresh(true);
+    }
     if (previous.imagery !== config.imagery) this._setImagery(config.imagery);
     if (previous.show_satellites !== config.show_satellites) {
       this._showCloud = null;
@@ -633,6 +644,16 @@ export class SatelliteGlobeView extends BaseElement {
     if (!id) return;
     this._pendingSelect = { id: String(id), view: view === "simulate" || view === "street" ? view : null };
     this._applyPendingSelect();
+  }
+
+  /** The address asks for no street view: one that is open closes, as the address now says. */
+  leaveStreet() {
+    this._closeStreet({ silent: false, user: false });
+  }
+
+  /** It asks for no replay either: back to live, as it now says. */
+  leaveReplay() {
+    this._stopSimulation();
   }
 
   // -- lifecycle ----------------------------------------------------------
@@ -907,10 +928,13 @@ export class SatelliteGlobeView extends BaseElement {
     for (const fn of pending) fn();
   }
 
-  _teardown() {
-    this._closeStreet({ silent: true });
-    this._stopSimulation({ silent: true });
-    this._simPending = null;
+  /** `rebuilding`: only the map goes, after a lost WebGL context; the street view and a replay carry on. */
+  _teardown({ rebuilding = false } = {}) {
+    if (!rebuilding) {
+      this._closeStreet({ silent: true });
+      this._stopSimulation({ silent: true });
+      this._simPending = null;
+    }
     this._pause();
     this._resizeObserver?.disconnect();
     clearTimeout(this._lightsTimer);
@@ -927,13 +951,16 @@ export class SatelliteGlobeView extends BaseElement {
     this._menu = null;
     this._homeMarker?.remove();
     this._homeMarker = null;
-    // Leave fullscreen with the map, or the next one would start covering the screen.
-    if (this._wrap?.classList.contains("maplibregl-pseudo-fullscreen")) {
-      this._wrap.classList.remove("maplibregl-pseudo-fullscreen");
-    } else if (this._wrap && this.shadowRoot?.fullscreenElement === this._wrap) {
-      document.exitFullscreen?.().catch(() => {});
+    // Leave fullscreen with the map, or the next one would start covering the screen. A map built
+    // again after a lost context takes it over instead (see _createMap).
+    if (!rebuilding) {
+      if (this._wrap?.classList.contains("maplibregl-pseudo-fullscreen")) {
+        this._wrap.classList.remove("maplibregl-pseudo-fullscreen");
+      } else if (this._wrap && this.shadowRoot?.fullscreenElement === this._wrap) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+      this.removeAttribute("fullscreen");
     }
-    this.removeAttribute("fullscreen");
     // map.remove() does not call the layers' onRemove: free the decoded lights here.
     this._night?.releaseLights();
     try {
@@ -943,6 +970,7 @@ export class SatelliteGlobeView extends BaseElement {
     }
     this._map = null;
     this._noMap = false;
+    this.removeAttribute("no-map");
     this._loaded = false;
     this._starting = false;
     this._space = this._night = null;
@@ -993,8 +1021,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (this._mapToken !== null && !(performance.now() - this._mapTokenAt < 10 * 60 * 1000)) this._refreshMapToken();
     // Also when the data is another location's: a switch that failed while
     // the globe was away (whose retry went with it) is tried again now.
-    const elsewhere = !!this._config.entry_id && this._payload?.location.entry_id !== this._config.entry_id;
-    if (elsewhere || !(performance.now() - this._payloadAt < REFRESH_MS)) this._refresh();
+    if (this._elsewhere() || !(performance.now() - this._payloadAt < REFRESH_MS)) this._refresh();
     this._loadCloud();
     this._retryTilesNow();
     this._updateLight();
@@ -1008,11 +1035,14 @@ export class SatelliteGlobeView extends BaseElement {
   /** No WebGL: the globe stays away, while the countdown and the passes carry on without it. */
   _showWithoutMap() {
     this._noMap = true;
+    this.toggleAttribute("no-map", true);
+    this._watchSize();
     this._applyLayout();
     this._reconcileSelection();
     this._renderList();
     this._renderStrip();
     this._resumeWithoutMap();
+    this._applyPendingSelect();
   }
 
   _resumeWithoutMap() {
@@ -1020,6 +1050,7 @@ export class SatelliteGlobeView extends BaseElement {
     this._running = true;
     this._timers.push(setInterval(() => this._tick(), 1000));
     this._timers.push(setInterval(() => this._refresh(), REFRESH_MS));
+    this._scheduleFrames();
     this._tick();
   }
 
@@ -1044,9 +1075,12 @@ export class SatelliteGlobeView extends BaseElement {
     if (!this._running || this._suspended) return;
     const run = () => {
       this._frameTimer = this._raf = null;
-      this._frame();
-      // _frame() may already have rescheduled.
-      if (this._frameTimer === null && this._raf === null) this._scheduleFrames();
+      try {
+        this._frame();
+      } finally {
+        // _frame() may already have rescheduled. One that throws is reported, and does not stop the globe for good.
+        if (this._frameTimer === null && this._raf === null) this._scheduleFrames();
+      }
     };
     const delay = this._frameDelay();
     if (delay === 0) this._raf = requestAnimationFrame(run);
@@ -1060,7 +1094,26 @@ export class SatelliteGlobeView extends BaseElement {
     const simulating = this._clock.mode === "sim" && this._clock.playing;
     const delay = frameDelay(this._onScreenSpeed, { chase: this._mode === "chase", preview: simulating });
     // The rings of satellites visible now only breathe.
-    return this._space?.animating ? Math.min(delay, BREATHING_FRAME_MS) : delay;
+    return this._ringsBreathing() ? Math.min(delay, BREATHING_FRAME_MS) : delay;
+  }
+
+  /** Whether a satellite's ring that breathes can be seen: a phone or wall tablet rests otherwise. */
+  _ringsBreathing() {
+    if (!this._space?.animating) return false;
+    const map = this._map;
+    const rings = this._rings;
+    if (!map?.project || !rings?.length) return true;
+    const width = this._els.map.clientWidth;
+    const height = this._els.map.clientHeight;
+    const center = map.getCenter();
+    return rings.some((id) => {
+      const at = this._cloud.whereIs(id);
+      if (!at) return true;
+      // Past this far around the globe it is out of sight, whatever project() says of it.
+      if (!this._flat && groundDistanceKm(center.lat, center.lng, at.lat, at.lon) > RING_HIDDEN_KM) return false;
+      const { x, y } = map.project([at.lon, at.lat]);
+      return x >= -RING_MARGIN_PX && x <= width + RING_MARGIN_PX && y >= -RING_MARGIN_PX && y <= height + RING_MARGIN_PX;
+    });
   }
 
   /** How fast things move across the screen, in CSS pixels per second (0 when nothing is in sight). */
@@ -1130,11 +1183,14 @@ export class SatelliteGlobeView extends BaseElement {
       this._gone = false;
       this._payload = payload;
       this._payloadAt = performance.now();
+      this._freshAtS = this._now() / 1000;
+      this._refreshFailing = false;
       this._refreshDelay = 0;
       clearTimeout(this._refreshTimer);
       this._fmt.setUnits(payload.settings?.units);
     } catch (err) {
       if (gen !== this._gen) return false;
+      this._refreshFailing = true;
       const code = this._errorCode(err);
       // A deleted location does not come back: say so now (the old data stays
       // underneath), and let the panel pick another one.
@@ -1158,6 +1214,7 @@ export class SatelliteGlobeView extends BaseElement {
       if (this._loaded) this._showMessage("");
       this._dataChanged();
       if (relocated) this._setMode("home");
+      if (newSearch) this._followMovedPass();
       // The pass on show may have kept its id and taken another way across the sky.
       if (newSearch) this._loadDetail(this._shownPass()).catch(() => {});
       // A location that follows someone has moved with them.
@@ -1166,6 +1223,20 @@ export class SatelliteGlobeView extends BaseElement {
       console.error("Satellite Spotter: could not draw the new data:", err);
     }
     return true;
+  }
+
+  /** New predictions moved the pass being replayed, or in the street view: they go on with what it became. */
+  _followMovedPass() {
+    const moved = (was) => (was && !this._passById(was.id) ? passesModule.passItBecame(was, this._passes()) : null);
+    const replayed = moved(this._sim?.pass);
+    if (replayed) {
+      this._sim.pass = replayed;
+      const w = this._clock.window;
+      if (w && w.fromS <= replayed.start && w.toS >= replayed.end) this._clock.setVisible(replayed.start, replayed.end);
+      else if (!this._street) this._simulate(replayed, { approach: false });
+    }
+    const shown = moved(this._street?.pass);
+    if (shown) this._street.setPass(shown, this._details.get(shown.id) ?? null);
   }
 
   /** New passes: keep the selection, and draw them everywhere. */
@@ -1247,8 +1318,8 @@ export class SatelliteGlobeView extends BaseElement {
 
   /**
    * Fetch again the tiles that failed (no internet, an expired token, a
-   * restart). They are named one by one: MapLibre never asks for a failed tile
-   * again by itself, and refreshing a whole vector source leaves its failed
+   * restart). MapLibre never asks for a failed tile again by itself. A vector
+   * source's are named one by one, as refreshing all of one leaves its failed
    * tiles waiting for a reply that never comes.
    */
   _refreshFailedTiles() {
@@ -1257,7 +1328,11 @@ export class SatelliteGlobeView extends BaseElement {
     for (const [id, tiles] of Object.entries(this._failedTiles)) {
       if (!tiles.size || !map.getSource(id)) continue;
       try {
-        map.refreshTiles(id, [...tiles.values()]);
+        // Naming a failed raster tile marks it as having data it does not have, and MapLibre then
+        // throws on every frame until it comes, drawing almost nothing. The whole source goes through
+        // the path that does not, at the price of asking for the tiles it has too.
+        if (map.getSource(id).type === "raster") map.refreshTiles(id);
+        else map.refreshTiles(id, [...tiles.values()]);
       } catch {
         // The source changed meanwhile.
       }
@@ -1282,7 +1357,7 @@ export class SatelliteGlobeView extends BaseElement {
     const gen = this._gen;
     const detail = await this._client.passTrack(pass.id, { entryId: this._entryId() });
     if (gen !== this._gen || !detail?.transits) return null;
-    // A pass gone from the integration's newer predictions can be answered with its neighbour's path.
+    // A pass gone from the integration's newer predictions can be answered with its neighbor's path.
     if (!passesModule.detailMatches(pass, detail)) return null;
     this._details.set(pass.id, detail);
     while (this._details.size > KEPT_PASSES) this._details.delete(this._details.keys().next().value);
@@ -1349,6 +1424,7 @@ export class SatelliteGlobeView extends BaseElement {
     this._gen++;
     this._fetching = false;
     this._gone = false;
+    this._refreshFailing = false;
     // The back-off was for the old location; the new one starts afresh.
     clearTimeout(this._refreshTimer);
     this._refreshDelay = 0;
@@ -1372,6 +1448,8 @@ export class SatelliteGlobeView extends BaseElement {
       this._scheduleFrames();
       this._updateLight();
     }
+    // The chart of the last location's pass goes, as its card and list do.
+    this._renderSky(false);
   }
 
   _haUrl(path) {
@@ -1383,7 +1461,13 @@ export class SatelliteGlobeView extends BaseElement {
   // -- selection ------------------------------------------------------------
 
   _passes() {
-    return this._payload?.paused ? [] : this._payload?.passes || [];
+    return this._payload?.paused || this._elsewhere() ? [] : this._payload?.passes || [];
+  }
+
+  /** Whether the data in is another location's: just after switching, until the new one's arrives. */
+  _elsewhere() {
+    const wanted = this._config.entry_id;
+    return !!wanted && !!this._payload && this._payload.location?.entry_id !== wanted;
   }
 
   _passById(id) {
@@ -1460,6 +1544,8 @@ export class SatelliteGlobeView extends BaseElement {
     if (id !== this._selectedId) {
       this._selectedId = id;
       this._selectionChanged();
+      // New predictions moved the pick: the panel's address says what is on screen.
+      if (this._userSelected && id) this._emitSelected(this._street ? "street" : this._clock.mode === "sim" ? "simulate" : null);
     } else if (pass) {
       this._loadDetail(pass).catch(() => {});
       this._loadApproach();
@@ -1506,6 +1592,8 @@ export class SatelliteGlobeView extends BaseElement {
       if (gen !== this._gen) return;
       pass = this._passById(detail?.pass_id);
       if (!pass) {
+        // The address asked for it, and a reload is not to say so again.
+        this._emitSelected(null, null);
         this._notify(this._t("globe.pass_gone"));
         return;
       }
@@ -1536,17 +1624,15 @@ export class SatelliteGlobeView extends BaseElement {
   /** A deep link waiting for the data (of its location: a link can switch location too). */
   _applyPendingSelect() {
     const pending = this._pendingSelect;
-    if (!pending || !this._payload || !this._loaded) return;
+    if (!pending || !this._payload || !(this._loaded || this._noMap)) return;
     const wanted = this._config.entry_id;
     if (wanted && this._payload.location?.entry_id !== wanted) return;
     this._pendingSelect = null;
     this._select(pending.id, { view: pending.view, emit: false });
   }
 
-  _emitSelected(view = null) {
-    this.dispatchEvent(
-      new CustomEvent("pass-selected", { detail: { id: this._selectedId, view }, bubbles: true, composed: true })
-    );
+  _emitSelected(view = null, id = this._selectedId) {
+    this.dispatchEvent(new CustomEvent("pass-selected", { detail: { id, view }, bubbles: true, composed: true }));
   }
 
   // -- the focus satellite --------------------------------------------------
@@ -1757,6 +1843,8 @@ export class SatelliteGlobeView extends BaseElement {
     this._els?.mission?.classList.toggle("sim", sim);
     // The street view's own time bar can end a simulation, or start one.
     if (ev.reason === "live" && this._sim) this._simulationEnded();
+    // Its pass may have gone or ended meanwhile, which was left for now.
+    if (ev.reason === "live" && !this._street && this._payload) this._reconcileSelection();
     if (ev.reason === "simulate" && !this._sim) this._adoptSimulation();
     if (ev.reason === "simulate" || ev.reason === "live") {
       this._buildCourse();
@@ -1872,6 +1960,11 @@ export class SatelliteGlobeView extends BaseElement {
       pass,
       detail: this._details.get(pass.id) ?? null,
       onClose: () => this._closeStreet({ user: true }),
+      nextPass: () => {
+        const nowS = this._now() / 1000;
+        return passesModule.nextPass(this._listedPasses(nowS), nowS);
+      },
+      onShowPass: (next) => this._select(next.id, { view: "street" }),
       onNeedDetail: (passId) => {
         const wanted = this._passById(passId) ?? pass;
         this._loadDetail(wanted)
@@ -1885,6 +1978,8 @@ export class SatelliteGlobeView extends BaseElement {
     this._wrap.appendChild(el);
     this._suspend(true);
     el.open?.();
+    this._coverBehind(el);
+    el.shadowRoot?.querySelector(".stage")?.focus({ preventScroll: true });
     if (!el.detail) this._loadDetail(pass).catch(() => {});
     if (emit) this._emitSelected("street");
   }
@@ -1908,6 +2003,7 @@ export class SatelliteGlobeView extends BaseElement {
       return;
     }
     this._street = null;
+    this._coverBehind(null);
     try {
       el.dispose?.();
     } catch (err) {
@@ -1921,10 +2017,17 @@ export class SatelliteGlobeView extends BaseElement {
       return;
     }
     this._suspend(false);
+    // Its pass may have gone or ended meanwhile, which was left for now.
+    if (this._clock.mode !== "sim") this._reconcileSelection();
     const back = this._streetReturn;
     this._streetReturn = null;
     (back?.isConnected ? back : this._els?.streetBtn)?.focus?.({ preventScroll: true });
     if (user) this._emitSelected(this._clock.mode === "sim" ? "simulate" : null);
+  }
+
+  /** Nothing behind an open street view can be reached by the keyboard. */
+  _coverBehind(cover) {
+    for (const child of this._wrap?.children ?? []) child.inert = !!cover && child !== cover;
   }
 
   /** Stop drawing the globe (the street view covers it), or start again; its data keeps coming. */
@@ -1999,19 +2102,31 @@ export class SatelliteGlobeView extends BaseElement {
     const pass = this._shownPass();
     const detail = pass && this._details.get(pass.id);
     const changed = this._cloud.setFlags((set) => {
+      const sprites = new Set();
+      const asSprite = (id) => {
+        set(id, 1);
+        sprites.add(id);
+      };
       for (const [i, tr] of (pass?.transits || []).entries()) {
         set(tr.norad_id, 8);
         // Drawn as sprites while their rows reach (see _memberObjects).
         const d = detail?.transits?.[i];
-        if (d && t >= d.horizon_rise && t <= d.horizon_set) set(tr.norad_id, 1);
+        if (d && t >= d.horizon_rise && t <= d.horizon_set) asSprite(tr.norad_id);
       }
       // Every satellite in the sky from home right now, in any pass.
       const passes = this._clock.mode === "sim" ? (pass ? [pass] : []) : this._passes();
+      const rings = [];
       for (const p of passes) {
         if (!(p.start <= t && t < p.end)) continue;
-        for (const tr of p.transits || []) if (tr.start <= t && t < tr.end) set(tr.norad_id, 4);
+        for (const tr of p.transits || []) {
+          if (!(tr.start <= t && t < tr.end)) continue;
+          set(tr.norad_id, 4);
+          rings.push(tr.norad_id);
+        }
       }
-      if (this._position) set(this._focusInfo()?.norad_id, 1);
+      if (this._position) asSprite(this._focusInfo()?.norad_id);
+      // A sprite has no ring.
+      this._rings = rings.filter((id) => !sprites.has(id));
       if (this._hover) set(this._hover, 2);
     });
     if (changed) this._courseChanged = true;
@@ -2226,11 +2341,18 @@ export class SatelliteGlobeView extends BaseElement {
     } catch (err) {
       this._starting = false;
       // The passes are in, and need no map: everything but the globe still shows, and a tap tries again.
-      this._showMessage(this._t("globe.no_webgl", { error: err?.message || err }), { reload: true });
+      console.info("Satellite Spotter: no 3D globe:", err?.message || err);
+      this._showMessage(this._t("globe.no_webgl"), { reload: true });
       this._showWithoutMap();
       return;
     }
     this._map = map;
+    if (this._noMap) {
+      // WebGL is back: the map's own timers start with it (see _resume).
+      this._noMap = false;
+      this.removeAttribute("no-map");
+      this._pause();
+    }
     this._showMessage(this._t("globe.acquiring"), { spinner: true });
     map.addControl(new ml.NavigationControl({ visualizePitch: true }), "top-right");
     map.addControl(this._viewControl(), "top-right");
@@ -2239,6 +2361,13 @@ export class SatelliteGlobeView extends BaseElement {
     fullscreen.on("fullscreenstart", () => this.toggleAttribute("fullscreen", true));
     fullscreen.on("fullscreenend", () => this.toggleAttribute("fullscreen", false));
     map.addControl(fullscreen, "top-right");
+    if (this.shadowRoot?.fullscreenElement === this._wrap) {
+      // Rebuilt in fullscreen: the new control takes note of it, as of any change.
+      for (const type of ["fullscreenchange", "webkitfullscreenchange"]) document.dispatchEvent(new Event(type));
+    } else if (this._wrap.classList.contains("maplibregl-pseudo-fullscreen")) {
+      this._wrap.classList.remove("maplibregl-pseudo-fullscreen");
+      this._els.map.querySelector(".maplibregl-ctrl-fullscreen")?.click();
+    }
 
     for (const ev of ["dragstart", "rotatestart", "pitchstart"]) {
       map.on(ev, (e) => {
@@ -2258,25 +2387,14 @@ export class SatelliteGlobeView extends BaseElement {
     homeEl.className = "home";
     homeEl.innerHTML = svgIcon("home");
     homeEl.title = home.title;
-    // Hidden, not faded, while home is round the far side of the globe.
+    // Hidden, not faded, while home is around the far side of the globe.
     this._homeMarker = new ml.Marker({ element: homeEl, opacityWhenCovered: "0" }).setLngLat([home.longitude, home.latitude]).addTo(map);
 
     this._night = new spaceModule.NightLayer({ getState: () => this._nightState });
     this._space = new spaceModule.SpaceLayer();
     this._mapSize = [this._els.map.clientWidth, this._els.map.clientHeight];
     // The map element rather than the host: in fullscreen only the map grows.
-    this._resizeObserver = new ResizeObserver(() => {
-      if (this._resizePending) return;
-      this._resizePending = true;
-      requestAnimationFrame(() => {
-        this._resizePending = false;
-        if (!this._map) return;
-        this._map.resize();
-        this._mapSize = [this._els.map.clientWidth, this._els.map.clientHeight];
-        this._applyLayout();
-      });
-    });
-    this._resizeObserver.observe(this._els.map);
+    this._watchSize();
     this._loadLights(map);
 
     // The layers and the satellite go in as soon as the style is ready, without
@@ -2311,7 +2429,7 @@ export class SatelliteGlobeView extends BaseElement {
   _watchContext(map) {
     const rebuild = () => {
       if (this._map !== map) return;
-      this._teardown();
+      this._teardown({ rebuilding: true });
       // Off the page meanwhile: connectedCallback starts it again.
       if (this.isConnected) this._start();
     };
@@ -2325,6 +2443,26 @@ export class SatelliteGlobeView extends BaseElement {
       this._contextTimer = setTimeout(rebuild, CONTEXT_RESTORE_MS);
     });
     canvas.addEventListener("webglcontextrestored", rebuild);
+  }
+
+  /** The map, if there is one, and the layout around it follow the map element's size. */
+  _watchSize() {
+    if (!globalThis.ResizeObserver) return;
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = new ResizeObserver(() => {
+      if (this._resizePending) return;
+      this._resizePending = true;
+      requestAnimationFrame(() => {
+        this._resizePending = false;
+        if (!this._map && !this._noMap) return;
+        if (this._map) {
+          this._map.resize();
+          this._mapSize = [this._els.map.clientWidth, this._els.map.clientHeight];
+        }
+        this._applyLayout();
+      });
+    });
+    this._resizeObserver.observe(this._els.map);
   }
 
   _onMapError(e) {
@@ -2429,7 +2567,7 @@ export class SatelliteGlobeView extends BaseElement {
     }
   }
 
-  /** Every satellite in the catalogue, on or off. */
+  /** Every satellite in the catalog, on or off. */
   _toggleCloud() {
     this._showCloud = !this._cloudWanted();
     this._syncControls();
@@ -2546,10 +2684,10 @@ export class SatelliteGlobeView extends BaseElement {
     // The map buttons reach 330 px down, and the credits' (i) sits 34 px up
     // from the bottom: with less room, drop the fullscreen button rather than cover it.
     this.toggleAttribute("short", height - inset.top - inset.bottom < 372);
-    // The time bar centres in the room the side column leaves.
+    // The time bar centers in the room the side column leaves.
     const side = wide ? this._els.side.offsetWidth + 56 + 12 : 0;
     this._wrap.style.setProperty("--side-w", `${side}px`);
-    if (changed && this._loaded) {
+    if (changed && (this._loaded || this._noMap)) {
       if (wide) this._closeSheet(false);
       this._renderSky(false);
       this._renderList();
@@ -2797,6 +2935,10 @@ export class SatelliteGlobeView extends BaseElement {
   _frame() {
     const p = this._payload;
     const map = this._map;
+    if (this._noMap && p && !this._suspended) {
+      this._frameWithoutMap();
+      return;
+    }
     if (!map || !this._loaded || !p || this._suspended) return;
     this._inFrame = true;
     try {
@@ -2804,6 +2946,22 @@ export class SatelliteGlobeView extends BaseElement {
     } finally {
       this._inFrame = false;
     }
+  }
+
+  /** No globe to draw, but a replay's clock moves on, and the words, the sky chart and the time bar with it. */
+  _frameWithoutMap() {
+    this._clock.tick(performance.now());
+    if (this._clock.mode !== "sim") return;
+    const now = performance.now();
+    if (now - (this._skyAt || 0) > 120) {
+      this._skyAt = now;
+      this._renderSky(false);
+    }
+    if (now - (this._missionAt || 0) > 200) {
+      this._missionAt = now;
+      this._renderMission();
+    }
+    this._timebar?.update();
   }
 
   _drawFrame(p, map) {
@@ -2908,7 +3066,7 @@ export class SatelliteGlobeView extends BaseElement {
     if (!moved) {
       // Every frame while something can be seen moving; otherwise now and
       // then, or as soon as the course changes.
-      const idle = !(sim && this._clock.playing) && this._onScreenSpeed === 0 && !this._space.animating;
+      const idle = !(sim && this._clock.playing) && this._onScreenSpeed === 0 && !this._ringsBreathing();
       const now = performance.now();
       if (!idle || this._courseChanged || !(now - this._repaintAt < IDLE_REPAINT_MS)) {
         this._courseChanged = false;
@@ -3055,10 +3213,20 @@ export class SatelliteGlobeView extends BaseElement {
     // As time passes, the live or next pass changes.
     if (!this._userSelected && this._clock.mode === "live" && (this._autoPass(realS)?.id ?? null) !== this._selectedId) {
       this._reconcileSelection();
+    } else if (this._userSelected && this._clock.mode === "live" && !this._street) {
+      // A pick stays until a minute after its pass (see _reconcileSelection), not until the next refresh.
+      const picked = this._selectedPass();
+      if (picked && picked.end + clockModule.PASS_TAIL_S < realS) this._reconcileSelection();
     }
     this._paddingCache = null;
     const pos = this._position;
     const look = pos ? lookAngles(p.location, pos) : null;
+    // A new part of the day words the chart's heading anew, as it does the list's.
+    const period = this._fmt.group(realS, realS).key;
+    if (period !== this._skyPeriod) {
+      this._skyPeriod = period;
+      this._renderSky(false);
+    }
     this._renderMission();
     this._renderTelemetry(pos, look);
     this._passList?.setNow?.(realS);
@@ -3093,7 +3261,7 @@ export class SatelliteGlobeView extends BaseElement {
     const p = this._payload;
     const fmt = this._fmt;
     if (!e?.label || !p) return;
-    e.mission.hidden = this._config.show_countdown === false;
+    e.mission.hidden = this._config.show_countdown === false || this._elsewhere();
     const sim = this._clock.mode === "sim";
     const paused = !!p.paused && !sim;
     const pass = paused ? null : this._shownPass();
@@ -3154,7 +3322,7 @@ export class SatelliteGlobeView extends BaseElement {
         e.clock,
         look && look.elevation > 0
           ? this._t("mission.look_up", { direction: fmt.direction(compass(look.azimuth)), elevation: Math.round(look.elevation) })
-          : this._t("mission.look_towards", { direction: fmt.direction(pass.peak?.direction ?? lead?.peak?.direction) })
+          : this._t("mission.look_toward", { direction: fmt.direction(pass.peak?.direction ?? lead?.peak?.direction) })
       );
       const endKey = lead?.end_reason === "shadow" ? "mission.ends_shadow" : lead?.end_reason === "sky" ? "mission.ends_sky" : "mission.ends_in";
       setText(e.when, this._t(endKey, { countdown: fmt.countdown((pass.end - t) * 1000), direction: fmt.direction(lead?.set?.direction) }));
@@ -3167,14 +3335,16 @@ export class SatelliteGlobeView extends BaseElement {
     } else {
       setText(e.clock, state === "after" ? this._t("mission.passed") : fmt.countdown((pass.start - t) * 1000));
       let when = this._t("mission.when", { day: fmt.group(pass.start, realS).label, time: fmt.time(pass.start) });
-      // A pass soon but a few times round the Earth away: how many.
+      // A pass soon but a few times around the Earth away: how many.
       const orbits = Math.floor((pass.start - t) / (lead?.period_s || DEFAULT_PERIOD_S));
       if (state === "before" && orbits >= 1 && pass.start - t < APPROACH_MAX_S) when += ` · ${this._t("pass.orbits_away", { count: orbits })}`;
       setText(e.when, when);
       setText(e.detail, this._passSummary(pass));
     }
     const conds = pass && !paused ? this._conditions(pass) : [];
-    // Why the catalogue is old: the download's error, which can be long (an address).
+    // Why the catalog is old: the download's error, which can be long (an address).
+    const stale = passesModule.staleNote(fmt, this._freshAtS, this._refreshFailing, realS);
+    if (stale) conds.push({ cls: "warn", icon: "info", text: stale });
     if (paused && p.paused_error && Number.isFinite(p.paused_days)) conds.push({ cls: "dim error", icon: "info", text: p.paused_error });
     setHtml(e.conds, conds.map((c) => `<span class="c ${c.cls}" title="${esc(c.text)}">${c.glyph ?? svgIcon(c.icon)}<span>${esc(c.text)}</span></span>`).join(""));
     // The buttons.
@@ -3426,7 +3596,7 @@ export class SatelliteGlobeView extends BaseElement {
       selectedId: this._selectedId,
       nowS: this._now() / 1000,
       days: this._payload.settings?.days ?? 5,
-      emptyText: this._payload.paused ? this._t("mission.paused_list") : undefined,
+      emptyText: this._payload.paused ? this._t("mission.paused_list") : this._elsewhere() ? this._t("globe.acquiring") : undefined,
       filters: this._filters,
       location: this._payload.location,
     });

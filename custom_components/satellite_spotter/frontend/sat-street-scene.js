@@ -8,18 +8,18 @@
  * in the way (sat-planetarium.js).
  *
  * The recipe (tests/browser/run.mjs checks it on the MapLibre that is bundled):
- *  - The camera stays at the eye; the map's "centre" goes some metres along
- *    the line of sight so the scale is 25 px per metre at it. That keeps the
- *    near plane at about half a metre and the zoom fixed for a place.
- *    MapLibre's own eye-level helper puts the centre 10 km away and with it
+ *  - The camera stays at the eye; the map's "center" goes some meters along
+ *    the line of sight so the scale is 25 px per meter at it. That keeps the
+ *    near plane at about half a meter and the zoom fixed for a place.
+ *    MapLibre's own eye-level helper puts the center 10 km away and with it
  *    the near plane 186 m out, clipping every nearby building.
  *  - The far plane follows from the camera's height above sea level, about
  *    18 km for a low observer, cutting off distant hills: it is overridden to
  *    150 km through a private transform method (feature-detected).
- *  - centerClampedToGround must be off: looking up, the centre is above the eye.
+ *  - centerClampedToGround must be off: looking up, the center is above the eye.
  *  - The eye stands on the z15 terrain tile under the observer, and is
  *    re-seated on the rendered terrain whenever the map settles.
- * The maths and the style are pure and unit tested in node.
+ * The math and the style are pure and unit tested in node.
  */
 
 const VERSION = new URL(import.meta.url).search;
@@ -37,7 +37,7 @@ export const ESRI_TILES = "https://server.arcgisonline.com/ArcGIS/rest/services/
 export const ESRI_ATTRIBUTION = "Imagery: Powered by Esri. Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community";
 export { TERRAIN_ATTRIBUTION };
 
-/** Scale at the camera's centre point, px per metre (sets the near plane: height / 50 px). */
+/** Scale at the camera's center point, px per meter (sets the near plane: height / 50 px). */
 export const PX_PER_M = 25;
 /** How far the scene reaches (km): distant ranges stay on the horizon. */
 export const FAR_KM = 150;
@@ -78,16 +78,16 @@ export function lngLatFromMercator(x, y) {
   return [x * 360 - 180, (360 / Math.PI) * Math.atan(Math.exp((y2 * Math.PI) / 180)) - 90];
 }
 
-/** Mercator units per metre at a latitude. */
+/** Mercator units per meter at a latitude. */
 export function meterInMercatorUnits(lat) {
   return 1 / (EARTH_CIRCUMFERENCE * Math.cos(lat * DEG));
 }
 
 /**
- * The jumpTo() options that put MapLibre's camera at an eye: the centre goes
- * D = focal / ppm metres along the line of sight (focal = height / 2 /
+ * The jumpTo() options that put MapLibre's camera at an eye: the center goes
+ * D = focal / ppm meters along the line of sight (focal = height / 2 /
  * tan(fov / 2), MapLibre's cameraToCenterDistance), so the scale there is ppm
- * pixels per metre; with pitch > 90 it is above the eye.
+ * pixels per meter; with pitch > 90 it is above the eye.
  * @returns {{center: [number, number], elevation: number, zoom: number, bearing: number, pitch: number, roll: number, ppm: number, distance: number}}
  */
 export function eyeCamera({ longitude, latitude, eyeAltitude, bearing, pitch, roll = 0, fov, height, ppm = PX_PER_M }) {
@@ -104,7 +104,7 @@ export function eyeCamera({ longitude, latitude, eyeAltitude, bearing, pitch, ro
 }
 
 /**
- * Override MapLibre's near and far planes (px at the centre: metres × ppm)
+ * Override MapLibre's near and far planes (px at the center: meters × ppm)
  * through the transform's overrideNearFarZ, a private method. It
  * survives jumpTo but its values depend on ppm, so it is applied after each
  * camera change. Returns whether it could be (else the default stays, and
@@ -138,12 +138,12 @@ export function litShare(hour) {
 }
 
 /**
- * Colours and light for a Sun ({azimuth, elevation}) and Moon ({azimuth,
+ * Colors and light for a Sun ({azimuth, elevation}) and Moon ({azimuth,
  * elevation, fraction}), and the local solar hour if known (it says how many
  * windows are lit). Found in the spike: darken the material, not the light.
- * A dark light colour pushes the buildings towards 30 % grey (the
+ * A dark light color pushes the buildings toward 30 % gray (the
  * fill-extrusion shader's lower clamp), so the light stays white and the
- * walls get dark colours; lit windows take over from twilight on. The trees
+ * walls get dark colors; lit windows take over from twilight on. The trees
  * and street lights (props) are lit by the same Sun or Moon.
  */
 export function sceneLook(sun, moon = null, { solarHour = null } = {}) {
@@ -198,10 +198,10 @@ export function sceneLook(sun, moon = null, { solarHour = null } = {}) {
       intensity: +(0.4 + 0.1 * day).toFixed(3),
       position: [1.5, q(((source.azimuth % 360) + 360) % 360, 1), q(90 - clamp(source.elevation, 5, 85), 1)],
     },
-    // The trees and street lights: towards the light, its colour and the sky's, the lamps and their glow.
+    // The trees and street lights: toward the light, its color and the sky's, the lamps and their glow.
     props: {
       light: [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)].map((v) => +v.toFixed(3)),
-      lightColour: mixRGB([0.16, 0.18, 0.24].map((v) => v * moonLight), [0.62, 0.58, 0.52], sunLit).map((v) => +v.toFixed(3)),
+      lightColor: mixRGB([0.16, 0.18, 0.24].map((v) => v * moonLight), [0.62, 0.58, 0.52], sunLit).map((v) => +v.toFixed(3)),
       ambient: mixRGB([0.13, 0.14, 0.19].map((v) => v * (0.7 + 0.6 * twilight)), [0.62, 0.64, 0.68], day).map((v) => +v.toFixed(3)),
       lampsOn,
       glow,
@@ -209,7 +209,7 @@ export function sceneLook(sun, moon = null, { solarHour = null } = {}) {
       pool: +(0.3 * glow).toFixed(3),
     },
   };
-  // The facades are drawn again when their colours or the lit windows change (coarser steps: it costs a few milliseconds).
+  // The facades are drawn again when their colors or the lit windows change (coarser steps: it costs a few milliseconds).
   look.facadeKey = `${q(day, 0.05).toFixed(2)}|${q(twilight, 0.05).toFixed(2)}|${look.lit}`;
   look.key = JSON.stringify(look);
   return look;
@@ -225,7 +225,7 @@ export function sceneLook(sun, moon = null, { solarHour = null } = {}) {
  */
 export const FACADE_KINDS = Object.freeze({
   // Width of a window's bay and of a floor (m), the bays and floors in the image (big ones repeat less
-  // visibly), image pixels per metre (plain windows need fewer), the window in its bay ([left, top, right,
+  // visibly), image pixels per meter (plain windows need fewer), the window in its bay ([left, top, right,
   // bottom], fractions), the frame (a fraction of the bay), how many more or fewer are lit.
   house: { bayM: 3.4, floorM: 2.9, cols: 10, rows: 4, pxPerM: 16, window: [0.3, 0.2, 0.7, 0.72], frame: 0.06, lit: 0.75, cool: 0.08, curtains: 0.55 },
   flats: { bayM: 3, floorM: 3, cols: 16, rows: 10, pxPerM: 14, window: [0.22, 0.24, 0.78, 0.78], frame: 0.05, lit: 1, cool: 0.15, curtains: 0.35 },
@@ -240,12 +240,12 @@ export const FACADES = Object.keys(FACADE_KINDS).flatMap((kind) => [0, 1].map((t
  * A facade image for a look (sceneLook). fill-extrusion-pattern scales a
  * wall's pattern differently in the two directions (calibrated in the spike
  * on a 32 m test block at four latitudes):
- *  - along the wall by the map's px per metre, up it by 2^zoom / 65536 px
- *    per metre, which is ppm / k with k = 512 × 65536 / (C × cos lat): the
+ *  - along the wall by the map's px per meter, up it by 2^zoom / 65536 px
+ *    per meter, which is ppm / k with k = 512 × 65536 / (C × cos lat): the
  *    rows' height is divided by k (1.13 at 42° N, 1.36 at 52° N);
  *  - patterns are laid out at the tile's whole zoom, so they come out
  *    2^frac(zoom) too big: the image's pixelRatio is multiplied by that.
- * With both, bays and floors are their size in metres at any latitude.
+ * With both, bays and floors are their size in meters at any latitude.
  */
 export function facadePattern({ kind = "flats", tint = 0, look, latitude = 45, ppm = PX_PER_M, seed = 11 + 7 * tint + 13 * Object.keys(FACADE_KINDS).indexOf(kind) } = {}) {
   const f = FACADE_KINDS[kind];
@@ -259,7 +259,7 @@ export function facadePattern({ kind = "flats", tint = 0, look, latitude = 45, p
   const twilight = look?.twilight ?? 0;
   const litShare = clamp((look?.lit ?? 0.3) * f.lit, 0, 0.95);
   // Walls and frames darken with the light; glass reflects the sky by day; lit windows glow from dusk on.
-  // At night a wall is barely its colour: darker than a town's sky, so the buildings stand out against it.
+  // At night a wall is barely its color: darker than a town's sky, so the buildings stand out against it.
   const night = mixRGB(hex(look?.wall ?? "#131824"), hex(FACADE_WALLS[kind][tint]), 0.05);
   const wallRGB = mixRGB(night, hex(FACADE_WALLS[kind][tint]), day ** 1.4);
   const frameRGB = mixRGB(mixRGB(night, [0, 0, 0], 0.3), hex(FACADE_FRAMES[kind]), day ** 1.4);
@@ -329,11 +329,11 @@ function hash2(i, j, salt) {
 
 const ROAD_CLASSES = ["motorway", "trunk", "primary", "secondary", "tertiary", "minor", "service"];
 
-/** px per metre at a map zoom and latitude (512 px tiles). */
+/** px per meter at a map zoom and latitude (512 px tiles). */
 const ppmAt = (zoom, latitude) => (512 * 2 ** zoom) / (EARTH_CIRCUMFERENCE * Math.cos(latitude * DEG));
 
-/** A width in metres as a line-width over every zoom (exponential base 2, so exact). */
-const metres = (m, latitude) => ["interpolate", ["exponential", 2], ["zoom"], 10, ["*", m, ppmAt(10, latitude)], 24, ["*", m, ppmAt(24, latitude)]];
+/** A width in meters as a line-width over every zoom (exponential base 2, so exact). */
+const meters = (m, latitude) => ["interpolate", ["exponential", 2], ["zoom"], 10, ["*", m, ppmAt(10, latitude)], 24, ["*", m, ppmAt(24, latitude)]];
 
 /**
  * The MapLibre style of the scene. Ground: OpenStreetMap landcover, parks,
@@ -365,7 +365,7 @@ export function buildStyle({ look, latitude, longitude, imagery = "map", buildin
       id: "street-light", type: "line", source: "ofm", "source-layer": "transportation",
       filter: ["in", ["get", "class"], ["literal", ROAD_CLASSES]],
       layout: { "line-cap": "round", "line-join": "round", visibility: look.roadGlow > 0 ? "visible" : "none" },
-      paint: { "line-color": "#ff9d47", "line-opacity": look.roadGlow, "line-width": metres(15, latitude), "line-blur": metres(12, latitude) },
+      paint: { "line-color": "#ff9d47", "line-opacity": look.roadGlow, "line-width": meters(15, latitude), "line-blur": meters(12, latitude) },
     });
     if (buildings) layers.push(...buildingLayers(look, latitude, longitude));
   }
@@ -567,7 +567,7 @@ export class StreetScene {
 
   /**
    * Re-seat the eye on the terrain as rendered (it depends on which tiles
-   * are loaded, by up to half a metre in a flat place): true if it moved.
+   * are loaded, by up to half a meter in a flat place): true if it moved.
    */
   reseat() {
     if (this.degraded.has("terrain")) return false;
@@ -583,7 +583,7 @@ export class StreetScene {
     this.setView();
   }
 
-  /** New light, colours and windows for another moment (call when sceneLook().key changed). */
+  /** New light, colors and windows for another moment (call when sceneLook().key changed). */
   setLook(look) {
     const old = this.look;
     if (old?.key === look.key && !this._pendingLook) return;

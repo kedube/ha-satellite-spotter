@@ -31,8 +31,8 @@ if TYPE_CHECKING:
     from .coordinator import ListedPass, SatelliteSpotterCoordinator
 
 _SIZE = 480
-_CENTRE = _SIZE / 2
-_DOME_RADIUS = _CENTRE * 0.8
+_CENTER = _SIZE / 2
+_DOME_RADIUS = _CENTER * 0.8
 # Rough sizes for the page's chart, which is 220 across.
 _SCALE = _SIZE / 220
 
@@ -98,7 +98,7 @@ def sky_xy(azimuth: float, elevation: float) -> tuple[float, float]:
     """Return where an azimuth and elevation go on the chart."""
     distance = max(0.0, 90.0 - elevation) / 90.0 * _DOME_RADIUS
     angle = math.radians(azimuth)
-    return _CENTRE + distance * math.sin(angle), _CENTRE - distance * math.cos(angle)
+    return _CENTER + distance * math.sin(angle), _CENTER - distance * math.cos(angle)
 
 
 class _Canvas:
@@ -111,38 +111,38 @@ class _Canvas:
         self._xs, self._ys = xs + 0.5, ys + 0.5
 
     def _blend(
-        self, cover: np.ndarray[Any, Any], colour: tuple[int, int, int], alpha: float
+        self, cover: np.ndarray[Any, Any], color: tuple[int, int, int], alpha: float
     ) -> None:
         share = (cover * alpha)[..., np.newaxis]
-        self.rgb += (np.asarray(colour, dtype=float) - self.rgb) * share
+        self.rgb += (np.asarray(color, dtype=float) - self.rgb) * share
 
     def dome(self) -> None:
-        """Fill the sky, lighter towards the zenith."""
-        distance = np.hypot(self._xs - _CENTRE, self._ys - _CENTRE)
+        """Fill the sky, lighter toward the zenith."""
+        distance = np.hypot(self._xs - _CENTER, self._ys - _CENTER)
         share = np.clip(distance / _DOME_RADIUS, 0.0, 1.0)[..., np.newaxis]
         sky = np.asarray(_DOME_MIDDLE, float) * (1 - share) + np.asarray(_DOME_EDGE, float) * share
         cover = np.clip(_DOME_RADIUS + 0.5 - distance, 0.0, 1.0)[..., np.newaxis]
         self.rgb += (sky - self.rgb) * cover
 
     def disk(
-        self, x: float, y: float, radius: float, colour: tuple[int, int, int], alpha: float = 1.0
+        self, x: float, y: float, radius: float, color: tuple[int, int, int], alpha: float = 1.0
     ) -> None:
         """Draw a filled circle."""
         distance = np.hypot(self._xs - x, self._ys - y)
-        self._blend(np.clip(radius + 0.5 - distance, 0.0, 1.0), colour, alpha)
+        self._blend(np.clip(radius + 0.5 - distance, 0.0, 1.0), color, alpha)
 
     def ring(
-        self, radius: float, width: float, colour: tuple[int, int, int], alpha: float = 1.0
+        self, radius: float, width: float, color: tuple[int, int, int], alpha: float = 1.0
     ) -> None:
-        """Draw a circle around the centre."""
-        distance = np.abs(np.hypot(self._xs - _CENTRE, self._ys - _CENTRE) - radius)
-        self._blend(np.clip(width / 2 + 0.5 - distance, 0.0, 1.0), colour, alpha)
+        """Draw a circle around the center."""
+        distance = np.abs(np.hypot(self._xs - _CENTER, self._ys - _CENTER) - radius)
+        self._blend(np.clip(width / 2 + 0.5 - distance, 0.0, 1.0), color, alpha)
 
     def stroke(
         self,
         lines: Iterable[Sequence[tuple[float, float]]],
         width: float,
-        colour: tuple[int, int, int],
+        color: tuple[int, int, int],
         alpha: float = 1.0,
     ) -> None:
         """Draw polylines as one shape, so that where they join is no brighter."""
@@ -165,10 +165,10 @@ class _Canvas:
                 distance = np.hypot(xs - x0 - along * dx, ys - y0 - along * dy)
                 part = np.clip(reach - distance, 0.0, 1.0)
                 cover[top:bottom, left:right] = np.maximum(cover[top:bottom, left:right], part)
-        self._blend(cover, colour, alpha)
+        self._blend(cover, color, alpha)
 
     def letter(self, glyph: str, x: float, y: float) -> None:
-        """Draw one letter, centred on a point."""
+        """Draw one letter, centered on a point."""
         left, top = x - _LETTER_WIDTH / 2, y - _LETTER_HEIGHT / 2
         self.stroke(
             [
@@ -225,8 +225,8 @@ def render_chart(
         canvas.ring((90.0 - elevation) / 90.0 * _DOME_RADIUS, 1.0, _GUIDE, 0.3)
     canvas.stroke(
         [
-            [(_CENTRE, _CENTRE - _DOME_RADIUS), (_CENTRE, _CENTRE + _DOME_RADIUS)],
-            [(_CENTRE - _DOME_RADIUS, _CENTRE), (_CENTRE + _DOME_RADIUS, _CENTRE)],
+            [(_CENTER, _CENTER - _DOME_RADIUS), (_CENTER, _CENTER + _DOME_RADIUS)],
+            [(_CENTER - _DOME_RADIUS, _CENTER), (_CENTER + _DOME_RADIUS, _CENTER)],
         ],
         1.0,
         _GUIDE,

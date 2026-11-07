@@ -5,6 +5,7 @@ const frontend = "/custom_components/satellite_spotter/frontend";
 const mode = q.get("mode");
 
 const HOME = { entry_id: "test", title: "Test City", latitude: 48.0, longitude: 11.0, elevation: 500 };
+const OTHER = { entry_id: "other", title: "Other Town", latitude: -33.0, longitude: 151.0, elevation: 20 };
 const now = Math.floor(Date.now() / 1000);
 
 /** An orbit around the ISS's height, as ground rows [t, lat, lon, alt, lit]: smooth, and made up. */
@@ -74,7 +75,7 @@ const detail = (p, id = p.id) => ({
   transits: p.transits.map((t) => ({ norad_id: t.norad_id, name: t.name, kind: t.kind, horizon_rise: p.start - 120, horizon_set: p.end + 120, visible_start: p.start, visible_end: p.end, rows: passRows(p.start, p.end) })),
 });
 // What a new search changes, for a test to set: the passes, and how the integration answers for a path.
-const search = { passes, at: now, path: (msg) => detail(search.passes.find((p) => p.id === msg.pass_id) ?? passes[0]) };
+const search = { passes, at: now, failing: false, path: (msg) => detail(search.passes.find((p) => p.id === msg.pass_id) ?? passes[0]) };
 const honestPath = search.path;
 const ids = [25544, 48274, 20580];
 const positions = () => {
@@ -112,6 +113,8 @@ const hass = {
       case "satellite_spotter/locations":
         return [{ entry_id: HOME.entry_id, title: HOME.title, show_in_sidebar: true }];
       case "satellite_spotter/passes":
+        if (search.failing) throw { code: 3, message: "Connection lost" };
+        await search.hold;
         return {
           generated_at: now,
           server_time: Date.now() / 1000,
@@ -119,7 +122,7 @@ const hass = {
           paused: null,
           paused_days: null,
           paused_error: null,
-          location: HOME,
+          location: msg.entry_id === OTHER.entry_id ? OTHER : HOME,
           settings: { units: "auto", days: 5, min_elevation: 10 },
           catalog: { updated: now, version: 1, satellites: 3 },
           passes: search.passes,
@@ -165,6 +168,7 @@ const views = {
     view.hass = hass;
     view.narrow = false;
     view.panel = { config: {} };
+    view.route = { prefix: location.pathname, path: "" };
     host.append(view);
     window.__view = view;
   },
@@ -268,9 +272,9 @@ window.__streetCamera = async () => {
   const { map } = scene;
   const transform = map._camera.transform;
   const place = transform.getCameraLngLat();
-  const metresAcross = EARTH_CIRCUMFERENCE * Math.cos(scene.latitude * (Math.PI / 180));
+  const metersAcross = EARTH_CIRCUMFERENCE * Math.cos(scene.latitude * (Math.PI / 180));
 
-  // A direction, a kilometre away, through MapLibre's own matrix and through the sky's projector.
+  // A direction, a kilometer away, through MapLibre's own matrix and through the sky's projector.
   const canvas = map.getCanvas();
   const [width, height] = [canvas.clientWidth, canvas.clientHeight];
   const sky = makeProjector({ bearing: map.getBearing(), pitch: map.getPitch(), roll: map.getRoll(), fov: map.getVerticalFieldOfView(), width, height });
@@ -279,7 +283,7 @@ window.__streetCamera = async () => {
   const onScreen = (azimuth, elevation) => {
     const [a, e] = [azimuth * (Math.PI / 180), elevation * (Math.PI / 180)];
     const [east, north, up] = [Math.sin(a) * Math.cos(e), Math.cos(a) * Math.cos(e), Math.sin(e)].map((v) => v * 1000);
-    const world = [(eye.x + east / metresAcross) * worldSize, (eye.y - north / metresAcross) * worldSize, scene.eyeAltitude + up, 1];
+    const world = [(eye.x + east / metersAcross) * worldSize, (eye.y - north / metersAcross) * worldSize, scene.eyeAltitude + up, 1];
     const clip = [0, 1, 2, 3].map((row) => [0, 1, 2, 3].reduce((sum, column) => sum + transform.modelViewProjectionMatrix[column * 4 + row] * world[column], 0));
     return [((clip[0] / clip[3] + 1) / 2) * width, ((1 - clip[1] / clip[3]) / 2) * height];
   };
@@ -292,7 +296,7 @@ window.__streetCamera = async () => {
     }),
   );
 
-  // The planes are set in pixels at the centre, and have to outlast a move of the camera.
+  // The planes are set in pixels at the center, and have to outlast a move of the camera.
   const planes = () => [transform.nearZ / (NEAR_M * PX_PER_M), transform.farZ / (FAR_KM * 1000 * PX_PER_M)];
   const [near, far] = planes();
   map.jumpTo({ bearing: map.getBearing() + 1 });
@@ -305,7 +309,7 @@ window.__streetCamera = async () => {
     tiles: scene._loaded.get("ofm") ?? 0,
     ground: scene.ground,
     terrain: map.queryTerrainElevation([scene.longitude, scene.latitude]),
-    eyeOffM: Math.hypot((place.lng - scene.longitude) * (metresAcross / 360), (place.lat - scene.latitude) * (EARTH_CIRCUMFERENCE / 360)),
+    eyeOffM: Math.hypot((place.lng - scene.longitude) * (metersAcross / 360), (place.lat - scene.latitude) * (EARTH_CIRCUMFERENCE / 360)),
     altitudeOffM: transform.getCameraAltitude() - scene.eyeAltitude,
     worldSize,
     farPlane: scene.farPlane,
@@ -318,7 +322,7 @@ window.__streetCamera = async () => {
 };
 
 /**
- * How big the real globe is near a pole, measured on screen in pixels per radian at the centre of the view,
+ * How big the real globe is near a pole, measured on screen in pixels per radian at the center of the view,
  * against the zoom limit of a camera riding with a satellite there, which has to agree with it.
  */
 window.__globeNearThePole = async () => {
@@ -344,10 +348,12 @@ window.__globeNearThePole = async () => {
  * start close by, so what these say is which pass is which then. Fake timers show the logic; this is the
  * page's real refresh, on a real map, with the real street view opening over it.
  */
+/** The view with the passes in it: the panel keeps its globe in `_view`. */
+const shownView = () => window.__view._view ?? window.__view;
 const newSearch = async (list) => {
   search.passes = list;
   search.at += 1;
-  await window.__view._refresh(true);
+  await shownView()._refresh(true);
 };
 const wait = (ms) => new Promise((later) => setTimeout(later, ms));
 const until = async (done) => {
@@ -355,39 +361,39 @@ const until = async (done) => {
   return done();
 };
 const SOON = now + 7200;
-const neighbour = pass(SOON - 100, "Neighbour", "good", [48274]);
+const neighbor = pass(SOON - 100, "Neighbor", "good", [48274]);
 window.__search = {
   /** Where the user's pick is after each search, in seconds from where it began. */
   async picks() {
     const view = window.__view;
     const pick = () => ({ off: Number(view._selectedId) - SOON, user: view._userSelected });
     const group = pass(SOON, "Group", "good", [25544, 20580]);
-    await newSearch([neighbour, group]);
+    await newSearch([neighbor, group]);
     await view._select(group.id);
-    await newSearch([neighbour, pass(SOON + 5, "Group", "good", [25544, 20580])]);
+    await newSearch([neighbor, pass(SOON + 5, "Group", "good", [25544, 20580])]);
     const movedALittle = pick();
-    await newSearch([neighbour, pass(SOON + 305, "Group", "good", [20580, 25544])]);
+    await newSearch([neighbor, pass(SOON + 305, "Group", "good", [20580, 25544])]);
     const movedFar = pick();
     const train = pass(SOON + 20000, "STARLINK-1 +2", "good", [1111, 2222, 3333]);
-    await newSearch([neighbour, train]);
+    await newSearch([neighbor, train]);
     await view._select(train.id);
-    await newSearch([neighbour, pass(SOON + 20096, "CZ-3C R/B", "good", [2222]), pass(SOON + 20220, "STARLINK-1 +1", "good", [1111, 3333])]);
+    await newSearch([neighbor, pass(SOON + 20096, "CZ-3C R/B", "good", [2222]), pass(SOON + 20220, "STARLINK-1 +1", "good", [1111, 3333])]);
     const split = pick();
-    await newSearch([neighbour, group]);
+    await newSearch([neighbor, group]);
     await view._select(group.id);
-    await newSearch([neighbour]);
+    await newSearch([neighbor]);
     return { movedALittle, movedFar, split, gone: pick() };
   },
-  /** The integration has moved on, and answers for a pass the page still shows with its neighbour's path. */
+  /** The integration has moved on, and answers for a pass the page still shows with its neighbor's path. */
   async globePath() {
     const view = window.__view;
     const shown = pass(SOON, "Shown", "good");
-    await newSearch([neighbour, shown]);
+    await newSearch([neighbor, shown]);
     await view._select(shown.id);
     await view._loadDetail(shown);
     view._details.clear();
     view._client.clear();
-    search.path = () => detail(neighbour);
+    search.path = () => detail(neighbor);
     const refused = (await view._loadDetail(shown)) === null && !view._details.has(shown.id);
     view._client.clear();
     search.path = () => detail(shown, String(shown.start + 5));
@@ -399,12 +405,12 @@ window.__search = {
   async openStreet() {
     const view = window.__view;
     const shown = pass(SOON, "Shown", "good");
-    await newSearch([neighbour, shown]);
+    await newSearch([neighbor, shown]);
     await view._select(shown.id);
     await view._loadDetail(shown);
     view._details.clear();
     view._client.clear();
-    search.path = () => detail(neighbour);
+    search.path = () => detail(neighbor);
     const asked = window.__asked["satellite_spotter/pass_track"];
     await view._openStreet(shown, { user: true });
     return asked;
@@ -439,6 +445,447 @@ window.__search = {
     await wait(200);
     search.path = honestPath;
     return { asking: !!asking, movedOn, arrived, stayed: view._street.pass.id === second.id && view._selectedId === second.id };
+  },
+};
+
+/** What is there to Tab to on the page but under the street view: nothing, while it covers the page. */
+const tabStopsUnder = (view) =>
+  [...view.shadowRoot.querySelectorAll("button, a[href], input, select, [tabindex='0']")].filter(
+    (e) => !view._street?.contains(e) && !e.disabled && !e.closest("[inert]") && e.offsetParent !== null,
+  ).length;
+const loseContext = (canvas, restoreAfterMs) => {
+  const lost = (canvas.getContext("webgl2") ?? canvas.getContext("webgl")).getExtension("WEBGL_lose_context");
+  lost.loseContext();
+  if (restoreAfterMs !== undefined) setTimeout(() => lost.restoreContext(), restoreAfterMs);
+};
+const veilUp = (street) => !street._els.veil.hidden && !street._els.veil.classList.contains("gone");
+
+/**
+ * Situations staged over time, on the real page: a tap, a lost context, a new search, a page that
+ * cannot use its storage. Each says what came of it, and run.mjs judges.
+ */
+window.__stage = {
+  /** How often the map draws while `act` runs, and whether it is the globe that went on drawing. */
+  async rendersDuring(act, ms) {
+    const map = shownView()._map;
+    let renders = 0;
+    const counted = () => renders++;
+    map.on("render", counted);
+    act();
+    for (let i = 0; i < 3; i++) map.triggerRepaint();
+    await wait(ms);
+    map.triggerRepaint();
+    await wait(200);
+    map.off("render", counted);
+    return renders;
+  },
+  failedTiles: () => Object.values(shownView()._failedTiles).reduce((sum, tiles) => sum + tiles.size, 0),
+  /** The globe's imagery as MapLibre holds it. */
+  imageryTiles() {
+    const held = shownView()._map.style.tileManagers.bluemarble._inViewTiles;
+    const tiles = held.getAllIds().map((id) => held.getTileById(id));
+    return { drawn: tiles.filter((t) => t.state === "loaded" && t.texture).length, failed: tiles.filter((t) => t.state === "errored").length, waiting: tiles.filter((t) => t.state === "loading").length };
+  },
+
+  // -- the street view on its own ------------------------------------------------------------
+  /** A context lost and back within the wait. */
+  async photoContext() {
+    const street = window.__view;
+    let restarts = 0;
+    const restart = street._restartScene;
+    street._restartScene = function () {
+      restarts++;
+      return restart.call(this);
+    };
+    const scene = street._scene;
+    loseContext(scene._gl.canvas, 800);
+    await wait(300);
+    const veilWhileLost = veilUp(street);
+    await wait(1900);
+    street._restartScene = restart;
+    return { veilWhileLost, veilAfter: veilUp(street), restarts, sameScene: street._scene === scene, mode: street._mode };
+  },
+  /** Closed in that wait: nothing throws, and it frees the scene. */
+  async closeWhileWaiting() {
+    const street = window.__view;
+    loseContext(street._scene._gl.canvas, 300);
+    await wait(500);
+    let thrown = null;
+    try {
+      street.dispose();
+    } catch (err) {
+      thrown = String(err);
+    }
+    return { thrown, scene: !!street._scene };
+  },
+  /** The 3D scene: a new map comes, as MapLibre's own restored textures are stale. */
+  async sceneContext() {
+    const street = window.__view;
+    const scene = street._scene;
+    loseContext(scene.map.getCanvas(), 500);
+    await until(() => street._scene && street._scene !== scene && street._mode === "3d" && street._scene._loaded.get("ofm") > 0);
+    return { newScene: street._scene !== scene, mode: street._mode, tiles: street._scene?._loaded.get("ofm") ?? 0, veil: veilUp(street) };
+  },
+
+  // -- the globe, with a street view over it -------------------------------------------------
+  /** Opened with its button in the keyboard's hand, from a page that may not use its storage. */
+  async openStreetBlockedStorage() {
+    const view = shownView();
+    const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("The document is sandboxed", "SecurityError");
+      },
+    });
+    const shown = search.passes[1];
+    await view._select(shown.id);
+    view._els.streetBtn.focus();
+    const outcome = await view._openStreet(shown, { user: true }).then(
+      () => "opened",
+      (err) => `refused: ${err?.message}`,
+    );
+    Object.defineProperty(globalThis, "localStorage", storage);
+    return { outcome, street: !!view._street };
+  },
+  keyboard() {
+    const view = shownView();
+    const street = view._street;
+    return {
+      inStreet: view.shadowRoot.activeElement === street,
+      focused: street?.shadowRoot.activeElement?.className ?? null,
+      under: tabStopsUnder(view),
+      bearing: street?._view.bearing,
+    };
+  },
+  clockAndStreet() {
+    const view = shownView();
+    return { street: !!view._street, clock: view._clock.mode, map: !!view._map, loaded: !!view._loaded, message: view._els.loaderMsg.textContent, id: view._map?._mapId ?? null };
+  },
+  loseGlobe: (restoreAfterMs) => loseContext(shownView()._map.getCanvas(), restoreAfterMs),
+  afterClosing() {
+    const view = shownView();
+    return { street: !!view._street, focused: view.shadowRoot.activeElement?.className ?? null, inert: view.shadowRoot.querySelectorAll("[inert]").length };
+  },
+  fullscreen() {
+    const view = shownView();
+    return {
+      real: view.shadowRoot.fullscreenElement === view._wrap,
+      pseudo: view._wrap.classList.contains("maplibregl-pseudo-fullscreen"),
+      attribute: view.hasAttribute("fullscreen"),
+      shrink: !!view._els.map.querySelector(".maplibregl-ctrl-shrink"),
+      map: view._map,
+    };
+  },
+  /** Where the browser has no fullscreen for it: MapLibre's fixed overlay instead. */
+  pseudoFullscreen() {
+    const view = shownView();
+    view._wrap.requestFullscreen = undefined;
+    view._wrap.webkitRequestFullscreen = undefined;
+    view._els.map.querySelector(".maplibregl-ctrl-fullscreen").click();
+  },
+  /** Home Assistant's language changes with the street view open, and changes back. */
+  async globeLanguage() {
+    const view = shownView();
+    const street = view._street;
+    const words = () => ({ layers: street._els.layersBtn.getAttribute("aria-label"), backToLive: street._timebar?._els.liveLong.textContent, simulate: view._els.simBtn.textContent });
+    view.hass = { ...hass, language: "fr", locale: { ...hass.locale, language: "fr" } };
+    await until(() => words().layers !== "Layers");
+    await wait(100);
+    const french = words();
+    view.hass = hass;
+    await until(() => words().layers === "Layers");
+    return { french, back: words() };
+  },
+  mapLoaded: () => !!shownView()._loaded,
+  markMap() {
+    window.__oldMap = shownView()._map;
+  },
+  mapIsNew: () => !!shownView()._loaded && shownView()._map !== window.__oldMap,
+
+  // -- new predictions, and time -------------------------------------------------------------
+  /** A live pass ends in the street view: the next is offered, and the offer taken. */
+  async nextPass() {
+    const view = shownView();
+    const nowS = Math.floor(Date.now() / 1000);
+    const ending = pass(nowS - 293, "Ending", "good");
+    const coming = pass(nowS + 3600, "Coming", "good", [48274]);
+    await newSearch([ending, coming]);
+    await view._select(ending.id);
+    await view._openStreet(ending, { user: true });
+    const street = view._street;
+    const live = street.clock.mode === "live";
+    const offeredAt = await until(() => !street._els.next.hidden) && Date.now() / 1000 - ending.end;
+    const offered = street._els.next.textContent;
+    street._els.next.click();
+    await until(() => street.pass?.id === coming.id);
+    await wait(100);
+    return { live, offered, offeredAt, now: street.pass?.id === coming.id, selected: view._selectedId === coming.id, hiddenAgain: street._els.next.hidden, mode: street.clock.mode };
+  },
+  /** The street view open on a pass that a new search moves: page and street view go on together. */
+  async movedInStreet() {
+    const view = shownView();
+    view._closeStreet({ silent: true });
+    view._stopSimulation({ silent: true });
+    const first = pass(SOON, "First", "good");
+    await newSearch([first]);
+    await view._select(first.id);
+    await view._openStreet(first, { user: true });
+    await until(() => view._street?.detail);
+    const moved = pass(SOON + 40, "First", "good");
+    await newSearch([moved]);
+    await until(() => view._street?.detail?.pass_id === moved.id);
+    const street = view._street;
+    return { wanted: moved.id, selected: view._selectedId, street: street?.pass?.id, path: street?.detail?.pass_id, visibleStart: view._clock.window?.visibleStartS === moved.start };
+  },
+  /** A replay whose pass goes from new predictions, then back to live. */
+  async droppedInReplay() {
+    const view = shownView();
+    view._closeStreet({ silent: true });
+    view._stopSimulation({ silent: true });
+    const first = pass(SOON, "First", "good");
+    const second = pass(SOON + 3600, "Second", "good", [48274]);
+    await newSearch([first, second]);
+    await view._select(first.id, { view: "simulate" });
+    await until(() => view._clock.mode === "sim");
+    await newSearch([second]);
+    view._stopSimulation({ user: true });
+    await wait(1300);
+    return { label: view._els.label.textContent, clock: view._els.clock.textContent, selected: view._selectedId === second.id, user: view._userSelected };
+  },
+  /** A pick stays for a minute past its pass, and not until the next refresh. */
+  async pickPastItsPass() {
+    const view = shownView();
+    const nowS = Math.floor(Date.now() / 1000);
+    const over = pass(nowS - 300 - 59, "Over", "good");
+    const next = pass(nowS + 3600, "Next", "good", [48274]);
+    await newSearch([over, next]);
+    await view._select(over.id);
+    const stayed = view._selectedId === over.id && view._userSelected;
+    await until(() => !view._userSelected);
+    return { stayed, tookS: Date.now() / 1000 - nowS, selected: view._selectedId === next.id };
+  },
+  /** How many frames the globe asks for in two seconds, with a ring where it can be seen and where not. */
+  async ringFrames() {
+    const view = shownView();
+    const nowS = Math.floor(Date.now() / 1000);
+    // Two up at once: the one on show is drawn as a sprite, and the other has the ring.
+    await newSearch([pass(nowS - 60, "Up now", "good"), pass(nowS - 50, "Also up", "good", [48274])]);
+    await until(() => view._rings?.length > 0 && view._space?.animating);
+    // Only the rings count here: not a satellite in sight that moves.
+    view._screenSpeed = () => 0;
+    const count = async () => {
+      let frames = 0;
+      const frame = view._frame;
+      view._frame = function () {
+        frames++;
+        return frame.call(this);
+      };
+      await wait(2000);
+      view._frame = frame;
+      return frames;
+    };
+    const whereIs = view._cloud.whereIs;
+    await wait(1100);
+    const inSight = await count();
+    const center = view._map.getCenter();
+    view._cloud.whereIs = () => ({ lat: -center.lat, lon: center.lng > 0 ? center.lng - 180 : center.lng + 180 });
+    await wait(1100);
+    const behind = await count();
+    view._cloud.whereIs = () => ({ lat: center.lat, lon: center.lng });
+    const backInSight = view._ringsBreathing();
+    view._cloud.whereIs = whereIs;
+    delete view._screenSpeed;
+    return { inSight, behind, backInSight };
+  },
+  /** Another location chosen, and its answer slow: nothing of the last one goes under its name meanwhile. */
+  async switching() {
+    const view = shownView();
+    let release;
+    search.hold = new Promise((go) => (release = go));
+    const was = view._payload.location.entry_id;
+    view.config = { ...view.config, entry_id: OTHER.entry_id };
+    await wait(600);
+    const state = () => ({ message: view._els.loader.hidden ? "" : view._els.loaderMsg.textContent, mission: view._els.mission.hidden, chart: view._els.skySide.hidden, listed: view._passes().length });
+    const during = { data: was === view._payload.location.entry_id, ...state() };
+    search.hold = null;
+    release();
+    await until(() => view._payload.location.entry_id === OTHER.entry_id);
+    await wait(100);
+    return { during, after: state() };
+  },
+  /** Refreshes failing for over ten minutes: what is said of the times shown, until one works. */
+  async staleHint() {
+    const view = shownView();
+    const said = () => view.shadowRoot.textContent.includes("Not connected") || Boolean(view.shadowRoot.querySelector(".facts.stale:not([hidden])")) || [...view.shadowRoot.querySelectorAll(".conds .warn")].some((c) => c.textContent.includes("Not connected"));
+    const render = () => (view._renderMission ? view._renderMission() : view._render());
+    search.failing = true;
+    await view._refresh(true);
+    render();
+    const atFirst = said();
+    view._freshAtS -= 700;
+    render();
+    const later = said();
+    search.failing = false;
+    await view._refresh(true);
+    render();
+    return { atFirst, later, afterwards: said() };
+  },
+  /** The clock of the whole page moved, as if it were that late: a little before midnight, Home Assistant's. */
+  async midnight() {
+    const view = shownView();
+    const real = Date.now;
+    const day = 86400;
+    const midnightS = (Math.floor(real() / 1000 / day) + 2) * day;
+    const shift = (midnightS - 6) * 1000 - real();
+    Date.now = () => real() + shift;
+    const soon = pass(midnightS + 1800, "ISS", "great");
+    await newSearch([soon, pass(midnightS + 90000, "Tiangong", "good", [48274])]);
+    await view._select(soon.id);
+    await wait(100);
+    const heading = () => view._els.skySide.querySelector(".sub").textContent;
+    const before = heading();
+    await until(() => Date.now() / 1000 > midnightS + 1.5);
+    await wait(100);
+    const after = heading();
+    Date.now = real;
+    return { before, after };
+  },
+
+  // -- the panel and its address -------------------------------------------------------------
+  address: () => location.search,
+  panelState() {
+    const view = shownView();
+    return { search: location.search, selected: view._selectedId, street: view._street?.pass?.id ?? null, clock: view._clock.mode, entries: history.length, on: window.__view.isConnected };
+  },
+  ids: () => search.passes.map((p) => p.id),
+  async openStreetHere(index) {
+    const view = shownView();
+    const shown = search.passes[index];
+    await view._select(shown.id);
+    await view._openStreet(shown, { user: true });
+    await wait(200);
+  },
+  closeStreetHere() {
+    shownView()._street._els.closeBtn.click();
+  },
+  /** Somewhere else, as Home Assistant goes: a new address, then "location-changed". */
+  goTo(query) {
+    history.pushState(null, "", `${location.pathname}?mode=panel&${query}`);
+    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+  },
+  async movedPick() {
+    const view = shownView();
+    const picked = pass(SOON, "Picked", "good");
+    await newSearch([picked]);
+    await view._select(picked.id);
+    await wait(50);
+    const moved = pass(SOON + 300, "Picked", "good");
+    await newSearch([moved]);
+    await wait(50);
+    return { wanted: moved.id, search: location.search };
+  },
+  async failedLink() {
+    search.path = () => {
+      throw { code: "unknown_pass", message: "No such pass" };
+    };
+    window.__stage.goTo("pass=123");
+    await wait(300);
+    search.path = honestPath;
+    return location.search;
+  },
+
+  // -- the card ------------------------------------------------------------------------------
+  async cardStreet() {
+    const view = window.__view;
+    view._open(view._hero.pass.id, "street");
+    await until(() => view._street?.pass);
+    await until(() => view._street.detail);
+    const was = view._street.pass;
+    const moved = pass(was.start + 40, was.title, "great");
+    await newSearch([moved, ...search.passes.slice(1)]);
+    await until(() => view._street.pass.id === moved.id && view._street.detail?.pass_id === moved.id);
+    return { wanted: moved.id, street: view._street.pass.id, path: view._street.detail?.pass_id };
+  },
+  /** Home Assistant's language changes under the card, with its street view open. */
+  async cardLanguage() {
+    const view = window.__view;
+    const street = view._street;
+    const chart = () => [...view.shadowRoot.querySelectorAll(".chart text")].map((t) => t.textContent).join(" ");
+    const was = chart();
+    const german = { ...hass, language: "de", locale: { ...hass.locale, language: "de" } };
+    view.hass = german;
+    await until(() => street._els.layersBtn.getAttribute("aria-label") !== "Layers");
+    await wait(100);
+    return {
+      forwarded: street.hass === german,
+      chartWas: was,
+      chart: chart(),
+      layers: street._els.layersBtn.getAttribute("aria-label"),
+      backToLive: street._timebar?._els.liveLong.textContent,
+    };
+  },
+  /** A path on its way as new predictions arrive: the card asks again, and does not keep the old one. */
+  async cardPathInFlight() {
+    const view = window.__view;
+    const [first] = search.passes;
+    let release;
+    const held = new Promise((go) => (release = go));
+    view._client._passTracks.clear();
+    view._detail = view._detailFor = null;
+    search.path = () => held;
+    view._render();
+    await wait(100);
+    // The same pass, on another way across the sky.
+    const wanted = 123;
+    search.path = () => {
+      const fresh = detail(first);
+      fresh.transits[0].rows[0][5] = wanted;
+      return fresh;
+    };
+    await newSearch([...search.passes]);
+    await wait(100);
+    release(detail(first));
+    await wait(300);
+    search.path = honestPath;
+    return { wanted, rows: view._detail?.transits[0].rows[0][5] };
+  },
+
+  // -- without WebGL -------------------------------------------------------------------------
+  async withoutMap() {
+    const view = shownView();
+    const [, second, third] = search.passes;
+    await view._select(second.id, { view: "simulate" });
+    await until(() => view._clock.mode === "sim");
+    const from = view._clock.simMs;
+    await wait(1100);
+    const moved = view._clock.simMs - from;
+    view._stopSimulation({ user: true });
+    await wait(100);
+    view.selectPass(third.id);
+    await until(() => view._selectedId === third.id);
+    return { attribute: view.hasAttribute("no-map"), moved, selected: view._selectedId === third.id };
+  },
+  /** What the message over a page without its map runs into. */
+  messageCovers() {
+    const view = shownView();
+    const message = view._els.loaderMsg.getBoundingClientRect();
+    const hit = [...view.shadowRoot.querySelectorAll(".mission, .strip, .side, .plist, satellite-pass-list")].filter((e) => {
+      if (e.offsetParent === null || !e.checkVisibility?.()) return false;
+      const r = e.getBoundingClientRect();
+      return r.width && r.height && r.left < message.right && r.right > message.left && r.top < message.bottom && r.bottom > message.top;
+    });
+    return { shown: message.width > 0, covers: hit.map((e) => e.className || e.tagName), text: view._els.loaderMsg.textContent, width: innerWidth };
+  },
+  /** Back on the page, with WebGL by then: the map comes, and the page is as it would be. */
+  async webglBack() {
+    window.__webglBack = true;
+    const view = shownView();
+    view.remove();
+    host.append(view);
+    await until(() => view._loaded);
+    await wait(200);
+    return { loaded: !!view._loaded, attribute: view.hasAttribute("no-map"), reload: !view._els.reloadBtn.hidden, frames: view._running };
   },
 };
 

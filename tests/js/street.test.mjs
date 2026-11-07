@@ -1,4 +1,4 @@
-// Tests for the street view: the eye camera and its maths against MapLibre's
+// Tests for the street view: the eye camera and its math against MapLibre's
 // own formulas, the style, the night look and the window pattern
 // (sat-street-scene.js), and the <satellite-street-view> element's lifecycle
 // with a fake MapLibre, fake timers and no DOM library (sat-street.js):
@@ -65,7 +65,7 @@ test("mercator coordinates match MapLibre's MercatorCoordinate", () => {
   const [lng, lat] = lngLatFromMercator(boston.x, boston.y);
   close(lng, -71.0589, 1e-10);
   close(lat, 42.3601, 1e-10);
-  close(meterInMercatorUnits(60), 2 / EARTH_CIRCUMFERENCE, 1e-20, "twice the units per metre at 60°");
+  close(meterInMercatorUnits(60), 2 / EARTH_CIRCUMFERENCE, 1e-20, "twice the units per meter at 60°");
   close(EARTH_CIRCUMFERENCE, 2 * Math.PI * 6371008.8, 1e-6);
 });
 
@@ -83,7 +83,7 @@ function maplibreCameraFrom({ center, elevation, zoom, pitch, bearing }, { fov, 
   return { lng, lat, altitude, pixelPerMeter };
 }
 
-test("the camera lands on the eye, at 25 px per metre, looking any way up to the zenith", () => {
+test("the camera lands on the eye, at 25 px per meter, looking any way up to the zenith", () => {
   const eye = { longitude: BOSTON.longitude, latitude: BOSTON.latitude, eyeAltitude: 12.37 };
   for (const [bearing, pitch, fov, height] of [[35, 95, 50, 720], [125, 120, 50, 720], [240, 150, 70, 844], [10, 178, 90, 600], [300, 80, 40, 300], [0, 180, 60, 800]]) {
     const cam = eyeCamera({ ...eye, bearing, pitch, fov, height });
@@ -91,9 +91,9 @@ test("the camera lands on the eye, at 25 px per metre, looking any way up to the
     close(back.lng, eye.longitude, 1e-9, "longitude");
     close(back.lat, eye.latitude, 1e-9, "latitude");
     close(back.altitude, eye.eyeAltitude, 1e-3, `altitude at pitch ${pitch}`);
-    close(back.pixelPerMeter, PX_PER_M, 1e-3, "scale at the centre");
+    close(back.pixelPerMeter, PX_PER_M, 1e-3, "scale at the center");
     close(cam.distance, height / 2 / Math.tan((fov * DEG) / 2) / PX_PER_M, 1e-9);
-    // Looking up, the centre is above the eye.
+    // Looking up, the center is above the eye.
     if (pitch > 90) assert.ok(cam.elevation > eye.eyeAltitude);
   }
   // The zoom depends only on the latitude (so the window pattern is computed once per place).
@@ -115,7 +115,7 @@ test("the far plane is pushed to 150 km through the transform's private method, 
 
 // ---- the look --------------------------------------------------------------
 
-test("the scene's look: dark walls and lit windows at night, day colours by day, light from the Sun or Moon", () => {
+test("the scene's look: dark walls and lit windows at night, day colors by day, light from the Sun or Moon", () => {
   const night = sceneLook({ azimuth: 80, elevation: -25 }, { azimuth: 200, elevation: 40, fraction: 0.9 });
   const dusk = sceneLook({ azimuth: 260, elevation: -7 }, null);
   const day = sceneLook({ azimuth: 180, elevation: 30 }, null);
@@ -138,7 +138,7 @@ test("the scene's look: dark walls and lit windows at night, day colours by day,
   assert.equal(day.props.lampsOn, false);
   assert.equal(day.props.glow, 0);
   close(Math.hypot(...night.props.light), 1, 0.01);
-  close(Math.atan2(night.props.light[0], night.props.light[1]) / DEG, -160, 0.6, "towards the Moon in the SSW");
+  close(Math.atan2(night.props.light[0], night.props.light[1]) / DEG, -160, 0.6, "toward the Moon in the SSW");
   assert.ok(day.props.ambient[0] > night.props.ambient[0] * 3);
   // Windows lit by the hour: most in the evening, fewest in the small hours.
   const at = (hour) => sceneLook({ azimuth: 80, elevation: -25 }, null, { solarHour: hour }).lit;
@@ -156,7 +156,7 @@ test("the facades come out bay- and floor-sized both ways at any latitude, and s
       const f = FACADE_KINDS[kind];
       const p = facadePattern({ kind, tint: 0, look: night, latitude: lat, ppm: 25 });
       close(p.k, k, 0.01, `k at ${lat}`);
-      // Along a wall: a bay's pixels per its metres at the map's scale, with the fractional zoom put back.
+      // Along a wall: a bay's pixels per its meters at the map's scale, with the fractional zoom put back.
       const zoom = Math.log2((25 * EARTH_CIRCUMFERENCE * Math.cos(lat * DEG)) / 512);
       close(p.zoom, zoom, 1e-9);
       const bay = Math.round(f.bayM * f.pxPerM);
@@ -226,7 +226,7 @@ test("the style: open ground, extruded buildings without the observer's own, ter
   assert.deepEqual(bare.layers.map((l) => l.id), ["ground"]);
   assert.deepEqual(Object.keys(bare.sources), []);
   assert.equal(bare.terrain, undefined);
-  // Street widths are metres at every zoom.
+  // Street widths are meters at every zoom.
   const roads = style.layers.find((l) => l.id === "roads");
   assert.equal(roads.paint["line-width"][1][0], "exponential");
 });
@@ -410,7 +410,7 @@ test("a path belongs to its pass, even under an id from before a refresh", () =>
   assert.ok(arc.length > 20 && arc.every((p) => p.elevation >= 10));
 });
 
-test("a path under an old id needs a satellite in common, as a neighbouring pass can start that close", () => {
+test("a path under an old id needs a satellite in common, as a neighboring pass can start that close", () => {
   const { pass, detail } = syntheticPass({ members: 2 });
   const moved = String(pass.start + 60);
   assert.ok(detailMatches(pass, { ...detail, pass_id: moved, transits: detail.transits.slice(2) }), "the brightest left, its group did not");
@@ -503,7 +503,7 @@ test("open() starts once and asks for the path; dispose() frees the map and leav
   }
 });
 
-test("a neighbouring pass's path is refused and the view goes on asking, while its own is taken under an old id", async () => {
+test("a neighboring pass's path is refused and the view goes on asking, while its own is taken under an old id", async () => {
   const clock = installClock(T0 * 1000);
   try {
     const { view } = streetView();
@@ -515,10 +515,10 @@ test("a neighbouring pass's path is refused and the view goes on asking, while i
     view.open();
     await clock.settle(3);
     assert.equal(asked.length, 1);
-    const neighbour = { ...detail, pass_id: String(pass.start - 100), transits: detail.transits.map((t) => ({ ...t, norad_id: 40000 })) };
-    view.detail = neighbour;
+    const neighbor = { ...detail, pass_id: String(pass.start - 100), transits: detail.transits.map((t) => ({ ...t, norad_id: 40000 })) };
+    view.detail = neighbor;
     assert.equal(view.detail, null, "as it arrives");
-    view.setPass(pass, neighbour);
+    view.setPass(pass, neighbor);
     assert.equal(view.detail, null, "or as a host hands it over");
     assert.ok(!view._planetarium.primary, "nothing drawn from it");
     await clock.settle(1, 2500);
@@ -617,7 +617,7 @@ test("follow keeps the satellite in view once it nears the edge, and leaves a fr
     view.open();
     await clock.settle(3);
     view.clock.simulate({ fromS: pass.start, toS: pass.end, startS: pass.peak.time, rate: 1, playing: true });
-    // Point the camera well away: the next frames turn it towards the satellite.
+    // Point the camera well away: the next frames turn it toward the satellite.
     view._setView({ bearing: (pass.transits[0].brightest.azimuth + 120) % 360, pitch: 95 });
     const before = view._view.bearing;
     await clock.settle(20, 16);
@@ -680,11 +680,14 @@ test("a formatter that changes language in place rewords the view", async () => 
     view.open();
     await clock.settle(3);
     assert.equal(view._els.closeBtn.getAttribute("aria-label"), "street.close");
+    let reworded = 0;
+    view._timebar = { refresh: () => reworded++, update() {}, setContext() {}, destroy() {} };
     const fmt = view.formatter;
     const english = fmt.t;
     fmt.t = (key, vars) => `de:${english(key, vars)}`;
     view.formatter = fmt;
     assert.equal(view._els.closeBtn.getAttribute("aria-label"), "de:street.close");
+    assert.equal(reworded, 1, "and the time bar with it");
     // Through hass, as Home Assistant switches language.
     fmt.t = (key, vars) => `fr:${english(key, vars)}`;
     view.hass = { language: "fr", locale: { language: "fr" } };
@@ -1069,6 +1072,7 @@ test("a phone's compass is magnetic: the view adds the declination at home to fa
   const clock = installClock(T0 * 1000);
   const handlers = new Map();
   globalThis.addEventListener = (type, fn) => handlers.set(type, fn);
+  const listening = () => [...handlers.keys()].filter((type) => type.startsWith("deviceorientation")).length;
   globalThis.removeEventListener = (type, fn) => handlers.get(type) === fn && handlers.delete(type);
   globalThis.DeviceOrientationEvent = class {};
   try {
@@ -1086,7 +1090,7 @@ test("a phone's compass is magnetic: the view adds the declination at home to fa
     close(view._view.bearing, 360 + here(BOSTON), 1e-6, "Boston's magnetic north");
     assert.ok(view._view.bearing > 345 && view._view.bearing < 347, "about 14° west of true north");
     await view._toggleOrientation();
-    assert.equal(handlers.size, 0, "off");
+    assert.equal(listening(), 0, "off");
     delete globalThis.ondeviceorientationabsolute;
     // iPhone: a compass heading, clockwise from magnetic north. To magnetic east:
     await view._toggleOrientation();
@@ -1099,7 +1103,7 @@ test("a phone's compass is magnetic: the view adds the declination at home to fa
     close(view._view.bearing, here(seattle), 1e-3, "Seattle's magnetic north");
     assert.ok(here(seattle) > 14.5);
     view.dispose();
-    assert.equal(handlers.size, 0);
+    assert.equal(listening(), 0);
   } finally {
     delete globalThis.addEventListener;
     delete globalThis.removeEventListener;
@@ -1221,10 +1225,10 @@ test("a street photo near home is the street: no map, the photo says what it hid
     view._syncControls();
     assert.equal(view._els.photoPick.hidden, false);
     assert.match(view._els.photoWhere.textContent, /street\.photo_where/);
-    assert.match(view._els.photoWhere.textContent, /"distance":"street\.metres\{\\"value\\":\\"20\\"\}"/);
+    assert.match(view._els.photoWhere.textContent, /"distance":"street\.meters\{\\"value\\":\\"20\\"\}"/);
     assert.match(view._els.photoWhen.textContent, /street\.photo_count\{"index":"1","count":"3"\}/);
     assert.equal(view._els.photoNote.hidden, true);
-    // The info sheet credits the photographer and the licence, and says where the photo came from.
+    // The info sheet credits the photographer and the license, and says where the photo came from.
     view._els.sheet.querySelector = () => ({ addEventListener() {} });
     view._renderSheet();
     assert.match(view._els.sheet.innerHTML, /street\.credit_photo_text/);
@@ -1557,7 +1561,7 @@ test("stepping to another photo restarts once, not every five seconds from then 
   }
 });
 
-test("a photo that is rejected moves on to the next without restarting anything afterwards", async () => {
+test("a photo that is rejected moves on to the next without restarting anything afterward", async () => {
   const clock = installClock(T0 * 1000);
   try {
     const { factory, made } = fakePhotoScenes({ fail: ["near"] });
@@ -1746,5 +1750,138 @@ test("a search that is done is not asked again by a restart", async () => {
     view.dispose();
   } finally {
     clock.restore();
+  }
+});
+
+test("a 3D scene starts over when its context comes back, and a photo restores itself", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView();
+    const { pass, detail } = syntheticPass({ start: T0 + 100 });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    assert.equal(view._mode, "3d");
+    let restarts = 0;
+    view._restartScene = () => restarts++;
+    const scene3d = view._scene;
+    view._contextLost(scene3d);
+    view._contextRestored(scene3d);
+    assert.equal(restarts, 1, "a new map, as MapLibre's restored textures are stale");
+    Object.defineProperty(view, "_mode", { value: "photo", configurable: true });
+    view._contextLost(scene3d);
+    view._contextRestored(scene3d);
+    assert.equal(restarts, 1, "a photo restores itself");
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("the title gives a group's length as its row does: that of the brightest satellite", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView();
+    const { pass, detail } = syntheticPass({ start: T0 + 100, members: 2 });
+    pass.duration = 840;
+    pass.transits[0].peak ??= { elevation: 60, azimuth: 180 };
+    pass.transits[0].start = pass.start;
+    pass.transits[0].end = pass.start + 300;
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    assert.ok(view._els.when.textContent.endsWith(view.formatter.duration(300)), view._els.when.textContent);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("when a live pass has gone by, the next one is offered, and only then", async () => {
+  const start = T0 + 1000;
+  const { pass, detail } = syntheticPass({ start });
+  const clock = installClock((pass.end - 3) * 1000);
+  try {
+    const { view } = streetView();
+    const next = { ...pass, id: "next", title: "Tiangong", start: pass.end + 3600, end: pass.end + 3900 };
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.nextPass = () => next;
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    for (let i = 0; i < 10; i++) clock.step(40);
+    assert.equal(view.clock.mode, "live");
+    assert.equal(view._nextOffered, null, "it is still up");
+    assert.equal(view._els.next.hidden, true);
+    for (let i = 0; i < 8 * 25; i++) clock.step(40);
+    assert.equal(view._els.look.dataset.text, "street.gone|");
+    assert.equal(view._nextOffered, next);
+    assert.equal(view._els.next.hidden, false);
+    assert.match(view._els.next.textContent, /street\.next_pass/);
+    // Nothing to offer.
+    view.nextPass = () => null;
+    for (let i = 0; i < 25; i++) clock.step(40);
+    assert.equal(view._nextOffered, null);
+    assert.equal(view._els.next.hidden, true);
+    // A replay runs on as asked, whatever comes next.
+    view.nextPass = () => next;
+    view.clock.simulate({ fromS: pass.start, toS: pass.end + 300, startS: pass.end + 5 });
+    for (let i = 0; i < 25; i++) clock.step(40);
+    assert.equal(view._nextOffered, null);
+    view.dispose();
+  } finally {
+    clock.restore();
+  }
+});
+
+test("the network back, a start that went without what it could not reach has another go, once", async () => {
+  const clock = installClock(T0 * 1000);
+  try {
+    const { view } = streetView();
+    const { pass, detail } = syntheticPass({ start: T0 + 100 });
+    view.clock = new PassClock({ now: () => Date.now() });
+    view.setPass(pass, detail);
+    view.open();
+    await clock.settle(3);
+    let restarts = 0;
+    const restart = view._restartScene.bind(view);
+    view._restartScene = () => {
+      restarts++;
+      restart();
+    };
+    view._onOnline();
+    assert.equal(restarts, 0, "it missed nothing");
+    view._degraded({ source: "terrain" });
+    view._onOnline();
+    assert.equal(restarts, 1);
+    view._onReady();
+    view._onOnline();
+    assert.equal(restarts, 1, "once");
+    view.dispose();
+    view._degraded({ source: "terrain" });
+    view._onOnline();
+    assert.equal(restarts, 1, "not once closed");
+  } finally {
+    clock.restore();
+  }
+});
+
+test("a page that may not use its storage still gets the street view's options: its defaults", async () => {
+  const { savedStreetOptions } = await import("../../custom_components/satellite_spotter/frontend/sat-street-host.js");
+  const had = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+      throw new Error("The document is sandboxed");
+    },
+  });
+  try {
+    assert.deepEqual(savedStreetOptions(), {});
+    assert.deepEqual(savedStreetOptions({ getItem: () => '{"street":"model"}' }), { street: "model" });
+  } finally {
+    if (had) Object.defineProperty(globalThis, "localStorage", had);
+    else delete globalThis.localStorage;
   }
 });

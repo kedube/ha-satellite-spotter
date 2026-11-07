@@ -24,7 +24,7 @@ days ahead, for each location you add.
   before a pass, with a picture of its path across the sky.
 - **A sidebar page** with the globe, pass simulations, a sky chart and the list of passes.
 - **Street view:** the pass in a 360° photo of your street, darkened for the night, or in a 3D
-  model of the neighbourhood, under the real stars. Buildings and trees hide the satellite where
+  model of the neighborhood, under the real stars. Buildings and trees hide the satellite where
   they really would.
 - **Two dashboard cards:** the globe, and a lighter passes card that needs no 3D.
 - **Nine languages:** English, Dutch, French, German, Italian, Polish, Brazilian Portuguese,
@@ -34,10 +34,10 @@ days ahead, for each location you add.
 |---|---|
 | ![A Starlink train simulated on the globe](docs/images/simulation.jpg) | ![The passes card, counting down to the next pass and showing where to look during a pass](docs/images/passes-card.jpg) |
 | **Street view from a photo** | **Street view from the 3D model** |
-| ![A street photo in Amsterdam, darkened, with BlueWalker 3's path crossing behind a bare tree](docs/images/street-photo-amsterdam.jpg) | ![The ISS crossing the sky over a modelled street of houses, trees and street lights](docs/images/street-model.jpg) |
+| ![A street photo in Amsterdam, darkened, with BlueWalker 3's path crossing behind a bare tree](docs/images/street-photo-amsterdam.jpg) | ![The ISS crossing the sky over a modeled street of houses, trees and street lights](docs/images/street-model.jpg) |
 
 Street photo: Panoramax Test-NL (Amsterdam), CC BY-SA 4.0, from Panoramax. That screenshot is
-under the same licence.
+under the same license.
 
 Only interested in the space station? [ISS Tracker](https://github.com/kedube/ha-iss-tracker) shows
 its live position and its passes up to 30 days ahead, and can run alongside this.
@@ -83,7 +83,7 @@ Manual installs don't get update notifications. Repeat these steps to update.
    `custom_components/satellite_spotter` folder instead.
 4. Restart Home Assistant.
 
-If the catalogue was downloaded within the last two hours, or CelesTrak has just refused a download,
+If the catalog was downloaded within the last two hours, or CelesTrak has just refused a download,
 its copy stays in `.storage/satellite_spotter.catalog`, so that adding a location back doesn't have to
 ask CelesTrak again. It holds public orbital data and nothing about you. If you're removing the
 integration for good, you can delete that file.
@@ -94,7 +94,7 @@ Go to **Settings → Devices & services → Add integration → Satellite Spotte
 check it on the map and give its elevation; a rough value is fine. The name starts its entity ids:
 **Home** gives `sensor.home_next_visible_pass`.
 
-Use **Add location** for more places, such as a cabin; they share one catalogue download.
+Use **Add location** for more places, such as a cabin; they share one catalog download.
 **Reconfigure** moves a location and keeps its entities.
 
 ## Options
@@ -146,7 +146,7 @@ names.
 | `binary_sensor.home_visible_pass_soon` | On from the advance notice before the pass's brightest satellite appears until the pass ends |
 | `binary_sensor.home_bright_pass_soon` | The same, for bright passes |
 | `calendar.home_visible_passes` | Every pass for about five days, with where to look |
-| `sensor.home_orbital_elements_epoch` | Diagnostic: the middle date of the catalogue's orbital elements, with `downloaded`, `age_days`, `catalog_size`, `stale` and `last_download_error` |
+| `sensor.home_orbital_elements_epoch` | Diagnostic: the middle date of the catalog's orbital elements, with `downloaded`, `age_days`, `catalog_size`, `stale` and `last_download_error` |
 
 The sensors with a pass's details, and the binary sensors while they are on, carry `pass_id`, `pass_start`,
 `pass_end`, `satellite`, `catalog_number`, `kind`, `about_url`, `satellite_count`, `satellites`, `duration_seconds`,
@@ -166,7 +166,7 @@ long it lasts and the forecast clouds. It is a rule of thumb. With clear skies, 
 rates great and over a quarter good.
 
 There is no sensor for the next pass whether visible or not, as there is in
-[ISS Tracker](https://github.com/kedube/ha-iss-tracker): of the catalogue's 970 or so satellites, about
+[ISS Tracker](https://github.com/kedube/ha-iss-tracker): of the catalog's 970 or so satellites, about
 a hundred are above 10° at any moment.
 
 `sensor.home_satellite_elevation` and `device_tracker.home_satellite_position` are the entities that
@@ -252,7 +252,7 @@ Both are in the card picker, with visual editors.
 
 ## How it works
 
-1. **Catalogue.** Every 12 hours, once for all locations, the integration downloads orbital elements
+1. **Catalog.** Every 12 hours, once for all locations, the integration downloads orbital elements
    from CelesTrak (about 4.7 MB) and joins them with `brightness.csv`, a table that ships with it,
    mostly of magnitudes measured by the Mini-MegaTORTORA telescope. It holds objects that could reach
    magnitude 3 overhead. Starlinks are chosen by height instead: those below 350 km, which are new
@@ -270,7 +270,7 @@ Both are in the card picker, with visual editors.
    as a train, and the page gives the directions, height and length of those alone. A pass is **bright**
    when it beats magnitude 0.5, and the sky's limit by 3 magnitudes, after sunset.
 
-Passes are searched for again with each new catalogue, as they depend on the orbits, and the clouds
+Passes are searched for again with each new catalog, as they depend on the orbits, and the clouds
 are refreshed every hour. In between nothing polls: entities change at the moments that matter.
 
 ### How far to trust it
@@ -282,7 +282,7 @@ are refreshed every hour. In between nothing polls: entities change at the momen
   naked eye.
 - **The list differs from See A Satellite Tonight's**, which is a comparison here, not the truth. Over
   five days at eight cities it found 249 of the site's 330 passes outside Starlink trains, and 65
-  others. Of the site's 31 bright passes it listed 29, and labelled 18 of them bright.
+  others. Of the site's 31 bright passes it listed 29, and labeled 18 of them bright.
 - **Starlink trains** matched in the next two days (2 of 2), but only 11 of 17 over five days,
   because their orbits change quickly.
 - **Brightness is an estimate.** A satellite can look a magnitude or more brighter or fainter than
@@ -301,8 +301,8 @@ loads the rest while the page, a card or the street view is open.
 
 | What | Goes to | What it learns |
 |---|---|---|
-| Catalogue download | CelesTrak | Nothing about where you are |
-| Cloud forecast (optional) | Open-Meteo, unless you choose a weather entity | Each location's coordinates to about a kilometre, every hour |
+| Catalog download | CelesTrak | Nothing about where you are |
+| Cloud forecast (optional) | Open-Meteo, unless you choose a weather entity | Each location's coordinates to about a kilometer, every hour |
 | Checking a new key, once, in the options | Google or Mapillary | The key. Google also gets Home Assistant's language and country. Not your location |
 | Globe imagery | NASA GIBS and EOX, or Esri if you choose it | The area on screen |
 | Place names and street map | OpenStreetMap, through Home Assistant | The area on screen |
@@ -321,14 +321,16 @@ unless you use a weather entity. Only administrators' browsers receive the keys.
 - **No clouds on the passes.** A weather entity needs an hourly forecast with cloud coverage, and many
   have none or only a day or two ahead.
 - **"Satellite predictions are paused" in Repairs.** The orbital elements are over two weeks old and
-  no fresh catalogue could be downloaded. Check that Home Assistant can reach `celestrak.org`.
+  no fresh catalog could be downloaded. Check that Home Assistant can reach `celestrak.org`.
   Predictions resume by themselves.
 - **Setup or the page says CelesTrak refused a download.** CelesTrak allows one download of the same
   data every two hours, and anything else on your connection downloading it can use that up. Nothing
   needs doing: the integration waits two hours, then tries again by itself. Deleting and re-adding a
   location doesn't shorten the wait.
-- **The page or a card asks for WebGL 2.** Turn on hardware acceleration in your browser. The passes
-  card needs no WebGL.
+- **The page or a card asks for WebGL 2.** Turn on hardware acceleration in your browser. Everything
+  but the globe still works until then, and the passes card needs no WebGL.
+- **"Not connected. Times are from…"** The page or card has not reached Home Assistant for over ten
+  minutes, so what it shows is from then. It catches up by itself.
 - **The street view shows the 3D model, or only the sky.** There is no 360° photo within 200 m, a
   service did not answer, or the device is too slow for the model. **Layers** and the title card say
   which.
@@ -369,19 +371,20 @@ The first release, in October 2026, drew on two earlier projects:
 
 - **Willem Vooijs's [See A Satellite Tonight integration](https://github.com/wildekek/ha-see-a-satellite)
   and [see-a-satellite](https://github.com/wildekek/see-a-satellite) library**, both under the MIT
-  licence and both ports of James Darpinian's [See A Satellite Tonight](https://james.darpinian.com/satellites/)
-  website. Satellite Spotter began as a fork of them, for its predictions, its catalogue and the first
+  license and both ports of James Darpinian's [See A Satellite Tonight](https://james.darpinian.com/satellites/)
+  website. Satellite Spotter began as a fork of them, for its predictions, its catalog and the first
   version of its entities.
 - **[ISS Tracker](https://github.com/kedube/ha-iss-tracker)**, by the same author and also under the
   GNU GPL v3, for the beginnings of its globe, page and globe card, and some of its translations.
 
-Most of the page, including the street view and the passes card, is new here. Release 1.08 replaced
-the library and the website's catalogue with CelesTrak's orbits, a brightness table of its own and
-prediction code in the integration itself, which uses `sgp4`. Release 1.13 brought new entities
-modelled on ISS Tracker's.
+Much of this page, including the street view and passes card, is original to this integration. The 
+underlying architecture has been significantly redesigned, replacing the original library and website 
+catalog with orbital data from CelesTrak, a custom brightness model, and integrated prediction algorithms 
+powered by sgp4. Additional entities were also introduced, modeled after those in ISS Tracker.
 
-What came from Willem's projects has been largely rewritten since. Code that came from them remains
-under the notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-satellite.txt).
+While the project originally drew inspiration and code from Willem's projects, most of that functionality 
+has since been substantially rewritten. Any remaining code derived from those projects continues to be 
+covered by the license notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-satellite.txt).
 
 ### The predictions
 
@@ -411,7 +414,7 @@ under the notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-sate
 
 ### Data
 
-| Used for | Source | Licence or terms |
+| Used for | Source | License or terms |
 |---|---|---|
 | Orbits | [CelesTrak](https://celestrak.org), from US Space Force data on Space-Track and, for Starlinks, SpaceX's ephemerides | |
 | Brightness (`brightness.csv` credits each value) | [Mini-MegaTORTORA](http://mmt.favor2.info/satellites), then [Mike McCants's list](https://www.mmccants.org/), [SCORE](https://score.cps.iau.org) (IAU CPS) and [Stellarium](https://stellarium.org), and [Heavens-Above](https://www.heavens-above.com/satinfo.aspx?satid=48274) for Tiangong | MMT: used with its team's permission, citing the papers above. SCORE: CC BY 4.0. Stellarium: GPL |
@@ -419,7 +422,7 @@ under the notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-sate
 | Cloud cover | [Open-Meteo](https://open-meteo.com) | CC BY 4.0, free for non-commercial use |
 | Globe imagery | NASA Blue Marble and Black Marble via GIBS; [Sentinel-2 cloudless](https://s2maps.eu) by EOX IT Services (contains modified Copernicus Sentinel data 2025); Esri World Imagery (Esri, Vantor, Earthstar Geographics and the GIS User Community) | NASA: free with credit. EOX: CC BY-NC-SA 4.0, personal and non-commercial use. Esri: its terms of use |
 | Maps and terrain | © OpenStreetMap contributors, via [OpenFreeMap](https://openfreemap.org) and Home Assistant; [Mapzen Terrain Tiles](https://github.com/tilezen/joerd/blob/master/docs/attribution.md) on AWS Open Data | OpenStreetMap: ODbL |
-| Street photos | [Panoramax](https://panoramax.fr), Mapillary, Google Street View | Panoramax: each photographer's licence, shown with the photo. Mapillary: CC BY-SA 4.0. Google: © Google, its terms |
+| Street photos | [Panoramax](https://panoramax.fr), Mapillary, Google Street View | Panoramax: each photographer's license, shown with the photo. Mapillary: CC BY-SA 4.0. Google: © Google, its terms |
 | Stars and constellations | Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren 1991; VizieR V/50, CDS); IAU star names; [d3-celestial](https://github.com/ofrohn/d3-celestial) © 2015 Olaf Frohn, after the IAU and Sky & Telescope charts | IAU names: CC BY 4.0. d3-celestial: BSD-3-Clause. Charts: CC BY 3.0 |
 | Compass correction | World Magnetic Model WMM2025, NOAA NCEI and the British Geological Survey | Public domain |
 
@@ -427,10 +430,10 @@ under the notice in [`LICENSES/MIT-see-a-satellite.txt`](LICENSES/MIT-see-a-sate
 
 - **Sun, Moon and planets in the drawn sky:** the Astronomical Almanac (Sun), Meeus 1998, *Astronomical Algorithms*
   (Moon), JPL's approximate planetary elements, Mallama & Hilton 2018 (planet magnitudes) and
-  Neuhäuser et al. 2022 (planet colours).
+  Neuhäuser et al. 2022 (planet colors).
 - **The Moon in a pass's rating:** the Astronomical Almanac's low-precision formulae.
 - **Drawing the sky:** Lieske et al. 1977 (precession), Sæmundsson 1986 (refraction), Kasten &
-  Young 1989 (air mass) and Ballesteros 2012 (star colours).
+  Young 1989 (air mass) and Ballesteros 2012 (star colors).
 - **Software:** [`sgp4`](https://pypi.org/project/sgp4/) by Brandon Rhodes (MIT),
   [MapLibre GL JS](https://maplibre.org) (BSD-3-Clause), and the
   [Sora](https://github.com/sora-xor/sora-font) typeface in the logo (SIL Open Font License 1.1).

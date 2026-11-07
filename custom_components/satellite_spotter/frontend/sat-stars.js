@@ -5,15 +5,15 @@
  * Stars to V 5.5 (plus 2 fainter ones used by constellation figures) from the Yale Bright Star
  * Catalogue, 5th ed., pairs closer than 60" merged, brightest first.
  *
- * STARS: positions (J2000), V magnitudes and B-V colours: Hoffleit D., Warren Jr W.H., The Bright
+ * STARS: positions (J2000), V magnitudes and B-V colors: Hoffleit D., Warren Jr W.H., The Bright
  * Star Catalogue, 5th Revised Ed. (Preliminary Version), Astronomical Data Center, NSSDC/ADC
- * (1991); VizieR catalogue V/50, CDS, Strasbourg, France.
+ * (1991); VizieR catalog V/50, CDS, Strasbourg, France.
  * STAR_NAMES: IAU Catalog of Star Names, IAU Working Group on Star Names (WGSN),
  * https://www.iau.org/public/themes/naming_stars/, CC BY 4.0.
  * CONSTELLATIONS: figures and label positions from d3-celestial (Copyright (c) 2015, Olaf Frohn,
  * BSD-3-Clause, https://github.com/ofrohn/d3-celestial), after the IAU constellation charts by the
  * IAU and Sky & Telescope magazine (Roger Sinnott & Rick Fienberg), CC BY 3.0.
- * The d3-celestial licence follows.
+ * The d3-celestial license follows.
  *
  * Copyright (c) 2015, Olaf Frohn
  * All rights reserved.
@@ -45,7 +45,7 @@
 export const STAR_COUNT = 2870;
 
 /**
- * Right ascension and declination (J2000, degrees), V magnitude and B-V colour index
+ * Right ascension and declination (J2000, degrees), V magnitude and B-V color index
  * of every star, brightest first, flat: [ra, dec, mag, bv, ra, dec, mag, bv, …].
  */
 export const STARS = [

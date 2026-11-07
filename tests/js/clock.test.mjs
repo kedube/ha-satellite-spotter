@@ -176,7 +176,7 @@ test("the fast-forward eases from now to the pass, then the replay plays", () =>
   let last = -Infinity;
   for (let t = 0; t <= duration; t += 50) {
     const s = clock.tick(t) / 1000;
-    assert.ok(s >= last, `time went backwards at ${t} ms`);
+    assert.ok(s >= last, `time went backward at ${t} ms`);
     assert.ok(s <= WINDOW.fromS);
     last = s;
   }
@@ -262,4 +262,22 @@ test("a pass is watched live from two minutes before it starts until it ends, an
   assert.equal(passIsLive(pass, pass.start - 90), true, "90 s before: the countdown is on, live");
   assert.equal(passIsLive(pass, pass.end - 1), true);
   assert.equal(passIsLive(pass, pass.end), false);
+});
+
+test("a pass that moves within the replay: the part highlighted moves with it, and the time stays", () => {
+  const clock = new PassClock({ now: () => 1000 * 1000 });
+  let changes = 0;
+  clock.on("change", () => changes++);
+  clock.setVisible(5, 6);
+  assert.equal(changes, 0, "no replay");
+  clock.simulate({ fromS: 2000, toS: 3000, visibleStartS: 2100, visibleEndS: 2900, startS: 2500 });
+  changes = 0;
+  clock.setVisible(2110, 2910);
+  assert.deepEqual({ ...clock.window }, { fromS: 2000, toS: 3000, visibleStartS: 2110, visibleEndS: 2910 });
+  assert.equal(clock.simS, 2500);
+  assert.equal(changes, 1);
+  clock.setVisible(2110, 2910);
+  assert.equal(changes, 1, "nothing new");
+  clock.setVisible(1900, 3100);
+  assert.deepEqual({ ...clock.window }, { fromS: 2000, toS: 3000, visibleStartS: 2000, visibleEndS: 3000 }, "within the window");
 });

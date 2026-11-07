@@ -20,7 +20,7 @@ const [astro, sky, { horizonAt }] = await Promise.all([
 ]);
 const {
   azElVector, bvToRgb, extinction, galacticToRaDec, horizonMatrix, horizonVectors, moonAzEl, moonLitPath, moonPhase,
-  planetPositions, raDecVector, skyDirection, skyPalette, starAlpha, starRadius, starVectors, sunAzEl, toHorizon, towards,
+  planetPositions, raDecVector, skyDirection, skyPalette, starAlpha, starRadius, starVectors, sunAzEl, toHorizon, toward,
 } = astro;
 const { CONSTELLATIONS, STAR_NAMES, STARS } = sky;
 
@@ -40,7 +40,7 @@ export const LIGHT_POLLUTION = {
 /**
  * The Milky Way as soft layers along the galactic equator: each a strip from
  * galactic latitude −w to +w over a range of galactic longitude (the wider,
- * fainter ones all round the sky, the narrow bright ones towards the centre
+ * fainter ones all around the sky, the narrow bright ones toward the center
  * of the Galaxy in Sagittarius), as J2000 unit vectors every 3°.
  */
 export const MILKY_WAY = [
@@ -69,7 +69,7 @@ export const MILKY_WAY = [
 
 /** Seconds between time ticks on the path. */
 export const TICK_S = 30;
-/** Labelled ticks at least this far apart (CSS px). */
+/** Labeled ticks at least this far apart (CSS px). */
 export const LABEL_SPACING_PX = 70;
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
@@ -100,7 +100,7 @@ export function makeProjector({ bearing, pitch, roll = 0, fov, width, height }) 
   const f = height / 2 / Math.tan((fov * DEG) / 2);
   const cx = width / 2;
   const cy = height / 2;
-  /** World vector -> camera space: x right, y down, z backwards (in front is z < 0). */
+  /** World vector -> camera space: x right, y down, z backward (in front is z < 0). */
   const toCamera = (dx, dy, dz) => {
     const x1 = dx * cb + dy * sb;
     const y1 = -dx * sb + dy * cb;
@@ -140,7 +140,7 @@ const projectEnu = (P, e, n, u) => P.projectVector(e, -n, u);
  * inside the part of the screen the HUD leaves free (`safe`: fractions of the
  * width and height kept clear at each edge), with the horizon in view if it
  * can be, at the narrowest field of view that does it (so the path is big),
- * turned towards the arc's highest point when the choice is free. A coarse
+ * turned toward the arc's highest point when the choice is free. A coarse
  * search over field of view, tilt and heading, then a finer one around the
  * best.
  * @param {{azimuth: number, elevation: number}[]} arc the visible part (or the whole path above the horizon)
@@ -214,8 +214,8 @@ export function horizonGlowPenalty(elevation, dome) {
 }
 
 /**
- * Per-frame constants of the sky's colour for a Sun (and Moon) and a light
- * pollution setting; skyColorAt() then gives the colour of any direction.
+ * Per-frame constants of the sky's color for a Sun (and Moon) and a light
+ * pollution setting; skyColorAt() then gives the color of any direction.
  */
 export function skyModel(sun, { moon = null, lightPollution = "suburban" } = {}) {
   const palette = skyPalette(sun.elevation, moon);
@@ -240,14 +240,14 @@ export function skyModel(sun, { moon = null, lightPollution = "suburban" } = {})
   };
 }
 
-// Sodium and LED light scattered back down: a warm grey over the horizon.
+// Sodium and LED light scattered back down: a warm gray over the horizon.
 const DOME = [70, 52, 38];
 // The air below the horizon, where the map leaves a gap: a dark haze.
 const HAZE = 0.42;
 
 /**
- * Colour (sRGB 0-255, unrounded) of the sky at an azimuth and elevation: the
- * horizon's colour fading up to the zenith's, the glow of the Sun on its side
+ * Color (sRGB 0-255, unrounded) of the sky at an azimuth and elevation: the
+ * horizon's color fading up to the zenith's, the glow of the Sun on its side
  * low down, the whiter aureole around it by day, the town's glow over the
  * horizon, and a dark haze below it. Matches sat-astro's skyColor above the
  * horizon without light pollution, but allocates nothing (the gradient asks
@@ -437,7 +437,7 @@ export function tickTimes(t0, t1, step = TICK_S) {
 
 /**
  * Which ticks get a time label: in path order, each at least `minPx` from the
- * last labelled one, so the labels never crowd where the path runs towards
+ * last labeled one, so the labels never crowd where the path runs toward
  * the viewer. Points are {x, y} or null (off screen); returns their indices.
  */
 export function spacedLabels(points, minPx = LABEL_SPACING_PX) {
@@ -458,10 +458,10 @@ const overlaps = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a
 /**
  * Lay labels out without overlaps, most important first (lower priority
  * value first; ties keep their order). A label {x, y (anchor), w, h,
- * offsets: [[dx, dy] …] of its centre from the anchor, tried in order}
+ * offsets: [[dx, dy] …] of its center from the anchor, tried in order}
  * goes at the first offset whose box stays inside the screen (less `inset`)
  * and clear of every label placed so far and of the obstacles; else it is
- * left out. Returns the placed labels, each with `box` and centre `cx`, `cy`.
+ * left out. Returns the placed labels, each with `box` and center `cx`, `cy`.
  */
 export function placeLabels(labels, { width, height, inset = 4, obstacles = [], gap = 3 } = {}) {
   const placed = [];
@@ -592,7 +592,7 @@ export function hiddenStretches(data, hidden, t0, t1, gap = 4.5) {
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 const ELEVATIONS = [10, 20, 30, 45, 60, 75];
 // Gold of the visible path, the dimmer gold of its sunlit but faint part, the
-// violet of Earth's shadow (the telemetry's), and the label colours.
+// violet of Earth's shadow (the telemetry's), and the label colors.
 const GOLD = "252,211,77";
 const GOLD_LIGHT = "253,230,138";
 const SHADOW = "196,181,253";
@@ -637,7 +637,7 @@ export class Planetarium {
     this.skyline = null;
     this._starVectors = starVectors(STARS);
     this._starEnu = new Float32Array(this._starVectors.length);
-    // The eye sees star colours faintly: half the blackbody saturation.
+    // The eye sees star colors faintly: half the blackbody saturation.
     this._starColors = [];
     for (let i = 0; i < STARS.length; i += 4) this._starColors.push(bvToRgb(STARS[i + 3], 0.5).join(","));
     this._names = new Map(STAR_NAMES);
@@ -947,7 +947,7 @@ export class Planetarium {
       const n = m[3] * x + m[4] * y + m[5] * z;
       const u = m[6] * x + m[7] * y + m[8] * z;
       const q = u > -0.08 ? projectEnu(P, e, n, u) : null;
-      // Far outside the screen the projection runs away (towards the camera's side): break there.
+      // Far outside the screen the projection runs away (toward the camera's side): break there.
       return q && Math.abs(q[0] - P.cx) < P.width * 3 && Math.abs(q[1] - P.cy) < P.height * 3 ? q : null;
     };
     ctx.save();
@@ -1001,14 +1001,14 @@ export class Planetarium {
     ctx.restore();
   }
 
-  /** A sky label (see _paintSkyLabels) with offsets of its centre around an anchor. */
+  /** A sky label (see _paintSkyLabels) with offsets of its center around an anchor. */
   _skyLabel(text, x, y, { size = 10.5, weight = 600, color, priority, offsets, spacing = 0 }) {
     const w = this._textWidth(text, weight, size) + spacing * Math.max(0, text.length - 1);
     const h = size + 3;
     return { text, x, y, w, h, color, priority, font: `${weight} ${size}px ${this.font}`, spacing, offsets: offsets(w, h) };
   }
 
-  /** The sky's colour, computed at 1/8 resolution and scaled up smoothly. */
+  /** The sky's color, computed at 1/8 resolution and scaled up smoothly. */
   _paintGradient(ctx, P, model, W, H) {
     const sw = Math.max(8, Math.ceil(P.width / 8));
     const sh = Math.max(8, Math.ceil(P.height / 8));
@@ -1171,8 +1171,8 @@ export class Planetarium {
     // 2.5 times its true size, so the phase reads at any zoom.
     const r = Math.max(5, 2.5 * P.f * Math.tan(m.radius * DEG));
     if (q[0] < -r * 10 || q[1] < -r * 10 || q[0] > P.width + r * 10 || q[1] > P.height + r * 10) return;
-    // Direction of the lit side on screen: towards the Sun along the great circle.
-    const ahead = towards(m, sky.sun, 1);
+    // Direction of the lit side on screen: toward the Sun along the great circle.
+    const ahead = toward(m, sky.sun, 1);
     const q2 = P.project(ahead.azimuth, ahead.elevation);
     const litSide = q2 ? Math.atan2(q2[0] - q[0], -(q2[1] - q[1])) / DEG : skyDirection(m, sky.sun);
     const night = 1 - sky.model.day;
@@ -1342,7 +1342,7 @@ export class Planetarium {
   /** Small chevrons along the visible part, pointing the way the satellite goes. */
   _paintChevrons(ctx, P, track, pts) {
     const d = track.data;
-    let travelled = 0;
+    let traveled = 0;
     let last = null;
     ctx.save();
     ctx.strokeStyle = `rgba(${GOLD_LIGHT},0.9)`;
@@ -1357,13 +1357,13 @@ export class Planetarium {
       }
       const step = Math.hypot(q[0] - p[0], q[1] - p[1]);
       if (step > 200) continue; // a jump across the screen edge
-      travelled += step;
+      traveled += step;
       if (last === null) {
         last = 0;
-        travelled = 50;
+        traveled = 50;
       }
-      if (travelled < 120) continue;
-      travelled = 0;
+      if (traveled < 120) continue;
+      traveled = 0;
       const angle = Math.atan2(q[1] - p[1], q[0] - p[0]);
       if (q[0] < 0 || q[1] < 0 || q[0] > P.width || q[1] > P.height) continue;
       ctx.save();
@@ -1502,8 +1502,8 @@ export class Planetarium {
       });
     }
     // Time labels on the ticks, at least LABEL_SPACING_PX apart, where the satellite is in sight.
-    const labelled = spacedLabels(ticks.map((tk) => (tk && !tk.hidden && tk.s.lit ? tk : null)));
-    for (const i of labelled) {
+    const labeled = spacedLabels(ticks.map((tk) => (tk && !tk.hidden && tk.s.lit ? tk : null)));
+    for (const i of labeled) {
       const tk = ticks[i];
       const text = this._time(tk.t);
       const w = this._textWidth(text, 600, 11);
@@ -1752,7 +1752,7 @@ function magAround(d, a, b) {
 
 /**
  * The dot of a satellite: white-gold with a glow when visible, gold when only
- * sunlit, slate in shadow. Returns how far it reaches from its centre (px).
+ * sunlit, slate in shadow. Returns how far it reaches from its center (px).
  */
 function paintDot(ctx, x, y, s, { primary }) {
   const r = (s.lit ? dotRadius(s.magnitude) : 2) * (primary ? 1 : 0.75);
@@ -1974,7 +1974,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/** Letter-spaced text, centred (canvas letterSpacing is not everywhere yet). */
+/** Letter-spaced text, centered (canvas letterSpacing is not everywhere yet). */
 function spaced(ctx, text, x, y, spacing) {
   if ("letterSpacing" in ctx) {
     ctx.letterSpacing = `${spacing}px`;

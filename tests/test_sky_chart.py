@@ -43,8 +43,8 @@ def pixels(png: bytes) -> np.ndarray[Any, Any]:
         crc = struct.unpack(">I", png[at + 8 + length : at + 12 + length])[0]
         assert crc == zlib.crc32(kind + body)
         if kind == b"IHDR":
-            width, height, depth, colour, *_ = struct.unpack(">IIBBBBB", body)
-            assert (depth, colour) == (8, 2)
+            width, height, depth, color, *_ = struct.unpack(">IIBBBBB", body)
+            assert (depth, color) == (8, 2)
         elif kind == b"IDAT":
             data += body
         at += 12 + length
@@ -71,7 +71,7 @@ def test_north_is_up_and_east_to_the_right_like_the_pages_chart() -> None:
 
 def test_the_visible_part_of_the_path_is_gold_and_elsewhere_is_not() -> None:
     image = pixels(render_chart(ACROSS))
-    # Halfway down towards the east, on the path.
+    # Halfway down toward the east, on the path.
     red, green, blue = image[240, 288]
     assert red > 200 and green > 150 and blue < 150
     # Up in the north-west, away from it and the guides: dark blue sky.

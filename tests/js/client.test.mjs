@@ -57,10 +57,10 @@ test("each error gets its sentence", () => {
   assert.deepEqual(errorText({ code: "location_disabled" }), { key: "globe.location_disabled" });
   assert.deepEqual(errorText({ code: "stale_catalog" }), { key: "globe.stale_catalog" });
   // The integration's reason, unless it only says that it is waiting.
-  assert.deepEqual(errorText({ code: "not_ready", message: "Waiting for the satellite catalogue" }), { key: "globe.waiting" });
-  assert.deepEqual(errorText({ code: "not_ready", message: "Catalogue download failed: HTTP 503" }), {
+  assert.deepEqual(errorText({ code: "not_ready", message: "Waiting for the satellite catalog" }), { key: "globe.waiting" });
+  assert.deepEqual(errorText({ code: "not_ready", message: "Catalog download failed: HTTP 503" }), {
     key: "globe.waiting_because",
-    vars: { reason: "Catalogue download failed: HTTP 503" },
+    vars: { reason: "Catalog download failed: HTTP 503" },
   });
   assert.deepEqual(errorText({ code: "home_assistant_error", message: "Boom" }), { key: "globe.data_failed", vars: { error: "Boom" } });
   assert.deepEqual(errorText({ code: "setup_failed", message: "Setup failed; see the Home Assistant log" }), {
@@ -143,7 +143,7 @@ test("a failed request is not kept, so it is asked for again", async () => {
   });
 });
 
-test("positions, the catalogue and the tiles token", async () => {
+test("positions, the catalog and the tiles token", async () => {
   const { hass, calls } = fakeHass((msg) => {
     if (msg.type === COMMANDS.catalog) return { version: 3, satellites: [] };
     if (msg.type === COMMANDS.mapToken) return { token: "abc" };
@@ -163,4 +163,35 @@ test("positions, the catalogue and the tiles token", async () => {
   assert.deepEqual(await client.mapToken(), { token: "abc" });
   // Without Home Assistant there is nothing to ask.
   await assert.rejects(new SatClient(() => null).passes());
+});
+
+test("what was asked for before new predictions is not kept or shared after them", async () => {
+  let search = 1;
+  const waiting = [];
+  const hass = {
+    callWS: (msg) => {
+      if (msg.type === COMMANDS.passes) return Promise.resolve({ searched_at: search, server_time: Date.now() / 1000 });
+      return new Promise((resolve) => waiting.push({ msg, resolve }));
+    },
+  };
+  const client = new SatClient(() => hass);
+  await client.fetchPasses("a");
+
+  const path = client.passTrack("10", { entryId: "a" });
+  const orbit = client.track(25544, 1000, 2000, { entryId: "a" });
+  assert.equal(waiting.length, 2);
+  search = 2;
+  await client.fetchPasses("a");
+  // Someone new asking does not get the old answer on its way either.
+  const asking = client.passTrack("10", { entryId: "a" });
+  assert.equal(waiting.length, 3, "asked again, not shared");
+  for (const { msg, resolve } of waiting.splice(0, 2)) resolve(msg.type === COMMANDS.passTrack ? { pass_id: "10", rows: "old" } : { track: ["old"] });
+  await new Promise((later) => setImmediate(later));
+  assert.equal(waiting.length, 2, "and those who asked before get the new one: the orbit asks again, the path shares the new request");
+  for (const { msg, resolve } of waiting.splice(0)) resolve(msg.type === COMMANDS.passTrack ? { pass_id: "10", rows: "new" } : { track: ["new"] });
+  assert.equal((await asking).rows, "new");
+  assert.equal((await path).rows, "new");
+  assert.deepEqual(await orbit, ["new"]);
+  assert.equal((await client.passTrack("10", { entryId: "a" })).rows, "new");
+  assert.equal(waiting.length, 0, "and that is what is kept");
 });

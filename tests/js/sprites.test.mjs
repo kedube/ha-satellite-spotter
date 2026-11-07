@@ -34,7 +34,7 @@ test("kind codes are the cloud's table, shared with sat-space.js", () => {
   assert.equal(spriteKind(undefined), "satellite");
 });
 
-test("every kind has a colour of its own for the cloud", () => {
+test("every kind has a color of its own for the cloud", () => {
   const seen = new Set();
   for (const kind of KINDS) {
     const rgb = KIND_COLORS[kind];
@@ -112,7 +112,7 @@ test("browsers without roundRect get square corners rather than an error", () =>
   assert.ok(record(() => drawSprite("hubble", 128), { missing: ["roundRect"] }).log.some(([m]) => m === "rect"));
 });
 
-test("a glow fades from the centre to the edge", () => {
+test("a glow fades from the center to the edge", () => {
   const { log } = record(() => drawGlow(64, "rgba(255,255,255,1)", "rgba(255,255,255,0)"));
   assert.deepEqual(log[0], ["createRadialGradient", 32, 32, 0, 32, 32, 32]);
   const gradient = log.find(([m, k]) => m === "set" && k === "fillStyle")[2];

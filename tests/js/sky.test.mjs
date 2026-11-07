@@ -16,7 +16,7 @@ const track = [
 ];
 
 test("sky chart geometry and SVG", () => {
-  const [cx, cy] = skyXY(0, 90, 100, 110); // zenith is the centre
+  const [cx, cy] = skyXY(0, 90, 100, 110); // zenith is the center
   close(cx, 110, 1e-9);
   close(cy, 110, 1e-9);
   const [nx, ny] = skyXY(0, 0, 100, 110); // north on the horizon is at the top

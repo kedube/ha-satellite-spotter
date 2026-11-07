@@ -1,5 +1,6 @@
 // Fakes for the street view's tests (no DOM library): a recording 2D canvas,
 // just enough DOM, a MapLibre map, timers and animation frames.
+import { makeStrict } from "./strict-timers.mjs";
 
 /** A 2D context that accepts every call and records them as [name, ...args]. */
 export function fakeContext(canvas) {
@@ -99,7 +100,7 @@ export function fakeElement(tag = "div") {
 
 /** The street view's element map (_els) made of fakes, with real-looking canvases. */
 export function fakeHud(width = 1280, height = 800) {
-  const names = ["root", "stage", "map", "title", "state", "chips", "icon", "name", "when", "look", "note", "tools", "cam", "layersBtn", "infoBtn",
+  const names = ["root", "stage", "map", "title", "state", "chips", "icon", "name", "when", "look", "note", "next", "tools", "cam", "layersBtn", "infoBtn",
     "closeBtn", "compassBtn", "lookBtn", "followBtn", "phoneBtn", "menu", "sheet", "banner", "bannerText", "bar", "veil", "veilMsg", "veilSub", "announce",
     "photoPick", "photoPrev", "photoNext", "photoWhere", "photoWhen", "photoNote", "sources", "photoCredit"];
   const els = Object.fromEntries(names.map((n) => [n, fakeElement()]));
@@ -142,6 +143,7 @@ export function installClock(startMs) {
     return id;
   };
   globalThis.clearTimeout = (id) => clock.timeouts.delete(id);
+  makeStrict(["requestAnimationFrame", "cancelAnimationFrame", "setTimeout", "clearTimeout"]);
   const listeners = new Map();
   globalThis.document = {
     hidden: false,

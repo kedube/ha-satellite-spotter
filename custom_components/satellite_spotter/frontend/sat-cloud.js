@@ -1,5 +1,5 @@
 /**
- * The globe's cloud of every satellite in the catalogue: asking for where they are, backing off when
+ * The globe's cloud of every satellite in the catalog: asking for where they are, backing off when
  * that fails, handing the layer what it draws and moving it along. Its life is three calls:
  *
  *   attach(layer)   a new layer, after a rebuild: it gets what is known at once
@@ -28,7 +28,7 @@ export class SatelliteCloud {
    * @param {(want: object) => Promise<object>} o.fetchPositions
    * @param {(version: number) => Promise<object>} o.fetchCatalog
    * @param {() => number} o.nowS
-   * @param {(catalog: object, ids: number[]) => object} o.cloudOf what the layer draws of a catalogue
+   * @param {(catalog: object, ids: number[]) => object} o.cloudOf what the layer draws of a catalog
    * @param {(positions: Float32Array, out: Float32Array) => Float32Array} o.toLayer positions as the layer takes them
    * @param {() => void} o.onLoaded new positions are in
    * @param {(fn: () => void) => void} o.whenShown run this once the globe is on show
@@ -56,7 +56,7 @@ export class SatelliteCloud {
     this._ids = null;
     this._version = null;
     this._drawn = null;
-    /** Satellites by NORAD id; the catalogue itself stays through a reset only in the client's cache. */
+    /** Satellites by NORAD id; the catalog itself stays through a reset only in the client's cache. */
     this.byId = null;
     this._index = null;
     this._bits = null;
@@ -120,7 +120,7 @@ export class SatelliteCloud {
     try {
       const positions = await o.fetchPositions(want);
       if (unwanted()) return;
-      // The satellites first: positions in a new order need the catalogue's order too.
+      // The satellites first: positions in a new order need the catalog's order too.
       await this._ensureCatalog(positions);
       if (unwanted()) return;
       this.positions = positions;
@@ -173,12 +173,14 @@ export class SatelliteCloud {
     const end = pos.start + (pos.count - 1) * pos.step;
     const covered = t >= pos.start - 30 && t <= end + 30;
     const visible = covered && !hidden;
-    if (visible && !(slow && this._xy && Math.abs(t - this._movedTo) < MOVE_AT_LEAST_S)) {
+    const moved = visible && !(slow && this._xy && Math.abs(t - this._movedTo) < MOVE_AT_LEAST_S);
+    if (moved) {
       this._ll = interpolatePositions(pos, t, this._ll);
       this._xy = this._o.toLayer(this._ll, this._xy);
       this._movedTo = t;
     }
-    layer.setCloudPositions(visible ? this._xy : null, { visible });
+    // The layer keeps what it was given: copied and sent to the GPU again only when it is new.
+    layer.setCloudPositions(moved ? this._xy : null, { visible });
     return covered;
   }
 
@@ -204,6 +206,12 @@ export class SatelliteCloud {
   pick(x, y, width, height, radius) {
     const i = this._layer?.pick?.(x, y, width, height, radius) ?? -1;
     return i >= 0 ? this.positions?.ids?.[i] ?? null : null;
+  }
+
+  /** Where a satellite is now, {lat, lon}, if it is in the cloud and has moved there yet. */
+  whereIs(noradId) {
+    const i = this._index?.get(noradId);
+    return i !== undefined && this._ll ? { lat: this._ll[i * 4], lon: this._ll[i * 4 + 1] } : null;
   }
 
   /** How high a satellite is now (km), if the cloud knows. */

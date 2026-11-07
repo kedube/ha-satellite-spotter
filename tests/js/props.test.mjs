@@ -40,14 +40,14 @@ const area = (kind, ring, holes = []) => ({ kind, rings: [ring, ...holes], bbox:
 
 // ---- places ------------------------------------------------------------------------
 
-test("local metres follow the map's own Mercator scale, there and back", () => {
+test("local meters follow the map's own Mercator scale, there and back", () => {
   const frame = localFrame(HOME.latitude, HOME.longitude);
   for (const p of [[0, 0], [120, -80], [-350, 260]]) {
     const back = frame.toLocal(frame.toLngLat(p));
     close(back[0], p[0], 1e-6);
     close(back[1], p[1], 1e-6);
   }
-  // As MapLibre has it: mercator units per metre times the metres east and north.
+  // As MapLibre has it: mercator units per meter times the meters east and north.
   const [lng, lat] = frame.toLngLat([100, 50]);
   const a = mercatorFromLngLat(HOME.longitude, HOME.latitude);
   const b = mercatorFromLngLat(lng, lat);
@@ -163,7 +163,7 @@ test("street lights line the streets where there are houses, on one side, their 
   assert.deepEqual(placeLamps({ streets: [street], buildings: covered }), []);
 });
 
-test("the map's features are read in local metres: trees' areas, buildings, roads and lit streets", () => {
+test("the map's features are read in local meters: trees' areas, buildings, roads and lit streets", () => {
   const frame = localFrame(HOME.latitude, HOME.longitude);
   const poly = (ring) => ({ type: "Polygon", coordinates: [ring.map(frame.toLngLat)] });
   const line = (points) => ({ type: "LineString", coordinates: points.map(frame.toLngLat) });
@@ -278,7 +278,7 @@ test("the pools of light: a disc on the terrain under each lamp, for a soft fall
 
 // ---- the matrix ---------------------------------------------------------------------------
 
-test("the layer's matrix puts local metres where MapLibre's world pixels are, in float64", () => {
+test("the layer's matrix puts local meters where MapLibre's world pixels are, in float64", () => {
   const worldSize = 512 * 2 ** 20.5;
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const M = localMatrix(identity, worldSize, HOME.latitude, HOME.longitude);
@@ -289,8 +289,8 @@ test("the layer's matrix puts local metres where MapLibre's world pixels are, in
   // (Float32 keeps 24 bits of the world pixels here: the real view-projection takes the place out, below.)
   close(x, m.x * worldSize + 10 * ppm, 64, "east is +x");
   close(y, m.y * worldSize - 20 * ppm, 64, "north is -y");
-  close(z, 3, 1e-6, "metres up as they are");
-  // A real view-projection: the observer's place first taken out, so float32 keeps millimetres.
+  close(z, 3, 1e-6, "meters up as they are");
+  // A real view-projection: the observer's place first taken out, so float32 keeps millimeters.
   const shifted = [...identity];
   shifted[12] = -m.x * worldSize;
   shifted[13] = -m.y * worldSize;
@@ -320,7 +320,7 @@ function layerWith(look) {
 }
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-const NIGHT = { light: [0, 0, 1], lightColour: [0.05, 0.05, 0.06], ambient: [0.12, 0.13, 0.16], lampsOn: true, glow: 1, pool: 0.3 };
+const NIGHT = { light: [0, 0, 1], lightColor: [0.05, 0.05, 0.06], ambient: [0.12, 0.13, 0.16], lampsOn: true, glow: 1, pool: 0.3 };
 
 test("the layer draws its trees and lights instanced, with the pools and glows added on top", () => {
   const { layer, calls, gl } = layerWith(NIGHT);

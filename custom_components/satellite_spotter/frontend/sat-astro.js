@@ -2,12 +2,12 @@
  * Astronomy for the planetarium sky of the street view: sidereal time and
  * precession, stars in the observer's sky, the Sun, the Moon and its phase,
  * the planets Mercury to Saturn with their magnitudes, refraction and
- * extinction, the colour of the sky through twilight, and star drawing
+ * extinction, the color of the sky through twilight, and star drawing
  * helpers. Pure functions with no DOM, unit tested against Skyfield (JPL
  * DE421) with node --test "tests/js/*.test.mjs".
  *
  * Angles are degrees; azimuth runs clockwise from north. An observer is
- * {latitude, longitude, elevation} (metres), as in sat-geo.js. A date is a
+ * {latitude, longitude, elevation} (meters), as in sat-geo.js. A date is a
  * Date or unix milliseconds. Positions are geometric, like the pass
  * predictions: refraction() lifts them near the horizon when wanted.
  *
@@ -106,7 +106,7 @@ export function horizonMatrixOfDate(date, observer) {
 }
 
 /**
- * Rotation from J2000 equatorial coordinates (the star catalogue's) to the
+ * Rotation from J2000 equatorial coordinates (the star catalog's) to the
  * observer's horizon frame [east, north, up]: precession to date, then the
  * Earth's turn. Precession is needed: it moves the stars 0.36 deg by 2026.
  * Row-major; WebGL's uniformMatrix3fv wants it transposed.
@@ -175,7 +175,7 @@ export function horizonVectors(matrix, vectors, out = new Float32Array(vectors.l
 /** J2000 RA/Dec of galactic coordinates, for the band of the Milky Way (b = 0). */
 export function galacticToRaDec(l, b = 0) {
   const g = raDecVector(l, b);
-  // Columns: the galactic x (centre), y and z (north pole) axes in J2000.
+  // Columns: the galactic x (center), y and z (north pole) axes in J2000.
   return vectorRaDec([
     -0.0548755604 * g[0] + 0.4941094279 * g[1] - 0.867666149 * g[2],
     -0.8734370902 * g[0] - 0.44482963 * g[1] - 0.1980763734 * g[2],
@@ -269,7 +269,7 @@ const MOON_B = [
 ];
 
 /**
- * The Moon from the Earth's centre (Meeus ch. 47, about 10" and 20 km):
+ * The Moon from the Earth's center (Meeus ch. 47, about 10" and 20 km):
  * ecliptic longitude and latitude, RA/Dec of the mean equator and equinox
  * of date, distance in km. Seen from the ground it is up to a degree lower
  * (parallax): use moonAzEl for the observer's sky.
@@ -320,7 +320,7 @@ export function moonAzEl(date, observer) {
   const moon = moonPosition(date);
   const lat = observer.latitude * DEG;
   const n = WGS84_A_KM / Math.sqrt(1 - WGS84_E2 * Math.sin(lat) ** 2);
-  // The observer from the Earth's centre, in their own [east, north, up] axes.
+  // The observer from the Earth's center, in their own [east, north, up] axes.
   const here = [
     0,
     -n * WGS84_E2 * Math.sin(lat) * Math.cos(lat),
@@ -365,7 +365,7 @@ export function moonPhase(date) {
 }
 
 /**
- * Outline of the lit part of a Moon of radius r centred on (0, 0), as SVG
+ * Outline of the lit part of a Moon of radius r centered on (0, 0), as SVG
  * path data (canvas takes it too, through Path2D): the bright limb, then the
  * terminator, half an ellipse r·|2k-1| wide. `litSide` is the direction of
  * the lit side on screen, degrees clockwise from up (skyDirection).
@@ -388,7 +388,7 @@ export function moonLitPath(r, fraction, litSide) {
 // JPL "Keplerian Elements for Approximate Positions of the Major Planets"
 // (E. M. Standish), table 1, 1800-2050 AD: a (au), e, I, L, long. of
 // perihelion, long. of ascending node (deg, J2000 ecliptic), then their rates
-// per century. The Earth is the Earth-Moon barycentre (under 5000 km off).
+// per century. The Earth is the Earth-Moon barycenter (under 5000 km off).
 const ELEMENTS = {
   mercury: [0.38709927, 0.20563593, 7.00497902, 252.2503235, 77.45779628, 48.33076593,
     0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081],
@@ -405,7 +405,7 @@ const ELEMENTS = {
 };
 export const PLANETS = ["mercury", "venus", "mars", "jupiter", "saturn"];
 /**
- * B-V colour indices of the planets, to tint them like stars with bvToRgb: Neuhäuser et al.
+ * B-V color indices of the planets, to tint them like stars with bvToRgb: Neuhäuser et al.
  * 2022, MNRAS 516, 693, from Tholen et al. 2000 and Mallama et al. 2017.
  */
 const PLANET_BV = { mercury: 0.97, venus: 0.81, mars: 1.43, jupiter: 0.87, saturn: 1.09 };
@@ -457,9 +457,9 @@ function planetMagnitude(name, r, delta, i, ringTilt = 0) {
 }
 
 /**
- * The bright planets from the Earth's centre (parallax is under 0.01 deg),
+ * The bright planets from the Earth's center (parallax is under 0.01 deg),
  * corrected for light time: J2000 RA/Dec, distance (au), phase angle,
- * illuminated fraction, visual magnitude and B-V colour.
+ * illuminated fraction, visual magnitude and B-V color.
  */
 export function planetPositions(date) {
   const t = centuriesTT(date);
@@ -504,7 +504,7 @@ export function refraction(elevation, pressure = 1010, temperature = 10) {
 }
 
 /**
- * Air mass towards an elevation: 1 at the zenith, about 5.6 at 10 deg and
+ * Air mass toward an elevation: 1 at the zenith, about 5.6 at 10 deg and
  * 38 on the horizon (Kasten & Young 1989). Held at its horizon value below.
  */
 export function airmass(elevation) {
@@ -537,11 +537,11 @@ export function skyDirection(from, to) {
 }
 
 /**
- * The point `degrees` along the great circle from one point of the sky towards
+ * The point `degrees` along the great circle from one point of the sky toward
  * another. Project both through any camera to orient something on screen,
  * like the Moon's lit side in the sky chart.
  */
-export function towards(from, to, degrees) {
+export function toward(from, to, degrees) {
   const a = azElVector(from.azimuth, from.elevation);
   const b = azElVector(to.azimuth, to.elevation);
   const c = dot(a, b);
@@ -572,7 +572,7 @@ export function skyAt(date, observer) {
   };
 }
 
-// ---------------------------------------------------------------- sky colours
+// ---------------------------------------------------------------- sky colors
 
 /** The part of the day by the Sun's elevation: day, civil, nautical, astronomical (twilight) or night. */
 export function twilight(sunElevation) {
@@ -586,7 +586,7 @@ export function twilight(sunElevation) {
 // By the Sun's elevation: the zenith, the horizon away from the Sun, the
 // horizon under the Sun (sRGB), the height of that glow (deg), and the
 // faintest star the eye picks up. No channel of the zenith darkens as the Sun
-// climbs (so the rounded colours cannot either): a high Sun gives a deeper,
+// climbs (so the rounded colors cannot either): a high Sun gives a deeper,
 // brighter blue.
 const SKY = [
   [-90, [2, 4, 10], [8, 12, 24], [8, 12, 24], 6, 6.0],
@@ -604,7 +604,7 @@ const SKY = [
 const MOONLIT = { zenith: [22, 36, 70], horizon: [44, 60, 98] };
 
 /**
- * Colours of the sky for a Sun elevation: zenith, horizon away from the Sun
+ * Colors of the sky for a Sun elevation: zenith, horizon away from the Sun
  * and horizon under it (sRGB 0-255), the height of that glow (deg), the
  * limiting magnitude for the stars and the twilight. With the Moon
  * ({elevation, fraction}) it lightens the night and drowns faint stars.
@@ -638,10 +638,10 @@ export function skyPalette(sunElevation, moon = null) {
 }
 
 /**
- * Colour of the sky (sRGB 0-255) at an azimuth and elevation, for a Sun at
- * {azimuth, elevation}: the horizon colour fading up to the zenith's, with
+ * Color of the sky (sRGB 0-255) at an azimuth and elevation, for a Sun at
+ * {azimuth, elevation}: the horizon color fading up to the zenith's, with
  * the glow of the Sun low down on its side, and a whiter aureole round it
- * by day. Below the horizon it is the horizon's colour.
+ * by day. Below the horizon it is the horizon's color.
  */
 export function skyColor(azimuth, elevation, sun, palette = skyPalette(sun.elevation)) {
   const e = Math.max(0, elevation);
@@ -658,16 +658,16 @@ export function skyColor(azimuth, elevation, sun, palette = skyPalette(sun.eleva
 
 // ---------------------------------------------------------------- stars
 
-/** Effective temperature (K) of a star from its B-V colour index (Ballesteros 2012). */
+/** Effective temperature (K) of a star from its B-V color index (Ballesteros 2012). */
 export function bvToTemperature(bv) {
   const b = clamp(bv, -0.4, 2.0);
   return 4600 * (1 / (0.92 * b + 1.7) + 1 / (0.92 * b + 0.62));
 }
 
 /**
- * Colour (sRGB 0-255) of a star from its B-V: the blackbody colour of its
+ * Color (sRGB 0-255) of a star from its B-V: the blackbody color of its
  * temperature (Tanner Helland's fit, white at 6600 K). `saturation` 0 gives
- * white; the eye sees star colours faintly, so 0.5-0.7 looks natural.
+ * white; the eye sees star colors faintly, so 0.5-0.7 looks natural.
  */
 export function bvToRgb(bv, saturation = 1) {
   const t = bvToTemperature(bv) / 100;

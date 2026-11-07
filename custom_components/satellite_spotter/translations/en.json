@@ -15,7 +15,7 @@
         "data_description": {
           "name": "Used as the device name, for example \"Home\" or \"Cabin\".",
           "location": "The spot you observe from.",
-          "elevation": "In metres above sea level. A rough value is fine."
+          "elevation": "In meters above sea level. A rough value is fine."
         }
       },
       "reconfigure": {
@@ -27,14 +27,14 @@
         },
         "data_description": {
           "location": "The spot you observe from.",
-          "elevation": "In metres above sea level. A rough value is fine."
+          "elevation": "In meters above sea level. A rough value is fine."
         }
       }
     },
     "error": {
       "invalid_location": "Enter a latitude between -90° and 90° and a valid longitude.",
       "name_required": "Enter a name for this location.",
-      "invalid_elevation": "Enter the elevation as a number of metres.",
+      "invalid_elevation": "Enter the elevation as a number of meters.",
       "cannot_connect": "Could not download the satellite catalog. Check that Home Assistant can reach the internet, then try again.",
       "download_limited": "CelesTrak, where the orbital data comes from, is not allowing another download yet. Try again in two hours.",
       "unknown": "Unexpected error while loading the satellite catalog. The log has the details."
@@ -60,8 +60,8 @@
           "units": "Units"
         },
         "data_description": {
-          "brightness_cutoff": "A pass is listed only if it gets at least this bright. Magnitudes run backwards, so a lower number means brighter: 2.25 suits a suburban sky, 1 leaves the easy ones, and below 0 only the dazzling ones.",
-          "cloud_forecast": "Shows how cloudy it is expected to be at each pass. Unless you choose a weather entity below, Open-Meteo receives this location's coordinates, rounded to about a kilometre, every hour.",
+          "brightness_cutoff": "A pass is listed only if it gets at least this bright. Magnitudes run backward, so a lower number means brighter: 2.25 suits a suburban sky, 1 leaves the easy ones, and below 0 only the dazzling ones.",
+          "cloud_forecast": "Shows how cloudy it is expected to be at each pass. Unless you choose a weather entity below, Open-Meteo receives this location's coordinates, rounded to about a kilometer, every hour.",
           "weather_entity": "Optional. Takes the clouds from this entity's hourly forecast, and Open-Meteo is not asked. Without cloud coverage in that forecast, passes show no clouds.",
           "alert_lead_minutes": "The \"Visible pass soon\" and \"Bright pass soon\" sensors turn on this long before the brightest satellite of the pass appears.",
           "min_elevation": "A satellite counts only while it is at least this high. Raise it if trees or buildings hide your horizon.",

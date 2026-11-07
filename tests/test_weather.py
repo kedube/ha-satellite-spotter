@@ -49,7 +49,7 @@ async def test_what_open_meteo_is_asked(
 
     ((_, url, _, headers),) = aioclient_mock.mock_calls
     assert dict(url.query) == {
-        # The position to about a kilometre, as the README says.
+        # The position to about a kilometer, as the README says.
         "latitude": "-41.29",
         "longitude": "174.78",
         "hourly": "cloud_cover",

@@ -109,7 +109,7 @@ export function trackStep(spanS, step = 30) {
  * Requests for one view. `getHass` is read on every call, so a view can swap
  * Home Assistant's object (and tests their fakes). Answers that do not change
  * once made are kept: pass tracks by pass, focus tracks by request, the
- * catalogue by version. A request already under way is shared, not repeated.
+ * catalog by version. A request already under way is shared, not repeated.
  */
 export class SatClient {
   /** @param {() => object} getHass */
@@ -168,6 +168,9 @@ export class SatClient {
     if (newSearch) {
       this._passTracks.clear();
       this._tracks.clear();
+      // Answers still on their way are of the old predictions: not to be shared, or kept.
+      this._epoch = (this._epoch ?? 0) + 1;
+      for (const key of this._inflight.keys()) if (key.startsWith("pt:") || key.startsWith("tr:")) this._inflight.delete(key);
     }
     return { payload, offsetMs: nextClockOffset(offsetMs, payload?.server_time, sent, Date.now()), newSearch };
   }
@@ -179,11 +182,14 @@ export class SatClient {
   async passTrack(passId, { entryId, step } = {}) {
     const key = `${entryId ?? ""}|${passId}|${step ?? ""}`;
     if (this._passTracks.has(key)) return this._passTracks.get(key);
+    const epoch = this._epoch;
     const result = await this._once(`pt:${key}`, () => {
       const msg = { type: COMMANDS.passTrack, pass_id: passId };
       if (step) msg.step = step;
       return this._call(msg, entryId);
     });
+    // Asked before new predictions: whoever asked again has the new answer coming.
+    if (epoch !== this._epoch) return this.passTrack(passId, { entryId, step });
     this._remember(this._passTracks, key, result, 24);
     if (result?.pass_id && result.pass_id !== passId) {
       this._remember(this._passTracks, `${entryId ?? ""}|${result.pass_id}|${step ?? ""}`, result, 24);
@@ -198,22 +204,25 @@ export class SatClient {
     const st = trackStep(e - s, step);
     const key = `${entryId ?? ""}|${noradId}|${s}|${e}|${st}`;
     if (this._tracks.has(key)) return this._tracks.get(key);
+    const epoch = this._epoch;
     const result = await this._once(`tr:${key}`, () =>
       this._call({ type: COMMANDS.track, norad_id: noradId, start: iso(s), end: iso(e), step: st }, entryId)
     );
+    // Asked before new predictions: as for passTrack.
+    if (epoch !== this._epoch) return this.track(noradId, startS, endS, { step, entryId });
     const rows = result?.track ?? [];
     this._remember(this._tracks, key, rows, 16);
     return rows;
   }
 
-  /** Every catalogue satellite's positions, sampled from startS (default now). */
+  /** Every catalog satellite's positions, sampled from startS (default now). */
   positions({ startS, span = 600, step = 60, entryId } = {}) {
     const msg = { type: COMMANDS.positions, span, step };
     if (Number.isFinite(startS)) msg.start = iso(Math.floor(startS));
     return this._once(`pos:${entryId ?? ""}|${msg.start ?? "now"}|${span}|${step}`, () => this._call(msg, entryId));
   }
 
-  /** The catalogue (names, kinds, magnitudes) of a version, kept until a newer one is asked for. */
+  /** The catalog (names, kinds, magnitudes) of a version, kept until a newer one is asked for. */
   async catalog({ version, entryId } = {}) {
     if (this._catalog && (version === undefined || this._catalog.version === version)) return this._catalog;
     const result = await this._once(`cat:${version ?? ""}`, () => this._call({ type: COMMANDS.catalog }, entryId));

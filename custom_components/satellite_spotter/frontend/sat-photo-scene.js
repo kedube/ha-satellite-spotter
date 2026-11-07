@@ -3,8 +3,8 @@
  * (sat-photo.js) drawn with WebGL 2 for the street view's camera, darkened
  * for the moment of the pass, with its sky transparent so that the
  * planetarium sky drawn behind it shows through, and hidden by what stands
- * in it. Along the sky's edge each pixel is decided by its colour, between
- * the sky's and that of what is not sky nearby (two-colour matting), so the
+ * in it. Along the sky's edge each pixel is decided by its color, between
+ * the sky's and that of what is not sky nearby (two-color matting), so the
  * skyline stays sharp at any zoom and the sky between a tree's branches
  * shows.
  *
@@ -43,13 +43,13 @@ const FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D uPhoto;
 uniform sampler2D uMask;
-uniform sampler2D uSkyColour;
-uniform sampler2D uOtherColour;
-// (x, y, 1) of a screen ray (from the centre, in focal lengths, y down) to
+uniform sampler2D uSkyColor;
+uniform sampler2D uOtherColor;
+// (x, y, 1) of a screen ray (from the center, in focal lengths, y down) to
 // the photo's own direction (x right, y forward, z up), and to the world's up.
 uniform mat3 uRay;
 uniform vec3 uUp;
-// The centre and focal length in device pixels, and the canvas height.
+// The center and focal length in device pixels, and the canvas height.
 uniform vec4 uScreen;
 uniform float uExposure;
 uniform float uDesaturate;
@@ -57,7 +57,7 @@ uniform vec3 uTint;
 uniform vec3 uGround;
 // sin of the elevations where the night ground starts and is complete.
 uniform vec2 uGroundFade;
-out vec4 outColour;
+out vec4 outColor;
 
 const float PI = 3.14159265358979;
 
@@ -71,7 +71,7 @@ void main() {
   vec3 q = vec3((px - uScreen.xy) / uScreen.z, 1.0);
   vec3 d = normalize(uRay * q);
   vec2 uv = vec2(0.5 + atan(d.x, d.y) / (2.0 * PI), 0.5 - asin(clamp(d.z, -1.0, 1.0)) / PI);
-  // Derivatives across the picture's seam (u jumps from 1 to 0) are taken the short way round.
+  // Derivatives across the picture's seam (u jumps from 1 to 0) are taken the short way around.
   vec2 dx = dFdx(uv);
   vec2 dy = dFdy(uv);
   dx.x -= round(dx.x);
@@ -80,8 +80,8 @@ void main() {
   vec4 m = texture(uMask, uv);
   float sky = m.r;
   if (m.g > 0.0) {
-    vec3 s = texture(uSkyColour, uv).rgb;
-    vec3 o = texture(uOtherColour, uv).rgb;
+    vec3 s = texture(uSkyColor, uv).rgb;
+    vec3 o = texture(uOtherColor, uv).rgb;
     vec3 so = s - o;
     float l2 = dot(so, so);
     float share = clamp(dot(c - o, so) / max(l2, 1e-5), 0.0, 1.0);
@@ -93,14 +93,14 @@ void main() {
   float sinEl = dot(uUp, q) / length(q);
   graded = mix(graded, uGround, 1.0 - smoothstep(uGroundFade.y, uGroundFade.x, sinEl));
   float alpha = 1.0 - sky;
-  outColour = vec4(toSrgb(graded) * alpha, alpha);
+  outColor = vec4(toSrgb(graded) * alpha, alpha);
 }`;
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
 /**
  * The linear map from a screen ray (x, y, 1) — x right and y down from the
- * centre, in focal lengths — to its world direction [east, north, up], for
+ * center, in focal lengths — to its world direction [east, north, up], for
  * a view {bearing, pitch, roll}: sat-planetarium.js makeProjector's
  * unproject, column by column (row-major 3×3).
  */
@@ -108,7 +108,7 @@ export function rayToWorld({ bearing, pitch, roll = 0 }) {
   const [cb, sb] = [Math.cos(bearing * DEG), Math.sin(bearing * DEG)];
   const [cp, sp] = [Math.cos(pitch * DEG), Math.sin(pitch * DEG)];
   const [cr, sr] = [Math.cos(roll * DEG), Math.sin(roll * DEG)];
-  // Columns: d/dx, d/dy and the constant (the centre of the view).
+  // Columns: d/dx, d/dy and the constant (the center of the view).
   const ex = [cb * cr - sb * cp * sr, -(sb * cr + cb * cp * sr), -sp * sr];
   const ey = [-cb * sr - sb * cp * cr, sb * sr - cb * cp * cr, -sp * cr];
   const e0 = [sb * sp, cb * sp, -cp];
@@ -403,7 +403,7 @@ export class PhotoScene {
     gl.uniform3f(u.uGround, ...look.ground);
     gl.uniform2f(u.uGroundFade, Math.sin(look.groundFrom * DEG), Math.sin(look.groundTo * DEG));
     const units = [this._tex.photo, this._tex.mask, this._tex.sky, this._tex.other];
-    ["uPhoto", "uMask", "uSkyColour", "uOtherColour"].forEach((name, i) => {
+    ["uPhoto", "uMask", "uSkyColor", "uOtherColor"].forEach((name, i) => {
       gl.activeTexture(gl.TEXTURE0 + i);
       gl.bindTexture(gl.TEXTURE_2D, units[i]);
       gl.uniform1i(u[name], i);
@@ -448,7 +448,7 @@ export class PhotoScene {
     this._gl = gl;
     this._program = program;
     this._uniforms = Object.fromEntries(
-      ["uPhoto", "uMask", "uSkyColour", "uOtherColour", "uRay", "uUp", "uScreen", "uExposure", "uDesaturate", "uTint", "uGround", "uGroundFade"].map((n) => [n, gl.getUniformLocation(program, n)]),
+      ["uPhoto", "uMask", "uSkyColor", "uOtherColor", "uRay", "uUp", "uScreen", "uExposure", "uDesaturate", "uTint", "uGround", "uGroundFade"].map((n) => [n, gl.getUniformLocation(program, n)]),
     );
     this._anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
     // A vertex array is needed to draw, even with no attributes.
@@ -465,8 +465,8 @@ export class PhotoScene {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     this._uploadData(this._tex.mask, gl.RGBA8, t.width, t.height, t.mask);
-    this._uploadData(this._tex.sky, gl.SRGB8_ALPHA8, t.lowWidth, t.lowHeight, t.skyColour);
-    this._uploadData(this._tex.other, gl.SRGB8_ALPHA8, t.lowWidth, t.lowHeight, t.otherColour);
+    this._uploadData(this._tex.sky, gl.SRGB8_ALPHA8, t.lowWidth, t.lowHeight, t.skyColor);
+    this._uploadData(this._tex.other, gl.SRGB8_ALPHA8, t.lowWidth, t.lowHeight, t.otherColor);
     if (bitmap) {
       this._uploadPhoto(bitmap);
     } else if (this._restore) {

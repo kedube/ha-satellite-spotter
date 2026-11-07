@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { SceneLife } from "../../custom_components/satellite_spotter/frontend/sat-scene-life.js";
+import { strict } from "./helpers/strict-timers.mjs";
 
 function life() {
   const timers = new Set();
@@ -192,5 +193,22 @@ test("it works where there is no AbortController", () => {
     assert.equal(start.isCurrent(), false);
   } finally {
     globalThis.AbortController = saved;
+  }
+});
+
+test("left to its own timer, it cancels as a browser allows: clearTimeout is not called as a method", () => {
+  const real = globalThis.clearTimeout;
+  const canceled = [];
+  globalThis.clearTimeout = strict((id) => canceled.push(id));
+  try {
+    const made = new SceneLife({ later: () => "the wait", restoreMs: 5000, onStillLost() {} });
+    made.start();
+    const s = scene();
+    made.show(s, "3d");
+    made.lost(s);
+    assert.equal(made.restored(s), true);
+    assert.deepEqual(canceled, ["the wait"]);
+  } finally {
+    globalThis.clearTimeout = real;
   }
 });

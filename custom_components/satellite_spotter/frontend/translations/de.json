@@ -13,7 +13,7 @@
     "bright": "Hell",
     "when": "{day} · {time}",
     "look_up": "Schau nach {direction}, {elevation} hoch",
-    "look_towards": "Schau nach {direction}",
+    "look_toward": "Schau nach {direction}",
     "ends_in": "Endet in {countdown}",
     "ends_set": "geht im {direction} unter",
     "ends_shadow": "taucht im {direction} in den Erdschatten ein",
@@ -84,7 +84,7 @@
     "reload": "Seite neu laden",
     "load_failed": "Der Globus konnte nicht geladen werden ({error}). Lade die Seite neu, um es erneut zu versuchen.",
     "load_retrying": "Der Globus konnte nicht geladen werden ({error}). Es wird erneut versucht; die Seite neu zu laden hilft auch.",
-    "no_webgl": "Dieser Browser kann den 3D-Globus nicht anzeigen (WebGL 2 wird benötigt): {error}",
+    "no_webgl": "Dieser Browser kann den 3D-Globus nicht anzeigen (WebGL 2 wird benötigt).",
     "connection_lost": "Verbindung getrennt",
     "reconnecting": "Verbindung zu Home Assistant getrennt. Wird erneut verbunden …",
     "not_set_up": "Richte die Integration Satellite Spotter ein, um hier Satelliten zu sehen.",
@@ -147,7 +147,7 @@
     "about": "Über diesen Satelliten",
     "about_name": "Über {name}",
     "look_up": "Schau nach {direction}, {elevation}° hoch",
-    "look_towards": "Schau nach {direction}",
+    "look_toward": "Schau nach {direction}",
     "ends_in": "Endet in {countdown}, geht im {direction} unter",
     "ends_shadow": "Endet in {countdown} · taucht im {direction} in den Erdschatten ein",
     "ends_sky": "Endet in {countdown} · verblasst im {direction}",
@@ -239,6 +239,7 @@
     "last_night": "Gestern Abend"
   },
   "passes": {
+    "not_connected": "Keine Verbindung. Zeiten von {time}.",
     "train_title": "Starlink-Kette · {count}",
     "cloud_clear": "Klarer Himmel",
     "cloud_partly": "Teilweise bewölkt",
@@ -336,6 +337,7 @@
     "after": "nach dem Überflug"
   },
   "street": {
+    "next_pass": "Nächster: {title} um {time}",
     "title": "Straßenansicht",
     "state_sim": "Simulation",
     "state_live": "Live",
@@ -404,7 +406,7 @@
     "props": "Bäume und Straßenlaternen",
     "constellations": "Sternbilder",
     "eye_height": "Augenhöhe",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Nachthimmel",
     "sky_rural": "Dunkel",

@@ -38,7 +38,7 @@ class PassText:
         self._strings = strings
 
     def summary(self, p: ListedPass) -> str:
-        """Return an event's title. The blueprint recognises the star."""
+        """Return an event's title. The blueprint recognizes the star."""
         return f"{'🌟' if p.bright else '🔭'} {p.title}"
 
     def _sight(self, key: str, moment: Moment, **more: Any) -> str:

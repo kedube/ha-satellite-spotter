@@ -13,7 +13,7 @@
     "bright": "Luminoso",
     "when": "{day} · {time}",
     "look_up": "A {direction}, alto {elevation}",
-    "look_towards": "Guarda a {direction}",
+    "look_toward": "Guarda a {direction}",
     "ends_in": "Termina tra {countdown}",
     "ends_set": "tramonta verso {direction}",
     "ends_shadow": "svanisce nell'ombra della Terra verso {direction}",
@@ -84,7 +84,7 @@
     "reload": "Ricarica la pagina",
     "load_failed": "Impossibile caricare il globo ({error}). Ricarica la pagina per riprovare.",
     "load_retrying": "Impossibile caricare il globo ({error}). Riproverà da solo; anche ricaricare la pagina aiuta.",
-    "no_webgl": "Questo browser non può mostrare il globo 3D (serve WebGL 2): {error}",
+    "no_webgl": "Questo browser non può mostrare il globo 3D (serve WebGL 2).",
     "connection_lost": "connessione persa",
     "reconnecting": "Connessione a Home Assistant persa. Riconnessione in corso…",
     "not_set_up": "Configura l'integrazione Satellite Spotter per vedere qui i satelliti.",
@@ -147,7 +147,7 @@
     "about": "Informazioni su questo satellite",
     "about_name": "Informazioni su {name}",
     "look_up": "Guarda a {direction}, alto {elevation}°",
-    "look_towards": "Guarda a {direction}",
+    "look_toward": "Guarda a {direction}",
     "ends_in": "Termina tra {countdown} · tramonta verso {direction}",
     "ends_shadow": "Termina tra {countdown} · svanisce nell'ombra della Terra verso {direction}",
     "ends_sky": "Termina tra {countdown} · svanisce verso {direction}",
@@ -239,6 +239,7 @@
     "last_night": "Ieri sera"
   },
   "passes": {
+    "not_connected": "Nessuna connessione. Orari delle {time}.",
     "train_title": "Trenino Starlink · {count}",
     "cloud_clear": "Cielo sereno",
     "cloud_partly": "Parzialmente nuvoloso",
@@ -336,6 +337,7 @@
     "after": "dopo il passaggio"
   },
   "street": {
+    "next_pass": "Prossimo: {title} alle {time}",
     "title": "Vista stradale",
     "state_sim": "Simulazione",
     "state_live": "In diretta",
@@ -404,7 +406,7 @@
     "props": "Alberi e lampioni",
     "constellations": "Costellazioni",
     "eye_height": "Altezza degli occhi",
-    "metres": "{value} m",
+    "meters": "{value} m",
     "feet": "{value} ft",
     "sky": "Cielo notturno",
     "sky_rural": "Buio",

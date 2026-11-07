@@ -46,7 +46,7 @@ export function tileUrl(z, x, y) {
 }
 
 /**
- * Clamp four neighbouring heights to their median ± limit before they are
+ * Clamp four neighboring heights to their median ± limit before they are
  * interpolated: low-zoom Terrarium tiles carry single-pixel spikes (+780 m 7
  * km east of Boulder at z10) that would otherwise stand up as phantom peaks.
  */
@@ -59,7 +59,7 @@ export function despike(a, b, c, d, limit = 60) {
 
 /**
  * Bilinear height at a fractional pixel position, the values sitting at pixel
- * centres as in MapLibre's DEMData.sampleBilinear. `at(i, j)` reads a pixel;
+ * centers as in MapLibre's DEMData.sampleBilinear. `at(i, j)` reads a pixel;
  * NaN where there is no data.
  */
 export function bilinear(at, px, py, { limit = null } = {}) {

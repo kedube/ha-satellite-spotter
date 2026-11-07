@@ -41,7 +41,7 @@ export function subsolarPoint(date) {
   return { lat: dec, lon: wrapLongitude(ra - greenwichSiderealTime(date)) };
 }
 
-/** Unit vector towards the Sun in an Earth-fixed frame: x at (0, 0), y at (0, 90E), z north. */
+/** Unit vector toward the Sun in an Earth-fixed frame: x at (0, 0), y at (0, 90E), z north. */
 export function sunVector(date) {
   const s = subsolarPoint(date);
   const lat = s.lat * DEG;
@@ -106,7 +106,7 @@ export function groundDistanceKm(lat1, lon1, lat2, lon2) {
   return 2 * 6371.0 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Ring of [lon, lat] points at a fixed angular distance (degrees) around a centre. */
+/** Ring of [lon, lat] points at a fixed angular distance (degrees) around a center. */
 export function circleRing(lat, lon, radiusDeg, points = 96) {
   const p1 = lat * DEG;
   const d = radiusDeg * DEG;
@@ -117,7 +117,7 @@ export function circleRing(lat, lon, radiusDeg, points = 96) {
     const l2 =
       lon * DEG +
       Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
-    // Keep longitudes continuous around the centre so the ring never jumps.
+    // Keep longitudes continuous around the center so the ring never jumps.
     let lng = l2 / DEG;
     while (lng - lon > 180) lng -= 360;
     while (lng - lon < -180) lng += 360;
@@ -203,7 +203,7 @@ export function orbitalSpeed(altitudeKm, axisKm = WGS84_A_KM + altitudeKm) {
  * The altitude to draw a satellite at, in km: the true one up to 2,000 km
  * (every low orbit, where nearly all naked-eye passes happen), then growing only
  * logarithmically, so that a geostationary orbit (35,786 km) is drawn at about
- * 6,700 km and the highest apogees in the catalogue stay in front of the
+ * 6,700 km and the highest apogees in the catalog stay in front of the
  * camera. Geometry and physics keep using the true altitude.
  */
 export function displayAltitudeKm(km, knee = 2000, scale = 1500) {

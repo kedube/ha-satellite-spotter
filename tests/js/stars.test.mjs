@@ -26,7 +26,7 @@ test("the stars are a flat list, brightest first, to about magnitude 5.5", () =>
     const s = star(i);
     assert.ok(s.ra >= 0 && s.ra < 360 && Math.abs(s.dec) <= 90, `star ${i} position`);
     // Carbon stars are the reddest: U Hya +2.68, TX Psc +2.60, U Ant +2.88.
-    assert.ok(s.bv >= -0.5 && s.bv <= 3, `star ${i} colour ${s.bv}`);
+    assert.ok(s.bv >= -0.5 && s.bv <= 3, `star ${i} color ${s.bv}`);
     if (i) assert.ok(s.mag >= star(i - 1).mag, `star ${i} out of order`);
   }
   assert.ok(star(count - 1).mag < 6.5);
@@ -44,7 +44,7 @@ test("well known stars are where they should be (SIMBAD, J2000)", () => {
     assert.ok(Math.abs(s.ra - ra) * Math.cos((dec * Math.PI) / 180) < 0.02 && Math.abs(s.dec - dec) < 0.02, name);
     assert.ok(Math.abs(s.mag - mag) <= 0.15, `${name} ${s.mag}`);
   }
-  assert.ok(star(byName.get("Betelgeuse")).bv > 1.5 && star(byName.get("Rigel")).bv < 0.1, "colours");
+  assert.ok(star(byName.get("Betelgeuse")).bv > 1.5 && star(byName.get("Rigel")).bv < 0.1, "colors");
 });
 
 test("the brightest stars carry their IAU names", () => {
@@ -57,7 +57,7 @@ test("the brightest stars carry their IAU names", () => {
   assert.ok(byName.has("Polaris"));
 });
 
-test("the 88 IAU constellations are drawn through catalogue stars", () => {
+test("the 88 IAU constellations are drawn through catalog stars", () => {
   assert.deepEqual([...new Set(CONSTELLATIONS.map((c) => c.id))].sort(), [...IAU].sort());
   const serpens = CONSTELLATIONS.filter((c) => c.id === "Ser").map((c) => c.name);
   assert.deepEqual(serpens, ["Serpens Caput", "Serpens Cauda"]);

@@ -7,9 +7,10 @@
 const STREET_STORAGE = "satellite-spotter:street";
 
 /** The street view's options as it keeps them (only it writes them), to hand back to it. */
-export function savedStreetOptions(storage = globalThis.localStorage) {
+export function savedStreetOptions(storage) {
   try {
-    const saved = JSON.parse(storage.getItem(STREET_STORAGE) || "null");
+    // Asked for in here: where storage is blocked, just reading localStorage throws.
+    const saved = JSON.parse((storage ?? globalThis.localStorage).getItem(STREET_STORAGE) || "null");
     if (saved && typeof saved === "object") return saved;
   } catch {
     // A private window, or blocked storage: its defaults.
@@ -31,8 +32,10 @@ export function savedStreetOptions(storage = globalThis.localStorage) {
  * @param {boolean} [o.globeToggle] whether its time bar offers a way back to a globe
  * @param {() => void} o.onClose
  * @param {(passId: string|undefined) => void} o.onNeedDetail it asks for a pass's track
+ * @param {() => object|null} [o.nextPass] the pass after this one, offered when a live one has gone by
+ * @param {(pass: object) => void} [o.onShowPass] that offer is taken
  */
-export function makeStreetView({ hass, formatter, location, units, clock, pass, detail, globeToggle, onClose, onNeedDetail }) {
+export function makeStreetView({ hass, formatter, location, units, clock, pass, detail, globeToggle, onClose, onNeedDetail, nextPass, onShowPass }) {
   const street = document.createElement("satellite-street-view");
   street.hass = hass;
   street.formatter = formatter;
@@ -45,5 +48,7 @@ export function makeStreetView({ hass, formatter, location, units, clock, pass, 
   street.detail = detail;
   street.addEventListener("close", onClose);
   street.addEventListener("need-detail", (ev) => onNeedDetail(ev.detail?.passId));
+  street.nextPass = nextPass;
+  if (onShowPass) street.addEventListener("show-pass", (ev) => onShowPass(ev.detail.pass));
   return street;
 }

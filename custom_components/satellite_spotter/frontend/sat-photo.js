@@ -1,7 +1,7 @@
 /**
  * Street photos for the street view: the 360° photo taken nearest home, from
  * Panoramax (open and keyless; the photos are under CC BY-SA and similar
- * licences) or, with their keys, Mapillary and Google Street View
+ * licenses) or, with their keys, Mapillary and Google Street View
  * (sat-photo-sources.js), turned to face true north, with its sky found so
  * that the planetarium shows through it, and darkened for the moment of the
  * pass. sat-photo-scene.js draws it.
@@ -10,16 +10,16 @@
  *  - the search and the choice of photos near home, scored alike for every
  *    service (photoScore);
  *  - the photo's orientation: Panoramax gives the heading of the picture's
- *    centre (view:azimuth) and the camera's tilt (pers:pitch, pers:roll,
+ *    center (view:azimuth) and the camera's tilt (pers:pitch, pers:roll,
  *    when known), which level it as d_world = Rz(-heading) Rx(pitch)
  *    Ry(roll) d_photo, with the photo's x to the right, y forward, z up;
  *  - the sky: a flood from the smooth, bright top of the picture (the
  *    zenith) that stops at edges and texture, takes in soft-edged clouds
  *    and fills what the sky surrounds (wires, birds, the Sun), at about a
- *    third of a degree per pixel; the renderer refines the edges by colour;
+ *    third of a degree per pixel; the renderer refines the edges by color;
  *  - what the photo hides of a path, and the look of the street at night.
  *
- * Equirectangular pictures: u = 0.5 + atan2(x, y) / 2π (the centre is the
+ * Equirectangular pictures: u = 0.5 + atan2(x, y) / 2π (the center is the
  * heading, east of it to the right), v = 0.5 − asin(z) / π (the zenith at
  * the top).
  */
@@ -40,7 +40,7 @@ export const SKY_WIDTH = 1024;
 
 // The most the Sun may turn a photo with a heading: more is more likely a bright cloud.
 const MAX_SUN_TURN = 45;
-// What not knowing which way a photo faces counts for, in metres: more than the search's reach.
+// What not knowing which way a photo faces counts for, in meters: more than the search's reach.
 const NO_HEADING_PENALTY_M = 1000;
 const DEG = Math.PI / 180;
 const EARTH_RADIUS = 6371008.8;
@@ -56,7 +56,7 @@ const wrap360 = (x) => ((x % 360) + 360) % 360;
 
 /**
  * The search for 360° pictures around home. The position goes out rounded
- * to about 10 m; the server's 360° filter is Panoramax's meta-catalogue's
+ * to about 10 m; the server's 360° filter is Panoramax's meta-catalog's
  * (photoSearch() asks again without it if it is refused).
  */
 export function photoSearchUrl(latitude, longitude, { radius = SEARCH_RADIUS_M, limit = 100, only360 = true } = {}) {
@@ -85,7 +85,7 @@ export const https = (href) => (typeof href === "string" && href.startsWith("htt
 const finiteOr = (x, fallback) => (Number.isFinite(x) ? x : fallback);
 
 /**
- * How good a photo near home is, in metres (lower is better): its distance,
+ * How good a photo near home is, in meters (lower is better): its distance,
  * plus 12 m for every year it is older than three (streets change), its
  * position's uncertainty beyond 5 m, and 120 m with the Sun under 4° when it
  * was taken (400 m once it was down): a dark sky is not found.
@@ -108,7 +108,7 @@ export function photoScore({ distance, taken = null, latitude, longitude, noHead
 /**
  * The best photos, spaced out: best first (then nearest), skipping any
  * within PICK_SPACING_M of one already picked from the same service, so the
- * picker steps between spots rather than through one car's every metre.
+ * picker steps between spots rather than through one car's every meter.
  */
 export function spacedPhotos(photos, max = PICK_MAX) {
   const sorted = [...photos].sort((a, b) => a.score - b.score || a.distance - b.distance);
@@ -211,7 +211,7 @@ export async function findPhotos({ latitude, longitude }, { signal = null, fetch
   return withTimeout(signal, timeoutMs, async (stop) => {
     const get = (url) => fetchImpl(url, { signal: stop, credentials: "omit", referrerPolicy: "no-referrer" });
     let response = await get(photoSearchUrl(latitude, longitude));
-    // A server without the meta-catalogue's 360° filter: every picture, sorted out here.
+    // A server without the meta-catalog's 360° filter: every picture, sorted out here.
     if (response.status === 400) response = await get(photoSearchUrl(latitude, longitude, { only360: false }));
     if (!response.ok) throw new Error(`Panoramax answered ${response.status}`);
     return photoCandidates(await response.json(), { latitude, longitude, sunElevation });
@@ -308,7 +308,7 @@ export function pixelElevations(R, width, height) {
 // ---------------------------------------------------------------------------
 // The sky
 
-/** 1-2-1 blur both ways (x wraps round the panorama, y stops at the poles). */
+/** 1-2-1 blur both ways (x wraps around the panorama, y stops at the poles). */
 function blur121(src, W, H) {
   const tmp = new Float32Array(src.length);
   const out = new Float32Array(src.length);
@@ -351,8 +351,8 @@ export function boxMean(src, W, H, k) {
   return out;
 }
 
-/** The four neighbours of pixel p (x wraps; -1 off the top or bottom). */
-function neighbours(p, W, H, out) {
+/** The four neighbors of pixel p (x wraps; -1 off the top or bottom). */
+function neighbors(p, W, H, out) {
   const y = (p / W) | 0;
   const x = p - y * W;
   out[0] = y * W + (x === 0 ? W - 1 : x - 1);
@@ -378,7 +378,7 @@ function components(N, W, H, pred) {
     while (top) {
       const p = stack[--top];
       size++;
-      for (const n of neighbours(p, W, H, ns)) {
+      for (const n of neighbors(p, W, H, ns)) {
         if (n < 0 || label[n] !== -1 || !pred(n)) continue;
         label[n] = id;
         stack[top++] = n;
@@ -397,20 +397,20 @@ const SKY_DEFAULTS = Object.freeze({
   // A big smooth patch lower down counts if it is about as bright as the sky overhead.
   bigSeed: 0.004,
   bigBright: 0.85,
-  // The flood: no edge, no texture, no step in colour, not much darker than the sky at that height.
+  // The flood: no edge, no texture, no step in color, not much darker than the sky at that height.
   gradient: 0.045,
   texture: 0.028,
   step: 0.06,
   bright: 0.75,
   // Nothing below this is sky (degrees: the horizon, with a little for a tilted camera).
   horizon: -2,
-  // Back to the edge the flood stopped short of: px deep, a step's colour and the drift from the sky (0..1).
+  // Back to the edge the flood stopped short of: px deep, a step's color and the drift from the sky (0..1).
   grow: 12,
   growStep: 0.05,
   growDrift: 0.12,
-  // Over twigs and wires: px across at most, and how close in colour the sky beyond must be (0..1).
+  // Over twigs and wires: px across at most, and how close in color the sky beyond must be (0..1).
   leap: 4,
-  leapColour: 0.08,
+  leapColor: 0.08,
   leapPasses: 4,
   // Clouds: brighter than the sky about them, pale, with softer edges.
   cloudBright: 0.92,
@@ -425,7 +425,7 @@ const SKY_DEFAULTS = Object.freeze({
 /**
  * Find the sky in a picture (RGBA, equirectangular, about SKY_WIDTH wide):
  * Uint8Array(width × height), 1 where it is sky. `R` is photoRotation()'s.
- * Returns {width, height, sky, fraction, colour (the sky's mean RGB by
+ * Returns {width, height, sky, fraction, color (the sky's mean RGB by
  * elevation, 0..1, from +90° in 2° bins)}; fraction 0 when no sky was found
  * (under a roof, in a tunnel, at night).
  */
@@ -445,7 +445,7 @@ export function findSky(image, R, options = {}) {
   r = blur121(r, W, H);
   g = blur121(g, W, H);
   b = blur121(b, W, H);
-  // The colour gradient: the largest channel's Sobel magnitude, per pixel step.
+  // The color gradient: the largest channel's Sobel magnitude, per pixel step.
   const grad = new Float32Array(N);
   const channels = [r, g, b];
   for (let y = 0; y < H; y++) {
@@ -528,7 +528,7 @@ export function findSky(image, R, options = {}) {
   const flood = (qh, accept) => {
     while (qh < qt) {
       const p = queue[qh++];
-      for (const n of neighbours(p, W, H, ns)) {
+      for (const n of neighbors(p, W, H, ns)) {
         if (n < 0 || sky[n] || elev[n] < o.horizon || !accept(n, p)) continue;
         sky[n] = 1;
         queue[qt++] = n;
@@ -546,11 +546,11 @@ export function findSky(image, R, options = {}) {
   flood(0, strict);
   growToEdges(sky, data, elev, lit, W, H, o);
   // Sky seen through twigs and between wires: the flood stops at every one
-  // of them, so it steps over thin ones onto sky of the same colour (even
+  // of them, so it steps over thin ones onto sky of the same color (even
   // among twigs, where the texture is everywhere), a few times over.
   for (let pass = 0; pass < o.leapPasses; pass++) {
     qt = 0;
-    const leap2 = (o.leapColour * 255) ** 2;
+    const leap2 = (o.leapColor * 255) ** 2;
     for (let i = 0; i < N; i++) {
       if (sky[i] || elev[i] < o.horizon || grad[i] > o.gradient || !lit(i)) continue;
       const y = (i / W) | 0;
@@ -600,7 +600,7 @@ export function findSky(image, R, options = {}) {
     const size = holes.sizes[id];
     if (size < o.holeSmall * N || brightness[id] / size >= o.holeBright) sky[i] = 1;
   }
-  // The sky's colour by elevation, for the renderer's edges (and the sky's tests).
+  // The sky's color by elevation, for the renderer's edges (and the sky's tests).
   const sums = Array.from({ length: bins }, () => [0, 0, 0, 0]);
   let count = 0;
   for (let i = 0; i < N; i++) {
@@ -612,21 +612,21 @@ export function findSky(image, R, options = {}) {
     s[2] += data[4 * i + 2];
     s[3]++;
   }
-  const colour = [];
+  const color = [];
   let known = [0.6, 0.7, 0.85];
   for (let k = 0; k < bins; k++) {
     const s = sums[k];
     if (s[3] > 10) known = [s[0] / s[3] / 255, s[1] / s[3] / 255, s[2] / s[3] / 255];
-    colour.push(known);
+    color.push(known);
   }
-  return { width: W, height: H, sky, fraction: count / N, colour };
+  return { width: W, height: H, sky, fraction: count / N, color };
 }
 
 /**
  * The flood stops a few pixels short of an edge, as the gradient and the
  * texture it looks at spread out from the edge: grow the sky back up to it,
  * a pixel at a time and at most `grow` deep, while the picture's own
- * colours step no more than `growStep` from pixel to pixel and stay within
+ * colors step no more than `growStep` from pixel to pixel and stay within
  * `growDrift` of the sky the growth started from, and not much darker than
  * the sky at that height (`lit`: else a pale wall next to a white sky draws
  * it on into the building).
@@ -641,7 +641,7 @@ function growToEdges(sky, data, elev, lit, W, H, o) {
   const ns = new Int32Array(4);
   for (let i = 0; i < N; i++) {
     if (!sky[i]) continue;
-    for (const n of neighbours(i, W, H, ns)) {
+    for (const n of neighbors(i, W, H, ns)) {
       if (n >= 0 && !sky[n]) {
         origin[i] = i;
         queue[qt++] = i;
@@ -660,7 +660,7 @@ function growToEdges(sky, data, elev, lit, W, H, o) {
   while (qh < qt) {
     const p = queue[qh++];
     if (depth[p] >= o.grow) continue;
-    for (const n of neighbours(p, W, H, ns)) {
+    for (const n of neighbors(p, W, H, ns)) {
       if (n < 0 || sky[n] || elev[n] < o.horizon || !lit(n)) continue;
       if (d2(n, p) > step2 || d2(n, origin[p]) > drift2) continue;
       sky[n] = 1;
@@ -672,18 +672,18 @@ function growToEdges(sky, data, elev, lit, W, H, o) {
 }
 
 function emptySky(W, H) {
-  return { width: W, height: H, sky: new Uint8Array(W * H), fraction: 0, colour: [] };
+  return { width: W, height: H, sky: new Uint8Array(W * H), fraction: 0, color: [] };
 }
 
 /**
  * The renderer's textures for a sky (findSky) over its picture:
  *  - mask (RGBA, the picture's size): R the sky, softened; G where the
- *    renderer decides by colour (a band along the sky's edge, `out` px into
+ *    renderer decides by color (a band along the sky's edge, `out` px into
  *    what is not sky and `inside` px into the sky: the flood stops a pixel
  *    or two short of a sharp edge);
- *  - skyColour and otherColour (RGBA, a quarter of the size each way): the
- *    colour of the sky and of what is not sky nearby, for the renderer to
- *    tell an edge pixel's share of each (as two-colour matting does).
+ *  - skyColor and otherColor (RGBA, a quarter of the size each way): the
+ *    color of the sky and of what is not sky nearby, for the renderer to
+ *    tell an edge pixel's share of each (as two-color matting does).
  */
 export function skyTextures(image, found, { out = 4, inside = 2, scale = 4 } = {}) {
   const { width: W, height: H, sky } = found;
@@ -732,12 +732,12 @@ export function skyTextures(image, found, { out = 4, inside = 2, scale = 4 } = {
     }
     return outRGBA;
   };
-  // Where no sky is near, the sky's colour at that height; where nothing else is, black.
-  const bins = found.colour?.length ?? 0;
+  // Where no sky is near, the sky's color at that height; where nothing else is, black.
+  const bins = found.color?.length ?? 0;
   const skyAt = (cy) => {
     if (!bins) return [0.6, 0.7, 0.85];
     const el = 90 - (180 * (cy + 0.5)) / h;
-    return found.colour[clamp(Math.floor((90 - el) / 2), 0, bins - 1)];
+    return found.color[clamp(Math.floor((90 - el) / 2), 0, bins - 1)];
   };
   return {
     width: W,
@@ -745,8 +745,8 @@ export function skyTextures(image, found, { out = 4, inside = 2, scale = 4 } = {
     mask,
     lowWidth: w,
     lowHeight: h,
-    skyColour: pack(cells(1), skyAt),
-    otherColour: pack(cells(0), () => [0, 0, 0]),
+    skyColor: pack(cells(1), skyAt),
+    otherColor: pack(cells(0), () => [0, 0, 0]),
   };
 }
 
@@ -767,7 +767,7 @@ function distanceTo(sky, value, W, H, limit) {
   while (qh < qt) {
     const p = queue[qh++];
     if (d[p] + 1 >= limit) continue;
-    for (const n of neighbours(p, W, H, ns)) {
+    for (const n of neighbors(p, W, H, ns)) {
       if (n < 0 || d[n] <= d[p] + 1) continue;
       d[n] = d[p] + 1;
       queue[qt++] = n;
@@ -778,11 +778,11 @@ function distanceTo(sky, value, W, H, limit) {
 
 /**
  * Where the Sun shows in a picture, if it does, near where it was when the
- * photo was taken (`predicted`: {azimuth, elevation}): the centre of the
+ * photo was taken (`predicted`: {azimuth, elevation}): the center of the
  * round white patch its glare burns out in the sky (findSky's: a sunlit
  * white wall burns out too, but is not sky). Only the largest such patch
  * counts, and only when it is big enough to be glare, not so big that the
- * whole sky is burnt out (an overcast day), without a rival of its size,
+ * whole sky is burned out (an overcast day), without a rival of its size,
  * and within `tolerance` degrees of the predicted elevation (which also says
  * the photo's time is right; glare sits a little low). Panoramax's headings
  * are often 10° to 30° off (a car's course is not where its camera faces);
@@ -795,7 +795,7 @@ export function findSun(image, R, predicted, found, { tolerance = 4.5, minRadius
   const elev = pixelElevations(R, W, H);
   const lit = (i) => found.sky[i] === 1 && elev[i] > 1 && data[4 * i] >= white && data[4 * i + 1] >= white && data[4 * i + 2] >= white;
   const { label, sizes } = components(N, W, H, lit);
-  // Wider than this is a burnt-out cloud or a white sky, smaller a white speck: not the Sun's glare.
+  // Wider than this is a burned-out cloud or a white sky, smaller a white speck: not the Sun's glare.
   const degPerPx = 360 / W;
   const maxPixels = Math.PI * (maxRadius / degPerPx) ** 2;
   const minPixels = Math.PI * (minRadius / degPerPx) ** 2;
@@ -823,7 +823,7 @@ export function findSun(image, R, predicted, found, { tolerance = 4.5, minRadius
   const v = (s.sy / s.n + 0.5) / H;
   const seen = photoDirection(R, wrapUnit((s.sx / s.n + 0.5) / W), v);
   if (Math.abs(seen.elevation - predicted.elevation) > tolerance) return null;
-  // Round, as glare is (in degrees across: the picture's rows shrink towards the zenith).
+  // Round, as glare is (in degrees across: the picture's rows shrink toward the zenith).
   const wide = (s.xmax - s.xmin + 1) * Math.cos(Math.min(85, Math.abs(90 - v * 180)) * DEG);
   const tall = s.ymax - s.ymin + 1;
   if (Math.max(wide, tall) > 2.5 * Math.min(wide, tall) + 2) return null;
@@ -874,8 +874,8 @@ export function hiddenByPhoto(found, R, data) {
 
 /**
  * The photo darkened for a Sun ({elevation}) and Moon ({elevation,
- * fraction}): an exposure in linear light, how far colours fade (the eye
- * sees no colour by moonlight), and a cool tint. A moonless night keeps the
+ * fraction}): an exposure in linear light, how far colors fade (the eye
+ * sees no color by moonlight), and a cool tint. A moonless night keeps the
  * street just readable; the ground near the camera (the car or bike it was on) fades into the dark below the
  * horizon.
  */
@@ -889,7 +889,7 @@ export function photoLook(sun, moon = null) {
     exposure: +q(night + (1 - night) * day ** 1.6, 0.002).toFixed(3),
     desaturate: +q(0.82 * (1 - day), 0.01).toFixed(2),
     tint: [0.78, 0.88, 1.16].map((c) => +q(c + (1 - c) * day, 0.01).toFixed(2)),
-    // Where the night ground fades in below the horizon (degrees), and its colour (linear).
+    // Where the night ground fades in below the horizon (degrees), and its color (linear).
     groundFrom: -14,
     groundTo: -32,
     ground: [0.006, 0.008, 0.012].map((c) => +(c + (0.12 - c) * day).toFixed(4)),
@@ -898,7 +898,7 @@ export function photoLook(sun, moon = null) {
   return look;
 }
 
-/** The credit line's parts: who took it, under which licence, and links. */
+/** The credit line's parts: who took it, under which license, and links. */
 export function photoCredit(photo) {
   return {
     author: photo?.author || "",
