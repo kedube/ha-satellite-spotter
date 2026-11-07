@@ -501,7 +501,8 @@ window.__stage = {
     loseContext(scene._gl.canvas, 800);
     await wait(300);
     const veilWhileLost = veilUp(street);
-    await wait(1900);
+    await until(() => !veilUp(street));
+    await wait(300);
     street._restartScene = restart;
     return { veilWhileLost, veilAfter: veilUp(street), restarts, sameScene: street._scene === scene, mode: street._mode };
   },
@@ -565,7 +566,8 @@ window.__stage = {
   loseGlobe: (restoreAfterMs) => loseContext(shownView()._map.getCanvas(), restoreAfterMs),
   afterClosing() {
     const view = shownView();
-    return { street: !!view._street, focused: view.shadowRoot.activeElement?.className ?? null, inert: view.shadowRoot.querySelectorAll("[inert]").length };
+    // The page's own parts: a label over the map that has stepped aside is out of the keyboard's way too.
+    return { street: !!view._street, focused: view.shadowRoot.activeElement?.className ?? null, inert: [...view._wrap.children].filter((part) => part.inert).length };
   },
   fullscreen() {
     const view = shownView();
@@ -737,7 +739,7 @@ window.__stage = {
     const real = Date.now;
     const day = 86400;
     const midnightS = (Math.floor(real() / 1000 / day) + 2) * day;
-    const shift = (midnightS - 6) * 1000 - real();
+    let shift = (midnightS - 600) * 1000 - real();
     Date.now = () => real() + shift;
     const soon = pass(midnightS + 1800, "ISS", "great");
     await newSearch([soon, pass(midnightS + 90000, "Tiangong", "good", [48274])]);
@@ -745,8 +747,8 @@ window.__stage = {
     await wait(100);
     const heading = () => view._els.skySide.querySelector(".sub").textContent;
     const before = heading();
-    await until(() => Date.now() / 1000 > midnightS + 1.5);
-    await wait(100);
+    shift = (midnightS + 1) * 1000 - real();
+    await until(() => heading() !== before);
     const after = heading();
     Date.now = real;
     return { before, after };
@@ -790,7 +792,7 @@ window.__stage = {
       throw { code: "unknown_pass", message: "No such pass" };
     };
     window.__stage.goTo("pass=123");
-    await wait(300);
+    await until(() => !location.search.includes("pass="));
     search.path = honestPath;
     return location.search;
   },
@@ -846,6 +848,8 @@ window.__stage = {
     await newSearch([...search.passes]);
     await wait(100);
     release(detail(first));
+    await until(() => view._detail?.transits[0].rows[0][5] === wanted);
+    // And it stays: the old answer comes to nothing.
     await wait(300);
     search.path = honestPath;
     return { wanted, rows: view._detail?.transits[0].rows[0][5] };

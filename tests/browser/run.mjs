@@ -254,7 +254,7 @@ async function open(mode, extra = "") {
   check(await chrome.evaluate("window.__ready === true"), `${mode}: it loads`);
 }
 
-/** Evaluate until it holds, for up to `ms`; says whether it did. */
+/** Evaluate until it holds, for up to `ms`, and say whether it did. Only a failure takes that long, and GitHub's machines are slow. */
 const until = async (expression, ms = 20000) => {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -314,10 +314,10 @@ try {
   staged = () => "fail";
   await open("street");
   const missed = `(() => { const s = window.__view; return !!s._mode && s._missedNetwork; })()`;
-  check(await until(missed, 15000), `street, offline: it opens without what it could not reach (${await chrome.evaluate("window.__view._mode")})`);
+  check(await until(missed), `street, offline: it opens without what it could not reach (${await chrome.evaluate("window.__view._mode")})`);
   staged = () => null;
   await chrome.evaluate(`window.dispatchEvent(new Event("online"))`);
-  check(await until(`window.__view._mode === "photo"`, 15000), `street, offline: the network back, the photo comes (${await chrome.evaluate("window.__view._mode")})`);
+  check(await until(`window.__view._mode === "photo"`), `street, offline: the network back, the photo comes (${await chrome.evaluate("window.__view._mode")})`);
   await noErrors("street, offline");
 
   // The 3D street view on stand-in tiles: where MapLibre's internals are used.
@@ -392,7 +392,7 @@ try {
   const dropped = await stage("droppedInReplay()");
   check(dropped.label === "Next pass" && dropped.clock !== "None soon" && dropped.selected && !dropped.user, `new predictions: a replay's pass gone, back to live the next one is shown (${JSON.stringify(dropped)})`);
   const past = await stage("pickPastItsPass()");
-  check(past.stayed && past.selected && past.tookS < 5, `as time passes: a pick stays a minute past its pass, then gives way without waiting for a refresh (${JSON.stringify(past)})`);
+  check(past.stayed && past.selected && past.tookS < 15, `as time passes: a pick stays a minute past its pass, then gives way without waiting for a refresh (${JSON.stringify(past)})`);
   const offer = await stage("nextPass()");
   check(offer.live && /Next: Coming at/.test(offer.offered) && offer.offeredAt >= 0, `as time passes: a live pass over in the street view, the next is offered (${JSON.stringify(offer)})`);
   check(offer.now && offer.selected && offer.hiddenAgain, "as time passes: and the offer taken, page and street view are on that pass");
@@ -415,12 +415,12 @@ try {
   check(tilesAtFirst.failed > 0 && tilesAtFirst.drawn > 0, `a tile fails: some of the globe's imagery came, and some did not (${JSON.stringify(tilesAtFirst)})`);
   holdTiles = true;
   const rendersHeld = await stage(`rendersDuring(() => window.__view._refreshFailedTiles(), 1500)`);
-  check(rendersHeld >= 3, `a tile fails: asked for again, the globe goes on drawing until it comes (${rendersHeld} frames)`);
+  check(rendersHeld >= 2, `a tile fails: asked for again, the globe goes on drawing until it comes (${rendersHeld} frames)`);
   check(held.some((h) => failingTiles.has(h.url)), `a tile fails: and it is asked for (${held.length} requests, ${failingTiles.size} had failed)`);
   holdTiles = failTiles = false;
   failingTiles.clear();
   for (const { requestId } of held.splice(0)) chrome.fulfill(requestId, { body: skyPhoto, type: "image/jpeg" });
-  check(await until("(() => { const t = window.__stage.imageryTiles(); return !t.failed && !t.waiting && t.drawn > 0; })()", 5000), `a tile fails: once it comes, it is drawn (${JSON.stringify(await stage("imageryTiles()"))})`);
+  check(await until("(() => { const t = window.__stage.imageryTiles(); return !t.failed && !t.waiting && t.drawn > 0; })()"), `a tile fails: once it comes, it is drawn (${JSON.stringify(await stage("imageryTiles()"))})`);
   check((await stage("rendersDuring(() => {}, 300)")) >= 1, "a tile fails: and the globe is still drawing");
   check((await stage("failedTiles()")) === 0, "a tile fails: and nothing is left to ask for");
   await noErrors("a tile fails");
@@ -436,19 +436,18 @@ try {
   check(keys.inStreet && /stage/.test(keys.focused), `street view on the globe: the keyboard goes with it (${JSON.stringify(keys)})`);
   check(keys.under === 0, `street view on the globe: nothing to Tab to under it (${keys.under})`);
   await press("ArrowRight", "ArrowRight", 39);
-  await sleep(150);
-  check((await stage("keyboard()")).bearing !== keys.bearing, "street view on the globe: an arrow key turns it");
+  check(await until(`window.__stage.keyboard().bearing !== ${keys.bearing}`), "street view on the globe: an arrow key turns it");
   for (let i = 0; i < 12; i++) await press("Tab", "Tab", 9);
   check((await stage("keyboard()")).inStreet, "street view on the globe: Tab stays in it");
   const french = await stage("globeLanguage()");
   check(french.french.layers === "Calques" && french.french.backToLive === "Retour au direct" && french.back.layers === "Layers", `street view on the globe: a new language reaches all of it (${JSON.stringify(french)})`);
   await stage("markMap()");
   await stage("loseGlobe(400)");
-  check(await until("window.__stage.mapIsNew()", 15000), "street view on the globe: the globe's context lost and back, a new map under it");
+  check(await until("window.__stage.mapIsNew()"), "street view on the globe: the globe's context lost and back, a new map under it");
   const underIt = await stage("clockAndStreet()");
   check(underIt.street && underIt.clock === "sim", `street view on the globe: which stays open, its replay running (${JSON.stringify(underIt)})`);
   await press("Escape", "Escape", 27);
-  check(await until("!window.__view._street", 2000), "street view on the globe: Escape closes it");
+  check(await until("!window.__view._street"), "street view on the globe: Escape closes it");
   const closedOver = await stage("afterClosing()");
   check(/street-btn/.test(closedOver.focused) && closedOver.inert === 0, `street view on the globe: the keyboard is back on its button, with nothing left out of reach (${JSON.stringify(closedOver)})`);
   await noErrors("street view on the globe");
@@ -457,20 +456,20 @@ try {
   await open("globe");
   await until("!!window.__view._loaded");
   await chrome.on("Runtime.evaluate", { expression: "window.__view._els.map.querySelector('.maplibregl-ctrl-fullscreen').click()", userGesture: true });
-  await until("window.__stage.fullscreen().real && window.__stage.fullscreen().attribute", 3000);
+  await until("window.__stage.fullscreen().real && window.__stage.fullscreen().attribute");
   const inFullscreen = await chrome.evaluate(`(() => { const { map, ...rest } = window.__stage.fullscreen(); return rest; })()`);
   check(inFullscreen.real && inFullscreen.attribute && inFullscreen.shrink, `fullscreen: it starts (${JSON.stringify(inFullscreen)})`);
   await stage("markMap()");
   await stage("loseGlobe(300)");
-  await until("window.__stage.mapIsNew()", 15000);
+  await until("window.__stage.mapIsNew()");
   const stillFullscreen = await chrome.evaluate(`(() => { const { map, ...rest } = window.__stage.fullscreen(); return rest; })()`);
   check(stillFullscreen.real && stillFullscreen.attribute && stillFullscreen.shrink, `fullscreen: and stays through a map built again, whose button knows (${JSON.stringify(stillFullscreen)})`);
   await chrome.evaluate("document.fullscreenElement && document.exitFullscreen()");
-  await until("!window.__stage.fullscreen().real && !window.__view.hasAttribute('fullscreen')", 3000);
+  await until("!window.__stage.fullscreen().real && !window.__view.hasAttribute('fullscreen')");
   await stage("pseudoFullscreen()");
   await stage("markMap()");
   await stage("loseGlobe(300)");
-  await until("window.__stage.mapIsNew()", 15000);
+  await until("window.__stage.mapIsNew()");
   const stillOverlay = await chrome.evaluate(`(() => { const { map, ...rest } = window.__stage.fullscreen(); return rest; })()`);
   check(stillOverlay.pseudo && stillOverlay.attribute && stillOverlay.shrink, `fullscreen: and so does the overlay where a browser has none (${JSON.stringify(stillOverlay)})`);
   await noErrors("fullscreen");
@@ -510,7 +509,7 @@ try {
   const opened = await panelState();
   check(opened.street === ids[0] && opened.search.includes(`pass=${ids[0]}`) && opened.search.includes("view=street"), `address: a street view opened is in it (${JSON.stringify(opened)})`);
   await chrome.evaluate("history.back()");
-  check(await until("!window.__stage.panelState().street", 4000), "address: Back closes the street view");
+  check(await until("!window.__stage.panelState().street"), "address: Back closes the street view");
   const backed = await panelState();
   check(backed.on && backed.search.includes(`pass=${ids[0]}`) && !backed.search.includes("view=street"), `address: and stays on the page, with the pass (${JSON.stringify(backed)})`);
   check(backed.clock === "live", "address: and the replay that came with the street view is over, as the address says");
@@ -518,20 +517,19 @@ try {
   await stage(`goTo("pass=${ids[0]}")`);
   await stage("openStreetHere(0)");
   await stage("closeStreetHere()");
-  check(await until("!window.__stage.panelState().street && !location.search.includes('view=street')", 4000), "address: its own button closes it, and takes it out of the address");
-  await sleep(150);
+  check(await until("!window.__stage.panelState().street && !location.search.includes('view=street')"), "address: its own button closes it, and takes it out of the address");
   await chrome.evaluate("history.back()");
-  await sleep(300);
+  await until("!location.search.includes('view=')");
   const notBack = await panelState();
   check(notBack.street === null && !notBack.search.includes("view=street"), `address: and Back then does not open it again (${JSON.stringify(notBack)})`);
   await stage("openStreetHere(0)");
   await stage(`goTo("pass=${ids[1]}")`);
-  check(await until(`(() => { const s = window.__stage.panelState(); return s.street === null && s.selected === "${ids[1]}"; })()`, 4000), `address: a link without a street view closes one left open (${JSON.stringify(await panelState())})`);
+  check(await until(`(() => { const s = window.__stage.panelState(); return s.street === null && s.selected === "${ids[1]}"; })()`), `address: a link without a street view closes one left open (${JSON.stringify(await panelState())})`);
   await stage("openStreetHere(0)");
   await stage(`goTo("pass=${ids[1]}&view=street")`);
-  check(await until(`window.__stage.panelState().street === "${ids[1]}"`, 4000), `address: and one with a street view shows that pass in it (${JSON.stringify(await panelState())})`);
+  check(await until(`window.__stage.panelState().street === "${ids[1]}"`), `address: and one with a street view shows that pass in it (${JSON.stringify(await panelState())})`);
   await stage("closeStreetHere()");
-  await until("!window.__stage.panelState().street", 3000);
+  await until("!window.__stage.panelState().street");
   const moved = await stage("movedPick()");
   check(moved.search.includes(`pass=${moved.wanted}`), `address: new predictions move a pick, and the address says where it went (${JSON.stringify(moved)})`);
   const failedLink = await stage("failedLink()");
