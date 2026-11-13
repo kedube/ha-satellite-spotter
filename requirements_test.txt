@@ -1,7 +1,7 @@
 # The tests' tools, pinned to the newest Home Assistant tested (2026.10.1).
 # CI also runs the tests on the oldest supported one: requirements_test_oldest.txt.
 pytest-homeassistant-custom-component==0.13.375
-home-assistant-frontend==20261028.3
+home-assistant-frontend==20261028.5
 # The SGP4 the integration imports, as the manifest pins it (numpy comes with the tools above).
 sgp4==2.27
 # Checks the pre-compressed MapLibre copies (tests/test_frontend_files.py).
