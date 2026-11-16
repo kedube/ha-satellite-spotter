@@ -382,7 +382,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         if self.predictions is None:
             return await self._async_first_predictions()
         try:
-            satellites = await self.catalog.async_satellites()
+            await self.catalog.async_satellites()
         except CatalogError as err:
             raise self._unavailable(str(err)) from err
         now = dt_util.utcnow()
@@ -397,7 +397,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             and timedelta(0) <= now - data.searched_at < SEARCH_EVERY
         ):
             return _with_clouds(data, now, forecast, self.settings.cloud_forecast)
-        return await self._async_search(satellites, now, forecast)
+        return await self._async_search(now, forecast)
 
     async def _async_first_predictions(self) -> Predictions:
         """Start from the catalog there is, and leave the network until setup is over.
@@ -408,11 +408,10 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         old to go by there are no passes, but setup still succeeds, so that the entity saying how
         old it is is there.
         """
-        satellites = await self.catalog.async_load()
-        if satellites is None:
+        if await self.catalog.async_load() is None:
             await self._async_wait_for_a_download()
             try:
-                satellites = self.catalog.loaded()
+                self.catalog.loaded()
             except CatalogError as err:
                 raise self._unavailable(str(err)) from err
             forecast_now = True
@@ -425,7 +424,7 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             return Predictions.empty(now, self.catalog.by_id())
         self._async_check_age(now)
         return await self._async_search(
-            satellites, now, await self._async_forecast(now) if forecast_now else None
+            now, await self._async_forecast(now) if forecast_now else None
         )
 
     async def _async_wait_for_a_download(self) -> None:
@@ -450,10 +449,12 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
             translation_placeholders={"error": error},
         )
 
-    async def _async_search(
-        self, satellites: list[Satellite], now: datetime, forecast: CloudForecast | None
-    ) -> Predictions:
-        version, by_id, observer = self.catalog.version, self.catalog.by_id(), self.observer
+    async def _async_search(self, now: datetime, forecast: CloudForecast | None) -> Predictions:
+        # All read together, after the last await: a catalog that came while the forecast was on
+        # its way must not be recorded as searched when it was the one before that was.
+        catalog = self.catalog
+        satellites, version, by_id = catalog.loaded(), catalog.version, catalog.by_id()
+        observer = self.observer
         passes = await self.hass.async_add_executor_job(
             partial(
                 predict_passes,
@@ -497,13 +498,17 @@ class SatelliteSpotterCoordinator(DataUpdateCoordinator[Predictions]):
         """Return the latest forecast, or the last one while it is fresh enough; None without."""
         if not self.settings.cloud_forecast:
             return None
+        observer = self.observer
         try:
-            self._forecast = await self._async_fetch_forecast()
-            self._forecast_at = now
+            forecast = await self._async_fetch_forecast()
         except CloudCoverError as err:
             _LOGGER.debug("No cloud cover forecast: %s", scrub(err))
             if self._forecast_at is None or abs(now - self._forecast_at) > FORECAST_MAX_AGE:
                 self._forecast = None
+        else:
+            # Unless the location moved while it was on its way: it is for where it was.
+            if self.observer is observer:
+                self._forecast, self._forecast_at = forecast, now
         return self._forecast
 
     @callback

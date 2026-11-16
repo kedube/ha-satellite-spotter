@@ -296,8 +296,13 @@ class CatalogManager:
             return
         try:
             await self._async_restore()
-        finally:
+        except Exception:
+            # It would go wrong the same way again: carry on without it.
             self._store_read = True
+            raise
+        # Not when canceled, which says nothing about the store: it is read again next time, as it
+        # can hold a refusal, and downloading meanwhile would ask CelesTrak too soon.
+        self._store_read = True
 
     async def _async_restore(self) -> None:
         try:

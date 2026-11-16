@@ -318,16 +318,25 @@ class SkyChartView(HomeAssistantView):
             return web.Response(status=HTTPStatus.NOT_FOUND)
         catalog = coordinator.catalog
         observer = coordinator.observer
-        key = ("sky_chart", entry_id, p.id, observer.latitude, observer.longitude)
+        language = hass.config.language
+        cutoff = coordinator.settings.brightness_cutoff
+        # All that the drawing depends on, as options and the language change with the same catalog.
+        drawn = tuple(
+            (s.satellite.norad_id, s.appears.time, s.vanishes.time)
+            for s in p.sightings[:_MAX_MEMBERS]
+        )
+        key = (
+            "sky_chart",
+            (observer.latitude, observer.longitude, observer.elevation_m),
+            cutoff,
+            language,
+            drawn,
+        )
         if (chart := catalog.cached(key)) is None:
-            chart = await hass.async_add_executor_job(
-                chart_of_pass,
-                p,
-                observer,
-                coordinator.settings.brightness_cutoff,
-                hass.config.language,
-            )
-            catalog.remember(key, chart)
+            version = catalog.version
+            chart = await hass.async_add_executor_job(chart_of_pass, p, observer, cutoff, language)
+            if catalog.version == version:
+                catalog.remember(key, chart)
         return web.Response(
             body=chart, content_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
         )

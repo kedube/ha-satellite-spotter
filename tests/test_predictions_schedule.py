@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta
 import logging
@@ -648,6 +649,36 @@ async def test_a_coordinator_with_no_data_yet_takes_any_new_catalog(
     assert coordinator.predictions is not None
     assert coordinator.predictions.catalog_version == manager.version
     await coordinator.async_shutdown()
+
+
+async def test_a_catalog_that_comes_while_the_clouds_are_on_their_way_is_the_one_searched(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    """Its version must not be recorded as searched while the one before it was."""
+    entry = await add_location(hass)
+    coordinator = entry.runtime_data
+    manager = coordinator.catalog
+    on_its_way, answer = asyncio.Event(), asyncio.Event()
+
+    async def slow_forecast(*_: Any) -> CloudForecast:
+        on_its_way.set()
+        await answer.wait()
+        return CloudForecast({})
+
+    mock_downloads["fetch_forecast"].side_effect = slow_forecast
+    refresh = asyncio.ensure_future(coordinator.async_refresh())
+    await on_its_way.wait()
+    # Meanwhile another location finds a catalog due, and downloads it.
+    freezer.move_to(NOW + timedelta(hours=12))
+    await manager.async_satellites()
+    answer.set()
+    await refresh
+
+    assert coordinator.predictions.catalog_version == manager.version
+    assert predict_passes.call_args.args[0] is manager.satellites
 
 
 # Waking the entities.

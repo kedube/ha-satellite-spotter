@@ -448,6 +448,21 @@ async def test_a_stored_refusal_without_words_still_raises_a_refusal(
     fetch.assert_not_awaited()
 
 
+async def test_a_read_of_the_store_cut_short_is_done_again(
+    manager: CatalogManager, fetch: AsyncMock, hass_storage: dict[str, Any]
+) -> None:
+    """Canceled, it says nothing of the store, which can hold a refusal."""
+    put_in_store(hass_storage, {"refused_until": (NOW + timedelta(hours=1)).isoformat()})
+    with (
+        patch.object(manager._store, "async_load", side_effect=asyncio.CancelledError),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await manager.async_load()
+    with pytest.raises(DownloadRefused):
+        await manager.async_satellites()
+    fetch.assert_not_awaited()
+
+
 @pytest.mark.parametrize("over", [timedelta(0), SECOND], ids=["this instant", "a second ago"])
 async def test_a_refusal_that_is_over_brings_no_old_words_with_it(
     manager: CatalogManager,

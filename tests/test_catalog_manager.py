@@ -860,7 +860,8 @@ async def test_recovering_is_logged_once_and_a_new_failure_warns_again(
     fetch.side_effect = CatalogError("no route")
     freezer.move_to(NOW + timedelta(hours=26))
     await manager.async_satellites()
-    warned = [r for r in caplog.records if r.levelno == logging.WARNING]
+    # The catalog's own: asyncio's debug mode can add one for a step the frozen clock jumped.
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == LOGGER_NAME]
     assert len(warned) == 1
 
 

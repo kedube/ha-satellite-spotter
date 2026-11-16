@@ -178,14 +178,20 @@ POSITIONS_CACHE_SIZE: Final = 8
 # once, and one more every so often: plenty for a page or several, not for a script.
 POSITIONS_BURST: Final = 12
 POSITIONS_REFILL_SECONDS: Final = 10.0
+# Tracks, of a pass or of one satellite, are smaller: up to about half a megabyte for a long train,
+# under 50 KB for most. A page asks for up to three each time a pass is picked, so this is room to
+# step through a day's passes quickly, and one more each second.
+TRACKS_BURST: Final = 60
+TRACKS_REFILL_SECONDS: Final = 1.0
 
 # The notification image of a pass: its path across the sky.
 SKY_CHART_URL: Final = f"/api/{DOMAIN}/sky_chart"
 SKY_CHART_LINK_LIFETIME: Final = timedelta(days=1)
 
-# Each download is read up to this much, whatever the server sends or its compression expands to.
-# CelesTrak's largest answer is about 3 MB.
-MAX_CATALOG_BYTES: Final = 32 * 1024 * 1024
+# A catalog download, all its answers together, is read up to this much, whatever the server sends
+# or its compression expands to. Together CelesTrak's answers are about 5 MB. Reading the rows kept
+# takes about 14 times their size in memory, so this bounds that too.
+MAX_CATALOG_BYTES: Final = 16 * 1024 * 1024
 MAX_REPLY_BYTES: Final = 1024 * 1024
 
 # The action listing passes.

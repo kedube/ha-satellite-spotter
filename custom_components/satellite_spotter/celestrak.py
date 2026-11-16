@@ -90,11 +90,25 @@ def _is_orbital_data(text: str) -> bool:
     return "NORAD_CAT_ID" in text.partition("\n")[0]
 
 
-def _take_newest(rows: dict[str, dict[str, str]], text: str) -> None:
-    """Add an answer's rows, keeping the newest elements of each object."""
+def _could_keep(row: Mapping[str, str], table: Mapping[int, float]) -> bool:
+    """Say whether a row is of an object the catalog could keep: a Starlink, or one in the table.
+
+    Others are left at once: "active" alone has thousands, and each row kept takes about 14 times
+    its size in memory.
+    """
+    if is_starlink(row["OBJECT_NAME"]):
+        return True
+    try:
+        return int(row["NORAD_CAT_ID"]) in table
+    except ValueError:
+        return False
+
+
+def _take_newest(rows: dict[str, dict[str, str]], text: str, table: Mapping[int, float]) -> None:
+    """Add an answer's rows of objects the catalog could keep, the newest elements of each."""
     for row in csv.DictReader(io.StringIO(text)):
         # The last line of an answer cut short has no value in the last columns.
-        if None in row.values():
+        if None in row.values() or not _could_keep(row, table):
             continue
         norad_id = row["NORAD_CAT_ID"]
         if norad_id not in rows or row["EPOCH"] > rows[norad_id]["EPOCH"]:
@@ -114,12 +128,12 @@ def build_catalog(responses: Iterable[str], supplements: Iterable[str] = ()) -> 
         if not _is_orbital_data(text):
             raise DownloadRefused(f"CelesTrak did not send orbital data: {text[:80]!r}")
         try:
-            _take_newest(rows, text)
+            _take_newest(rows, text, table)
         except (csv.Error, KeyError) as err:
             raise DownloadRefused(f"CelesTrak's orbital data could not be read: {err!r}") from err
     for text in supplements:
         try:
-            _take_newest(rows, text)
+            _take_newest(rows, text, table)
         except (csv.Error, KeyError) as err:
             _LOGGER.debug("Going without the rest of the supplemental elements: %r", err)
     satellites = []
@@ -146,8 +160,9 @@ def _refusal(status: int, query: Mapping[str, str]) -> str:
 
 
 async def _async_download(
-    session: aiohttp.ClientSession, url: str, query: Mapping[str, str]
+    session: aiohttp.ClientSession, url: str, query: Mapping[str, str], *, limit: int
 ) -> str:
+    """Return one answer, read up to ``limit`` bytes: what is left of the download's allowance."""
     try:
         async with session.get(
             url,
@@ -158,18 +173,20 @@ async def _async_download(
         ) as response:
             if response.status != 200:
                 raise DownloadRefused(_refusal(response.status, query))
-            body = await async_read_capped(response, MAX_CATALOG_BYTES)
+            body = await async_read_capped(response, limit)
             return body.decode("utf-8", errors="replace")
     except TooMuchData as err:
-        raise DownloadRefused(f"CelesTrak sent too much: {err}") from err
+        raise DownloadRefused(
+            f"CelesTrak sent too much: over {MAX_CATALOG_BYTES} bytes in all"
+        ) from err
     except (aiohttp.ClientError, TimeoutError) as err:
         raise CatalogError(f"Could not reach CelesTrak: {str(err) or type(err).__name__}") from err
 
 
-async def _async_download_supplement(session: aiohttp.ClientSession) -> list[str]:
-    """Download the supplemental Starlink elements, if they are to be had."""
+async def _async_download_supplement(session: aiohttp.ClientSession, limit: int) -> list[str]:
+    """Download the supplemental Starlink elements, if they are to be had and fit."""
     try:
-        text = await _async_download(session, SUPPLEMENTAL_URL, SUPPLEMENTAL_QUERY)
+        text = await _async_download(session, SUPPLEMENTAL_URL, SUPPLEMENTAL_QUERY, limit=limit)
     except CatalogError as err:
         _LOGGER.debug("Going without the supplemental Starlink elements: %s", err)
         return []
@@ -183,9 +200,13 @@ async def async_fetch_catalog(hass: HomeAssistant) -> list[Satellite]:
     """Download the orbital data, one request at a time, and build the catalog."""
     session = async_get_clientsession(hass)
     responses: list[str] = []
+    # The answers share one allowance, as they are all read before any is let go. Counted in
+    # characters, which in CSV are bytes, and never more than the bytes read.
+    left = MAX_CATALOG_BYTES
     for query in QUERIES:
         try:
-            responses.append(await _async_download(session, GP_URL, query))
+            responses.append(await _async_download(session, GP_URL, query, limit=left))
+            left -= len(responses[-1])
         except DownloadRefused:
             raise
         except CatalogError as err:
@@ -196,5 +217,5 @@ async def async_fetch_catalog(hass: HomeAssistant) -> list[Satellite]:
                 f"The download stopped partway ({err}). CelesTrak allows one download every two "
                 "hours, so the integration waits two hours, then tries again by itself."
             ) from err
-    supplements = await _async_download_supplement(session)
+    supplements = await _async_download_supplement(session, left)
     return await hass.async_add_executor_job(build_catalog, responses, supplements)

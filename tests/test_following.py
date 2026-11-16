@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -16,8 +17,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.satellite_spotter.const import DOMAIN
 from custom_components.satellite_spotter.diagnostics import async_get_config_entry_diagnostics
 from custom_components.satellite_spotter.frontend import location_json
+from custom_components.satellite_spotter.weather import CloudCoverError, CloudForecast
 
-from .common import DENVER, HONOLULU, NOW, add_location, advance
+from .common import DENVER, HONOLULU, NOW, add_location, advance, bright_pass
 
 PERSON = "person.someone"
 FOLLOWING = {"follow_entity": PERSON}
@@ -158,6 +160,41 @@ async def test_what_makes_no_sense_is_ignored(
     hass.states.async_set(PERSON, "not_home", attributes)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert where(entry) == HOME
+
+
+async def test_clouds_asked_for_before_a_move_are_not_the_new_places(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    mock_downloads: dict[str, AsyncMock],
+    predict_passes: MagicMock,
+) -> None:
+    """A forecast for where they were, landing after they moved, stays out of the new passes."""
+    soon = NOW + timedelta(hours=2)
+    predict_passes.return_value = [bright_pass(soon)]
+    entry = await add_location(hass, options=FOLLOWING)
+    on_its_way, answer = asyncio.Event(), asyncio.Event()
+    honolulus = CloudForecast({(int(soon.timestamp()) // 3600 + 1) * 3600: 7})
+
+    async def forecast(_session: Any, latitude: float, longitude: float) -> CloudForecast:
+        if (latitude, longitude) == HOME:
+            on_its_way.set()
+            await answer.wait()
+            return honolulus
+        raise CloudCoverError("Kauai's forecast cannot be had")
+
+    mock_downloads["fetch_forecast"].side_effect = forecast
+    refresh = asyncio.ensure_future(entry.runtime_data.async_refresh())  # The hourly refresh.
+    await on_its_way.wait()
+    is_at(hass, KAUAI)
+    await hass.async_block_till_done()
+    answer.set()
+    await refresh
+    # The refresh the move asked for waited for that one, and then for the debouncer.
+    await advance(hass, freezer, NOW + timedelta(seconds=11))
+    assert where(entry) == KAUAI
+    assert entry.runtime_data.predictions.passes[0].cloud_cover is None
+    await advance(hass, freezer, NOW + timedelta(hours=1, seconds=11))
+    assert entry.runtime_data.predictions.passes[0].cloud_cover is None
 
 
 async def test_unloading_stops_it(

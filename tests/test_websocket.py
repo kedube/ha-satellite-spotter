@@ -30,6 +30,8 @@ from custom_components.satellite_spotter.const import (
     POSITIONS_BURST,
     POSITIONS_REFILL_SECONDS,
     TRACK_EPOCH_RANGE,
+    TRACKS_BURST,
+    TRACKS_REFILL_SECONDS,
 )
 from custom_components.satellite_spotter.coordinator import ListedPass
 from custom_components.satellite_spotter.entity import compass
@@ -982,6 +984,47 @@ async def test_the_budget_is_each_users_own(
     other = await hass_ws_client(hass, hass_read_only_access_token)
     await other.send_json_auto_id({"type": f"{DOMAIN}/positions"})
     assert (await other.receive_json())["success"]
+
+
+async def test_a_burst_of_requests_for_tracks_runs_out(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    """Both kinds of track draw on one budget of their own, roomier than the positions'."""
+    client = await hass_ws_client(hass)
+    orbit = {
+        "type": f"{DOMAIN}/track",
+        "norad_id": 25544,
+        "start": NOW.isoformat(),
+        "end": (NOW + timedelta(minutes=90)).isoformat(),
+    }
+    sky = {"type": f"{DOMAIN}/pass_track", "pass_id": FIRST_PASS_ID}
+    clock = [1000.0]
+    with patch("custom_components.satellite_spotter.frontend.time.monotonic", lambda: clock[0]):
+        replies = []
+        for n in range(TRACKS_BURST + 2):
+            await client.send_json_auto_id(sky if n % 2 else orbit)
+            replies.append(await client.receive_json())
+        assert all(reply["success"] for reply in replies[:TRACKS_BURST])
+        assert all(
+            reply["error"]["code"] == "too_many_requests" for reply in replies[TRACKS_BURST:]
+        )
+        # The positions are not held up by it.
+        await client.send_json_auto_id({"type": f"{DOMAIN}/positions"})
+        assert (await client.receive_json())["success"]
+        clock[0] += TRACKS_REFILL_SECONDS
+        await client.send_json_auto_id(orbit)
+        assert (await client.receive_json())["success"]
+
+
+async def test_a_track_refused_for_another_reason_costs_nothing(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_ws_client: Any
+) -> None:
+    client = await hass_ws_client(hass)
+    for _ in range(TRACKS_BURST + 1):
+        await client.send_json_auto_id({"type": f"{DOMAIN}/pass_track", "pass_id": "1"})
+        assert (await client.receive_json())["error"]["code"] == "unknown_pass"
+    await client.send_json_auto_id({"type": f"{DOMAIN}/pass_track", "pass_id": FIRST_PASS_ID})
+    assert (await client.receive_json())["success"]
 
 
 async def test_the_same_positions_asked_for_at_once_are_worked_out_once(

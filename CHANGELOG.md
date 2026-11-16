@@ -4,6 +4,30 @@ Each release's notes on GitHub (and in HACS) are its section here. Add the secti
 before raising the version in `manifest.json`; a release without one lists its
 commits instead.
 
+## 1.18
+
+- **Fixed: passes could come from orbits up to 12 hours older than they said.** When one location
+  downloaded a new catalog while another was waiting for its cloud forecast, the second searched the
+  old orbits, recorded them as the new ones, and kept those passes until its next search, up to 12 hours
+  later.
+- **Fixed: a location following someone could show the cloud cover of where they had been.** A forecast
+  asked for just before they moved, arriving just after, was used for the new place, for up to six hours
+  if the next one could not be had.
+- **Fixed: a notification's sky chart could be out of date** after a location's options or Home
+  Assistant's language changed, with the old compass letters, until the next catalog up to 12 hours
+  later.
+- **Fixed: a weather entity's forecast times without a time zone were read in the system's,** which in a
+  container is often UTC whatever Home Assistant is set to. They are now in Home Assistant's, as
+  everywhere else in it, so its cloud cover lands on the right hours.
+- **Fixed: a refusal from CelesTrak, kept through a restart, could be missed** if reading it was cut
+  short, and the next download asked too soon.
+- **A broken answer from CelesTrak can no longer take gigabytes of memory.** Objects the catalog never
+  keeps are let go as they are read, and the limit of 16 MB is now for a whole download rather than 32 MB
+  for each of its four parts: at the very worst about 220 MB, from about 1.7 GB.
+- **The paths of passes and satellites now have a limit for each user,** as the positions of every
+  satellite have had: 60 at once, then one each second. That is room to step through a day's passes
+  quickly, but not for a script to fill Home Assistant's memory with them.
+
 ## 1.17
 
 - **English now uses American spelling throughout,** as Home Assistant's own text does: catalog, meters,

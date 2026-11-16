@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import time
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -143,6 +144,23 @@ async def test_a_forecast_with_no_clouds_is_no_forecast(hass: HomeAssistant, row
     _weather_answers(hass, rows)
     with pytest.raises(CloudCoverError):
         await async_entity_forecast(hass, "weather.home")
+
+
+async def test_a_time_without_a_zone_is_in_home_assistants_own(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not the system's, which in a container is often UTC whatever Home Assistant is set to."""
+    await hass.config.async_set_time_zone("Pacific/Honolulu")
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        _weather_answers(hass, [{"datetime": "2026-11-05T02:00:00", "cloud_coverage": 40}])
+        forecast = await async_entity_forecast(hass, "weather.home")
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    # 2 a.m. in Honolulu is noon UTC.
+    assert forecast.percent_by_hour == {HOUR: 40}
 
 
 async def test_no_weather_at_all_is_no_forecast(hass: HomeAssistant) -> None:

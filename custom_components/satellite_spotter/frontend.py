@@ -71,6 +71,8 @@ from .const import (
     TRACK_MAX_SPAN,
     TRACK_MAX_STEP,
     TRACK_STEP,
+    TRACKS_BURST,
+    TRACKS_REFILL_SECONDS,
 )
 from .coordinator import ListedPass, SatelliteSpotterCoordinator
 from .entity import compass, confidence, magnitude, satellite_kind
@@ -144,6 +146,7 @@ class FrontendState:
         # The catalog payload, built once per catalog version.
         self.catalog: tuple[int, dict[str, Any]] | None = None
         self.positions_budget = _RequestBudget(POSITIONS_BURST, POSITIONS_REFILL_SECONDS)
+        self.tracks_budget = _RequestBudget(TRACKS_BURST, TRACKS_REFILL_SECONDS)
         # Positions being worked out: everyone asking for the same ones waits for the same job.
         self.positions_jobs: dict[Hashable, asyncio.Future[bytes]] = {}
 
@@ -333,6 +336,25 @@ def _predictions(
         connection.send_error(msg["id"], code, paused)
         return False
     return True
+
+
+def _within_budget(
+    budget: _RequestBudget,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    what: str,
+) -> bool:
+    """Take a request from the user's budget; sends the error when none is left.
+
+    Every reply goes into the connection's queue whole, so this is what keeps a burst of requests
+    from filling Home Assistant's memory, whether or not the result is already at hand.
+    """
+    if budget.allows(connection.user.id, time.monotonic()):
+        return True
+    connection.send_error(
+        msg["id"], ERR_TOO_MANY_REQUESTS, f"Too many requests for {what}: try again later"
+    )
+    return False
 
 
 # --- Payloads ----------------------------------------------------------------
@@ -678,6 +700,8 @@ async def ws_pass_track(
             msg["id"], ERR_UNKNOWN_PASS, "This pass is not among the predicted passes"
         )
         return
+    if not _within_budget(hass.data[DATA_FRONTEND].tracks_budget, connection, msg, "tracks"):
+        return
     payload = await hass.async_add_executor_job(
         pass_track_payload,
         p,
@@ -745,6 +769,8 @@ async def ws_track(
             "satellite's orbital elements",
         )
         return
+    if not _within_budget(hass.data[DATA_FRONTEND].tracks_budget, connection, msg, "tracks"):
+        return
     payload = await hass.async_add_executor_job(
         track_payload, sat, start, end, track_step(start, end, msg["step"])
     )
@@ -794,12 +820,7 @@ async def ws_positions(
     if not _predictions(coordinator, connection, msg):
         return
     state = hass.data[DATA_FRONTEND]
-    # Every reply goes into the connection's queue whole, so this is what keeps a burst of requests
-    # from filling Home Assistant's memory, whether or not the result is already at hand.
-    if not state.positions_budget.allows(connection.user.id, time.monotonic()):
-        connection.send_error(
-            msg["id"], ERR_TOO_MANY_REQUESTS, "Too many requests for positions: try again later"
-        )
+    if not _within_budget(state.positions_budget, connection, msg, "positions"):
         return
     catalog = coordinator.catalog
     # Aligned to the step, so every page asking around now shares the result.

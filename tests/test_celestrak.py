@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 import csv
+import tracemalloc
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -359,7 +360,7 @@ async def test_a_redirect_is_an_answer_rather_than_something_to_follow() -> None
     session = MagicMock()
     session.get.return_value.__aenter__ = AsyncMock(return_value=answer)
     session.get.return_value.__aexit__ = AsyncMock(return_value=False)
-    await _async_download(session, GP_URL, QUERIES[0])
+    await _async_download(session, GP_URL, QUERIES[0], limit=100)
     assert session.get.call_args.kwargs["allow_redirects"] is False
 
 
@@ -373,8 +374,9 @@ def test_an_answer_csv_cannot_read_counts_as_a_refusal() -> None:
 
 
 def test_an_object_twice_with_no_date_counts_as_a_refusal() -> None:
+    # A Starlink, as only an object the catalog could keep is looked at that closely.
     with pytest.raises(DownloadRefused, match="could not be read"):
-        build_catalog(["NORAD_CAT_ID,OBJECT_NAME\n1,A\n1,A\n"])
+        build_catalog(["NORAD_CAT_ID,OBJECT_NAME\n1,STARLINK-1\n1,STARLINK-1\n"])
 
 
 @pytest.mark.usefixtures("usual_csv_limit")
@@ -396,6 +398,51 @@ async def test_too_much_of_an_answer_stops_the_download_and_counts_as_a_refusal(
         with pytest.raises(DownloadRefused, match="too much"):
             await async_fetch_catalog(hass)
     assert aioclient_mock.call_count == 1
+
+
+async def test_the_answers_share_one_allowance(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """All are read before any is let go, so it is together that they must fit."""
+    answer = gp_csv([_row(900, "CALSPHERE 1")])
+    with patch(
+        "custom_components.satellite_spotter.celestrak.MAX_CATALOG_BYTES", 2 * len(answer) + 10
+    ):
+        _mock_answers(aioclient_mock, text=answer)
+        with pytest.raises(DownloadRefused, match="too much"):
+            await async_fetch_catalog(hass)
+    assert aioclient_mock.call_count == len(QUERIES)
+
+
+async def test_a_supplement_past_the_allowance_is_left_out(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    answer = gp_csv([_row(900, "CALSPHERE 1")])
+    with patch(
+        "custom_components.satellite_spotter.celestrak.MAX_CATALOG_BYTES",
+        len(QUERIES) * len(answer) + 10,
+    ):
+        _mock_answers(aioclient_mock, text=answer)
+        _mock_supplement(aioclient_mock, text=gp_csv([_row(60000, "STARLINK-1", LOW)]))
+        catalog = await async_fetch_catalog(hass)
+    assert [sat.norad_id for sat in catalog] == [900]
+
+
+def test_rows_of_objects_never_kept_are_let_go_at_once() -> None:
+    """A row kept takes about 14 times its size in memory; others, only what reading takes."""
+    answer = gp_csv([_row(1_000_000 + n, "SOMESAT DEB") for n in range(20_000)])
+    tracing = tracemalloc.is_tracing()
+    if not tracing:
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        assert build_catalog([answer]) == []
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if not tracing:
+            tracemalloc.stop()
+    assert peak < 6 * len(answer)
 
 
 @pytest.mark.parametrize(

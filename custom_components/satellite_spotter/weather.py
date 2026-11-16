@@ -99,7 +99,8 @@ async def async_fetch_forecast(
 def _forecast_of_entity(rows: Iterable[Mapping[str, Any]]) -> CloudForecast:
     """Read a weather entity's hourly forecast, whose hours are not always labeled on the hour."""
     percents = _percents(
-        (int(when.timestamp()) // _HOUR_S * _HOUR_S, row.get("cloud_coverage"))
+        # Without a time zone, Home Assistant's own, as everywhere else in it: not the system's.
+        (int(dt_util.as_utc(when).timestamp()) // _HOUR_S * _HOUR_S, row.get("cloud_coverage"))
         for row in rows
         if (when := dt_util.parse_datetime(str(row.get("datetime")))) is not None
     )

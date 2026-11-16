@@ -28,7 +28,7 @@ from custom_components.satellite_spotter.sky_chart import (
     sky_xy,
 )
 
-from .common import FIRST_PASS_ID, HONOLULU, NOW, add_location, bright_pass
+from .common import FIRST_PASS_ID, HONOLULU, NOW, add_location, bright_pass, set_options
 
 
 def pixels(png: bytes) -> np.ndarray[Any, Any]:
@@ -139,6 +139,40 @@ async def test_it_is_kept_rather_than_drawn_again(
         for _ in range(3):
             assert (await client.get(path)).status == HTTPStatus.OK
     assert drawn.call_count == 1
+
+
+async def test_a_chart_kept_is_drawn_again_in_a_new_language(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    client = await hass_client()
+    path = sky_chart_path(init_integration.entry_id, FIRST_PASS_ID)
+    english = await (await client.get(path)).read()
+    await hass.config.async_update(language="de")
+    german = await (await client.get(path)).read()
+    # East is O in German.
+    assert german != english
+    coordinator = init_integration.runtime_data
+    p = coordinator.data.find(FIRST_PASS_ID)
+    assert german == await hass.async_add_executor_job(
+        chart_of_pass, p, coordinator.observer, 2.25, "de"
+    )
+
+
+async def test_a_chart_kept_is_drawn_again_for_new_options(
+    hass: HomeAssistant, init_integration: MockConfigEntry, hass_client: ClientSessionGenerator
+) -> None:
+    """Options change what the search finds, with the same catalog and so the same cache."""
+    client = await hass_client()
+    path = sky_chart_path(init_integration.entry_id, FIRST_PASS_ID)
+    before = await (await client.get(path)).read()
+    await set_options(hass, init_integration, {"brightness_cutoff": 4.0})
+    coordinator = init_integration.runtime_data
+    p = coordinator.data.find(FIRST_PASS_ID)
+    after = await (await client.get(path)).read()
+    assert after != before
+    assert after == await hass.async_add_executor_job(
+        chart_of_pass, p, coordinator.observer, 4.0, "en"
+    )
 
 
 async def test_it_is_not_served_to_anyone_else(
