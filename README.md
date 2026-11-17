@@ -1,6 +1,6 @@
 # Satellite Spotter for Home Assistant
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz)
 [![GitHub release](https://img.shields.io/github/v/release/kedube/ha-satellite-spotter)](https://github.com/kedube/ha-satellite-spotter/releases)
 [![CI](https://github.com/kedube/ha-satellite-spotter/actions/workflows/ci.yml/badge.svg)](https://github.com/kedube/ha-satellite-spotter/actions/workflows/ci.yml)
 ![Home Assistant 2026.2+](https://img.shields.io/badge/Home%20Assistant-2026.2%2B-41BDF5.svg)
@@ -46,19 +46,30 @@ its live position and its passes up to 30 days ahead, and can run alongside this
 
 You need Home Assistant 2026.2 or newer.
 
-### HACS (recommended)
+### Marketplace or HACS (recommended)
 
-1. Add `https://github.com/kedube/ha-satellite-spotter` as a custom repository. From Home Assistant
-   2026.11, HACS is built in as the Marketplace: go to **Settings → Marketplace → Add from link**,
-   which asks you to connect GitHub the first time. Before 2026.11, open **HACS → ⋮ → Custom
-   repositories** and choose the type **Integration**.
-2. Open **Satellite Spotter** and select **Install**, or **Download** in HACS.
+Satellite Spotter is listed in HACS, which Home Assistant 2026.11 built in as the Marketplace, so
+there is no repository to add.
+
+1. Go to **Settings → Marketplace**. Before 2026.11, open **HACS**.
+2. Search for **Satellite Spotter**, open it and select **Install**, or **Download** in HACS.
 3. In HACS, restart Home Assistant. In the Marketplace, setup starts straight away.
 4. [Set up the integration](#setup).
 
 Or use this button to open Satellite Spotter on your Home Assistant, in the Marketplace or in HACS:
 
 [![Open your Home Assistant instance and open this repository inside HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-satellite-spotter&category=integration)
+
+Added it from a link or as a custom repository before it was listed? There's nothing to change: it
+stays installed and keeps getting updates.
+
+If the search doesn't find it, your Home Assistant hasn't fetched the newest list yet. Add it from
+its link instead, then install it as above:
+
+- **Marketplace:** select **Add from link** and enter
+  `https://github.com/kedube/ha-satellite-spotter`. The first time, it asks you to connect GitHub.
+- **HACS:** open **⋮ → Custom repositories**, enter the same link and choose the type
+  **Integration**.
 
 ### Updating
 
