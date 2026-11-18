@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -16,7 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.satellite_spotter.const import DOMAIN
 from custom_components.satellite_spotter.entity import SatelliteSpotterEntity
 
-from .common import DENVER, HONOLULU, INTEGRATION, add_location
+from .common import DENVER, HONOLULU, INTEGRATION, NOW, add_location
 
 # Every entity of a location, by platform and key: the key ends its unique id.
 ENTITIES = {
@@ -39,6 +40,11 @@ ENTITIES = {
 }
 STRINGS = json.loads((INTEGRATION / "strings.json").read_text(encoding="utf-8"))
 MANIFEST = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(autouse=True)
+def _clock(freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
 
 
 def english_name(domain: str, key: str) -> str:

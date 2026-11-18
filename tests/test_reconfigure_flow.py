@@ -6,6 +6,7 @@ import math
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntryState
 from homeassistant.const import CONF_ELEVATION, CONF_LATITUDE, CONF_LOCATION, CONF_LONGITUDE
 from homeassistant.core import HomeAssistant
@@ -17,9 +18,14 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.satellite_spotter.celestrak import CatalogError
 from custom_components.satellite_spotter.const import DOMAIN
 
-from .common import DENVER, HONOLULU, add_location
+from .common import DENVER, HONOLULU, NOW, add_location
 
 MOVED = {CONF_LATITUDE: 20.0, CONF_LONGITUDE: -155.0, CONF_ELEVATION: 50.0}
+
+
+@pytest.fixture(autouse=True)
+def _clock(freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
 
 
 def moved_to(latitude: float, longitude: float, elevation: float = 50.0) -> dict[str, Any]:

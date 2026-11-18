@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from aiohttp import ClientError
+from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult, FlowResultType, InvalidData
 import pytest
@@ -20,7 +21,7 @@ from custom_components.satellite_spotter.street import (
     street_payload,
 )
 
-from .common import HONOLULU, add_location
+from .common import HONOLULU, NOW, add_location
 
 TOKEN = "MLY|123456|abc-DEF_789"
 GOOGLE_KEY = "AIzaSyExample"
@@ -33,6 +34,11 @@ DEFAULTS = {
     "units": "auto",
     "street_view": {"street_source": "auto"},
 }
+
+
+@pytest.fixture(autouse=True)
+def _clock(freezer: FrozenDateTimeFactory) -> None:
+    freezer.move_to(NOW)
 
 
 def answer(street: dict[str, Any] | None = None, **fields: Any) -> dict[str, Any]:
