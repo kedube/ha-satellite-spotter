@@ -1,5 +1,5 @@
 # How bright each satellite is: standard magnitude, at 1000 km and half lit by the Sun.
-# Built on 2026-11-11 by scripts/make_brightness_table.py. Do not edit: add to
+# Built on 2026-11-18 by scripts/make_brightness_table.py. Do not edit: add to
 # scripts/brightness_overrides.csv and rebuild.
 #
 # Sources, in the "source" column:
@@ -501,7 +501,6 @@ norad_id,magnitude,source,name
 49331,3.10,mmt,CZ-3B R/B
 49335,3.34,mmt,ARIANE 5 R/B
 49337,3.77,mmt,H-2A R/B
-49962,5.09,mmt,SHIJIAN-6 05B (SJ-6 05B)
 51103,4.19,mmt,CZ-2D R/B
 51284,4.85,mmt,LUDI TANCE 1-01A (L-SAR 01A)
 51444,4.61,mmt,CSG-2
@@ -715,7 +714,6 @@ norad_id,magnitude,source,name
 69419,3.54,mmt,CZ-8 R/B
 69472,4.89,score,DTC TEST OBJECT A
 69473,4.84,score,DTC TEST OBJECT B
-69507,5.38,mmt,HORN-R
 69537,5.50,mmt,ZHUQUE-2E R/B
 69581,4.22,mmt,CZ-12 R/B
 69589,4.32,score,SPACEMOBILE-008
@@ -732,7 +730,6 @@ norad_id,magnitude,source,name
 100271,3.51,mmt,H3 R/B
 100365,3.58,mmt,CZ-12 R/B
 100370,5.35,mmt,HONGHU-03
-100402,6.65,family,ELECTRON R/B
 100531,2.91,mmt,ARIANE 6 R/B
 100608,3.61,mmt,GSLV R/B
 100651,5.04,mmt,OBJECT A
@@ -751,4 +748,5 @@ norad_id,magnitude,source,name
 101229,3.83,family,GSLV R/B
 101258,6.65,family,ELECTRON R/B
 101286,3.54,family,CZ-2C R/B
-101321,3.88,family,CZ-12 R/B
+101329,3.88,family,CZ-12 R/B
+101386,6.65,family,ELECTRON R/B
