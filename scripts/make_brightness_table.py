@@ -572,9 +572,21 @@ def mmt_list(args: argparse.Namespace) -> str:
     return download(MMT_URL, referer=MMT_REFERER) if args.download_mmt else read_text(args.mmt)
 
 
-def _reason(err: Exception) -> object:
+def _reason(err: Exception) -> str:
+    """Say why a download failed and, when it is known, what it was asking for."""
     detail = getattr(err, "stderr", None)
-    return detail.decode(errors="replace").strip() if detail else err
+    reason = detail.decode(errors="replace").strip() if detail else str(err)
+    command = getattr(err, "cmd", None)
+    # curl's message for a timeout does not name the address, so a run would not say which.
+    if isinstance(command, list) and command:
+        reason += f" ({command[-1]})"
+    return reason
+
+
+def _refused(err: Exception) -> bool:
+    """Whether the server answered 403, as CelesTrak does to a repeat download."""
+    detail = getattr(err, "stderr", None)
+    return isinstance(err, subprocess.CalledProcessError) and b"403" in (detail or b"")
 
 
 def run_update(args: argparse.Namespace) -> None:
@@ -596,10 +608,13 @@ def run_update(args: argparse.Namespace) -> None:
         else:
             elements = download_elements()
     except (OSError, subprocess.CalledProcessError) as err:
-        sys.exit(
-            f"Stopped, and the table is unchanged: {_reason(err)}\n"
-            "CelesTrak refuses a repeat download: if it answered 403, wait two hours."
-        )
+        if _refused(err):
+            hint = "\nCelesTrak refuses a repeat download: wait two hours."
+        elif isinstance(err, subprocess.CalledProcessError):
+            hint = "\nCelesTrak's server may be down. Try again later."
+        else:
+            hint = ""
+        sys.exit(f"Stopped, and the table is unchanged: {_reason(err)}{hint}")
     built = read_built(args.out)
     rows = update(mmt, table, satcat, elements, built)
     # A list that went wrong should not cost the table what it has.

@@ -101,6 +101,7 @@ The table is left as it was in each of these cases.
 |---|---|
 | `Stopped, and the table is unchanged: no list from MMT` | MMT's server did not answer, or refused. Try again later. If it keeps answering 403, ask its team whether the referer has changed |
 | `Stopped, and the table is unchanged`, with a 403 | CelesTrak refuses repeat downloads. Wait two hours and try again |
+| `Stopped, and the table is unchanged`, with a timeout or a 5xx | CelesTrak's server is down or overloaded. Try again later, or leave it to next week's run |
 | `Stopped, and the table is unchanged`, for another reason | Check the network connection and that `curl` is installed |
 | `This is not MMT's satellite list` | The wrong file, or an error page saved by the browser. Download it again |
 | `Stopped: only N objects` | The result would lose over half the table, so something is wrong with the list or the download. Do not force it |

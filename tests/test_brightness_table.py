@@ -573,6 +573,43 @@ def test_a_failed_download_stops_the_update_and_leaves_the_table(
     assert (tmp_path / "out.csv").read_text() == before
 
 
+@pytest.mark.parametrize(
+    ("code", "stderr", "said", "not_said"),
+    [
+        # As on 2026-11-25, when CelesTrak's server sent nothing for two minutes.
+        (
+            28,
+            b"curl: (28) Operation timed out after 120000 milliseconds with 0 bytes received",
+            "may be down",
+            "two hours",
+        ),
+        (22, b"curl: (22) The requested URL returned error: 503", "may be down", "two hours"),
+        (22, b"curl: (22) The requested URL returned error: 403", "two hours", "may be down"),
+    ],
+)
+def test_a_failed_celestrak_download_says_which_and_what_to_do(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+    stderr: bytes,
+    said: str,
+    not_said: str,
+) -> None:
+    args = _files(tmp_path, 4)
+    args = args[: args.index("--satcat")] + args[args.index("--out") :]
+    monkeypatch.setattr(sys, "argv", args)
+
+    def fail(command: list[str], **_kwargs: Any) -> Any:
+        raise subprocess.CalledProcessError(code, command, stderr=stderr)
+
+    with patch.object(table.subprocess, "run", fail), pytest.raises(SystemExit) as stopped:
+        table.main()
+    message = str(stopped.value)
+    assert table.SATCAT_URL in message
+    assert said in message
+    assert not_said not in message
+
+
 def test_the_downloads_name_the_script_and_ask_for_csv() -> None:
     asked: list[list[str]] = []
 
